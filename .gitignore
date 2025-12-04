@@ -1,0 +1,66 @@
+# --- Archivos de Entorno Virtual y Dependencias Locales ---
+# No queremos subir el contenido del entorno virtual
+venv/
+/venv/
+
+# Archivos de caché de pip
+pip-cache/
+*.pip
+
+# --- Archivos Sensibles ---
+# El archivo .env contiene credenciales y nunca debe ser versionado
+.env
+/.env
+*.env.*
+
+# --- Archivos de Configuración de IDEs y Editores ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Archivos de Caché y Compilados de Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Archivos del Sistema Operativo ---
+.DS_Store
+Thumbs.db
+
+# --- Archivos de Docker ---
+# No es necesario ignorar Dockerfile o docker-compose.yml,
+# pero sí los archivos generados por Docker localmente, como los volúmenes de caché.
+.dockerignore
+docker-compose.override.yml
+
+# --- Archivos de Celery ---
+# Archivo de persistencia del planificador (scheduler) de Celery Beat
+celerybeat-schedule
+celerybeat.pid
+
+# --- Archivos de Pruebas ---
+.pytest_cache/
+htmlcov/
+.coverage
+
+# --- Logs y Bases de Datos Locales (si las hubiera fuera de Docker) ---
+*.log
+*.sqlite3
+*.db
+
+# --- CRÍTICO: Datos y Volúmenes del Proyecto ---
+# La carpeta donde Docker guarda la DB localmente (si usas bind mounts)
+postgres_data/
+
+# Archivos de respaldo de base de datos (¡No subir la data real!)
+backup.sql
+*.sql
+*.dump
+
+# Persistencia de Redis (si se genera localmente)
+dump.rdb
+
+# Archivos temporales de Selenium/Chrome (si se generan en el proyecto)
+.wdm/
+chromedriver*
