@@ -2,7 +2,7 @@ import logging
 import re
 import time
 import urllib.parse
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, Tuple
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -45,27 +45,20 @@ class DroneScraper:
                 self.driver.find_element(By.NAME, "password").submit()
             time.sleep(3)
             return "login" not in self.driver.current_url
-        except Exception as e:
-            logger.error(f"❌ Drone Login error: {e}")
-            return False
+        except: return False
 
     def close_driver(self):
         if self.driver:
-            try:
-                self.driver.quit()
+            try: self.driver.quit()
             except: pass
             self.driver = None
 
-    # --- HELPERS ---
-    def _parse_href_coords(self, href: str) -> Optional[Tuple[float, float]]:
-        if not href: return None
+    # --- EXTRACTORES ---
+    def _parse_money(self, text: str) -> float:
         try:
-            href = urllib.parse.unquote(href)
-            match = re.search(r"q=loc:(-?\d+\.\d+)(?:\+|,|\s)(-?\d+\.\d+)", href)
-            if match:
-                return float(match.group(1)), float(match.group(2))
-        except: pass
-        return None
+            match = re.search(r"(\d+(?:,\d{3})*(?:\.\d+)?)", text)
+            return float(match.group(1).replace(',', '')) if match else 0.0
+        except: return 0.0
 
     def _extract_financials(self, body_text: str) -> Dict[str, float]:
         data = {}
@@ -80,32 +73,110 @@ class DroneScraper:
         data['coupon_discount'] = get_val("Descuento del cupón")
         data['tips'] = get_val("Propinas al repartidor")
         data['real_delivery_fee'] = get_val("Tarifa de entrega")
+        
+        # Total Amount (Buscar "Total:" seguido de USD)
+        data['total_amount'] = get_val("Total:")
         return data
 
-    def _extract_reason_smart(self) -> Optional[str]:
+    def _parse_href_coords(self, href: str) -> Optional[Tuple[float, float]]:
+        if not href: return None
         try:
-            labels = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Motivo de cancelación') or contains(text(), 'Razón')]")
-            for label in labels:
-                try:
-                    parent = label.find_element(By.XPATH, "./..")
-                    text = parent.text.replace(label.text, "").strip().lstrip(":").strip()
-                    if len(text) > 3: return text
-                except: continue
+            href = urllib.parse.unquote(href)
+            match = re.search(r"q=loc:(-?\d+\.\d+)(?:\+|,|\s)(-?\d+\.\d+)", href)
+            if match: return float(match.group(1)), float(match.group(2))
         except: pass
         return None
 
-    # ESTA ES LA FUNCIÓN QUE DABA PROBLEMAS (AHORA ALINEADA)
-    def _extract_phone(self) -> Optional[str]:
-        """Busca enlaces tipo tel:+58..."""
+    def _extract_maps(self) -> Dict[str, float]:
+        result = {}
         try:
-            # Buscamos cualquier enlace que empiece por tel:
-            phone_link = self.driver.find_element(By.CSS_SELECTOR, "a[href^='tel:']")
-            raw_phone = phone_link.get_attribute("href").replace("tel:", "")
-            return raw_phone.strip()
-        except: return None
+            # 1. CLIENTE (Contextual en tarjeta de entrega)
+            try:
+                client_link = self.driver.find_element(By.CSS_SELECTOR, ".delivery--information-single a[href*='maps.google.com']")
+                c = self._parse_href_coords(client_link.get_attribute("href"))
+                if c: result["customer_lat"], result["customer_lng"] = c
+            except: pass
 
-    # --- SCRAPING PRINCIPAL ---
-    def scrape_detail(self, external_id: str, mode: str) -> Dict[str, Any]:
+            # 2. TIENDA (Clase específica o posición)
+            try:
+                store_link = self.driver.find_element(By.CSS_SELECTOR, "a.__gap-5px[href*='maps.google.com']")
+                c = self._parse_href_coords(store_link.get_attribute("href"))
+                if c: result["store_lat"], result["store_lng"] = c
+            except: pass
+        except: pass
+        return result
+
+    def _extract_basic_info(self) -> Dict[str, str]:
+        info = {}
+        try:
+            # Estado (Badge derecha)
+            status_el = self.driver.find_element(By.XPATH, "//div[contains(@class, 'order-invoice-right')]//span[contains(@class, 'badge')]")
+            info['status_text'] = status_el.text.strip()
+        except: info['status_text'] = "pending"
+
+        try: # Cliente
+            el = self.driver.find_element(By.CSS_SELECTOR, ".customer--information-single .media-body span")
+            info['customer_name'] = el.text.strip()
+        except: info['customer_name'] = "Desconocido"
+
+        try: # Tienda
+            el = self.driver.find_element(By.CSS_SELECTOR, ".resturant--information-single .media-body span")
+            info['store_name'] = el.text.strip()
+        except: info['store_name'] = "Desconocida"
+
+        try: # Repartidor
+            # Buscar card que diga "Repartidor"
+            el = self.driver.find_element(By.XPATH, "//h5[contains(., 'Repartidor')]/ancestor::div[@class='card-body']//span[contains(@class, 'text-body')]")
+            info['driver_name'] = el.text.strip()
+        except: info['driver_name'] = "N/A"
+        
+        try: # Teléfono Cliente
+            el = self.driver.find_element(By.CSS_SELECTOR, ".delivery--information-single a[href^='tel:']")
+            info['customer_phone'] = el.text.strip()
+        except: pass
+
+        # Fecha creación (Texto del header)
+        try:
+            header_text = self.driver.find_element(By.CLASS_NAME, "order-invoice-left").text
+            date_match = re.search(r'(\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\s+\d{2}:\d{2})', header_text)
+            if date_match: info['created_at_text'] = date_match.group(1)
+        except: pass
+
+        return info
+
+    def _extract_reason_smart(self) -> Optional[str]:
+        """Extrae el motivo limpiando prefijos basura con Regex."""
+        try:
+            # 1. Buscar en etiquetas específicas
+            labels = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Motivo') or contains(text(), 'Razón') or contains(text(), 'del pedido')]")
+            
+            for label in labels:
+                try:
+                    parent = label.find_element(By.XPATH, "./..")
+                    raw_text = parent.text.strip()
+                    
+                    # Regex: Busca "Motivo" o "del pedido", seguido opcionalmente de ":" o espacios
+                    # y captura todo lo que sigue.
+                    # Ej: "del pedido : Cliente no está" -> Captura "Cliente no está"
+                    clean_match = re.search(r"(?:Motivo|Razón|del pedido)[\s:\-]*(.*)", raw_text, re.IGNORECASE | re.DOTALL)
+                    
+                    if clean_match:
+                        cleaned = clean_match.group(1).strip()
+                        if len(cleaned) > 2: return cleaned
+                        
+                except: continue
+            
+            # 2. Fallback: Buscar en todo el cuerpo
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            # Busca patrones comunes de Gopharma
+            match = re.search(r"(?:Motivo|del pedido)[\s:\-]*(.*)", body_text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+                
+        except: pass
+        return None
+
+    def scrape_detail(self, external_id: str, mode: str = 'full') -> Dict[str, Any]:
         if not self.driver: self.setup_driver(); self.login()
         result = {"external_id": external_id}
         target_url = f"{self.base_detail_url}/{external_id}"
@@ -113,68 +184,22 @@ class DroneScraper:
         try:
             self.driver.get(target_url)
             WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
             
-            # Finanzas (Siempre)
-            page_text = self.driver.find_element(By.TAG_NAME, "body").text
-            result.update(self._extract_financials(page_text))
+            # 1. Información Básica
+            result.update(self._extract_basic_info())
+            
+            # 2. Finanzas
+            result.update(self._extract_financials(body_text))
+            
+            # 3. Mapas
+            result.update(self._extract_maps())
 
-            # Teléfono (Siempre)
-            phone = self._extract_phone()
-            if phone: result["customer_phone"] = phone
-
-            if mode == 'coords':
-                # --- ESTRATEGIA HÍBRIDA V6 ---
-                
-                # 1. TIENDA 
-                try:
-                    store_link = self.driver.find_element(By.CSS_SELECTOR, "a.__gap-5px[href*='maps.google.com']")
-                    coords = self._parse_href_coords(store_link.get_attribute("href"))
-                    if coords:
-                        result["store_lat"], result["store_lng"] = coords
-                except: pass
-
-                # 2. CLIENTE - INTENTO A: Clase CSS
-                client_coords = None
-                try:
-                    client_link = self.driver.find_element(By.CSS_SELECTOR, ".delivery--information-single a[href*='maps.google.com']")
-                    client_coords = self._parse_href_coords(client_link.get_attribute("href"))
-                    if client_coords: logger.info(f"📍 Cliente (CSS): {client_coords}")
-                except: pass
-
-                # 3. CLIENTE - INTENTO B: XPath Texto
-                if not client_coords:
-                    try:
-                        client_link = self.driver.find_element(By.XPATH, "//h5[contains(., 'Información de entrega')]/ancestor::div[contains(@class, 'card')]//a[contains(@href, 'maps.google.com')]")
-                        client_coords = self._parse_href_coords(client_link.get_attribute("href"))
-                        if client_coords: logger.info(f"📍 Cliente (XPath): {client_coords}")
-                    except: pass
-
-                # 4. CLIENTE - INTENTO C: Fuerza Bruta
-                if not client_coords:
-                    try:
-                        all_links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='maps.google.com']")
-                        all_coords = []
-                        for l in all_links:
-                            c = self._parse_href_coords(l.get_attribute("href"))
-                            if c and c not in all_coords: all_coords.append(c)
-                        
-                        if len(all_coords) >= 2:
-                            last = all_coords[-1]
-                            if "store_lat" in result:
-                                diff = abs(result["store_lat"] - last[0])
-                                if diff > 0.001: 
-                                    client_coords = last
-                                    logger.info(f"📍 Cliente (Fallback): {client_coords}")
-                            else:
-                                client_coords = last
-                    except: pass
-
-                if client_coords:
-                    result["customer_lat"], result["customer_lng"] = client_coords
-
-            elif mode == 'reason':
-                reason = self._extract_reason_smart()
-                result["cancellation_reason"] = reason if reason else "No especificado"
+            # 4. Motivos (si aplica)
+            if "cancelado" in result.get('status_text', '').lower():
+                # Lógica simplificada de búsqueda en texto
+                match = re.search(r"(?:Motivo|Razón)(?:\s+de\s+cancelación)?\s*:?\s*(.*)", body_text, re.IGNORECASE)
+                if match: result['cancellation_reason'] = match.group(1).split('\n')[0].strip()
 
         except Exception as e:
             logger.error(f"❌ Error scraping {external_id}: {e}")

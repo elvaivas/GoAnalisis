@@ -12,11 +12,12 @@ document.addEventListener('DOMContentLoaded', function () {
     let ordersInterval;
 
     // --- TRADUCCIONES Y ORDEN ---
-    const statusOrder = ['pending', 'confirmed', 'processing', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
+    const statusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
+    
     const statusTranslations = {
         'pending': 'Pendiente',
-        'confirmed': 'Confirmado',
-        'processing': 'Facturando/Cocina',
+        'processing': 'Facturando',
+        'confirmed': 'Solicitando Motorizado', // <--- CAMBIO CLAVE
         'driver_assigned': 'Motorizado Asignado',
         'on_the_way': 'En Camino',
         'delivered': 'Entregado',
@@ -314,6 +315,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 else if (order.current_status === 'canceled') badgeClass = 'bg-danger';
                 else if (order.current_status === 'on_the_way') badgeClass = 'bg-info text-dark animate-pulse';
                 else if (order.current_status === 'driver_assigned') badgeClass = 'bg-primary';
+                
+                // NUEVO ESTILO PARA SOLICITANDO
+                else if (order.current_status === 'confirmed') badgeClass = 'bg-info bg-opacity-50 text-dark'; 
+                
                 else if (order.current_status === 'processing') badgeClass = 'bg-warning text-dark';
 
                 // Traducción de Estado
