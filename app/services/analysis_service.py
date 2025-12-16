@@ -104,14 +104,25 @@ def calculate_bottlenecks(db: Session, store_name: Optional[str] = None, search_
     return data
 
 def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
-    query = db.query(Customer.name, func.count(Order.id).label("total_orders"), func.sum(Order.total_amount).label("total_spent")).join(Order, Order.customer_id == Customer.id)
+    """
+    Top 20 Clientes Fieles (SOLO VENTAS REALES/ENTREGADAS).
+    """
+    query = db.query(
+        Customer.name,
+        func.count(Order.id).label("total_orders"),
+        func.sum(Order.total_amount).label("total_spent")
+    ).join(Order, Order.customer_id == Customer.id)\
+     .filter(Order.current_status == 'delivered') # <--- FILTRO CLAVE: Solo lo cobrado
+
+    # Filtros
     if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
     if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
     query = apply_search(query, search_query)
 
-    results = query.group_by(Customer.name).order_by(desc("total_orders")).limit(20).all()
+    results = query.group_by(Customer.name).order_by(desc("total_spent")).limit(20).all()
+    
     return [{"name": row.name or "Cliente Desconocido", "count": row.total_orders, "total_amount": float(row.total_spent or 0)} for row in results]
 
 def get_total_duration_for_order(db: Session, order_id: int):

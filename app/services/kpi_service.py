@@ -35,22 +35,28 @@ def get_main_kpis(
     # --- FINANZAS (CÁLCULO REAL) ---
     
     # 1. Movimiento Total (GMV)
-    total_revenue = base_query.with_entities(func.sum(Order.total_amount)).scalar() or 0.0
+    total_revenue = base_query.filter(Order.current_status == 'delivered')\
+        .with_entities(func.sum(Order.total_amount)).scalar() or 0.0
+
+    # 2. DINERO PERDIDO (NUEVO KPI)
+    # Suma de montos de pedidos cancelados
+    lost_revenue = base_query.filter(Order.current_status == 'canceled')\
+        .with_entities(func.sum(Order.total_amount)).scalar() or 0.0
     
-    # 2. Base Delivery (Precio real del viaje, pagado o no)
+    # 3. Base Delivery (Precio real del viaje, pagado o no)
     total_gross_delivery = base_query.with_entities(func.sum(func.coalesce(Order.gross_delivery_fee, Order.delivery_fee))).scalar() or 0.0
     
-    # 3. Costo Cupones (Inversión de la empresa)
+    # 4. Costo Cupones (Inversión de la empresa)
     total_coupons = base_query.with_entities(func.sum(Order.coupon_discount)).scalar() or 0.0
 
-    # 4. Service Fee (Ingreso administrativo)
+    # 5. Service Fee (Ingreso administrativo)
     total_service_fee = base_query.with_entities(func.sum(Order.service_fee)).scalar() or 0.0
 
-    # 5. REPARTICIÓN
+    # 6. REPARTICIÓN
     driver_payout = total_gross_delivery * 0.80  # El motorizado siempre cobra su 80% del valor real
     company_share_delivery = total_gross_delivery * 0.20 # El 20% teórico de la empresa
 
-    # 6. GANANCIA NETA REAL (REAL PROFIT)
+    # 7. GANANCIA NETA REAL (REAL PROFIT)
     # (Lo que le toca a la empresa + Service Fee) - (Lo que la empresa pagó en cupones)
     real_net_profit = (company_share_delivery + total_service_fee) - total_coupons
 
@@ -64,6 +70,7 @@ def get_main_kpis(
     return {
         "total_orders": total_orders,
         "total_revenue": float(total_revenue),
+        "lost_revenue": float(lost_revenue),
         "total_fees": float(total_gross_delivery), # Mostramos el valor bruto del delivery generado
         "total_coupons": float(total_coupons),
         "driver_payout": float(driver_payout),

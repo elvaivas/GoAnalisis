@@ -70,7 +70,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 setVal('kpi-total-orders', data.total_orders);
                 setVal('kpi-deliveries', data.total_deliveries);
                 setVal('kpi-pickups', data.total_pickups);
-                setVal('kpi-canceled', data.total_canceled ?? 0);
+                
+                // --- NUEVO: CANCELADOS + DINERO PERDIDO ---
+                const cancelEl = document.getElementById('kpi-canceled');
+                if (cancelEl) {
+                    const count = data.total_canceled ?? 0;
+                    const lost = (data.lost_revenue || 0).toFixed(2);
+                    // Inyectamos HTML para mostrar el monto en pequeño y semitransparente
+                    cancelEl.innerHTML = `${count} <span style="font-size: 0.6em; opacity: 0.8;">(-$${lost})</span>`;
+                }
+                // ------------------------------------------
+
                 setVal('kpi-avg-time', `${data.avg_delivery_minutes || 0} min`);
 
                 // Actualizar gráfico dona
