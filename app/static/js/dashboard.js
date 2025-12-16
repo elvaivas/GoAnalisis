@@ -293,10 +293,30 @@ document.addEventListener('DOMContentLoaded', function () {
             const tbody = document.querySelector('#topCustomersTable tbody');
             if(!tbody) return;
             tbody.innerHTML = '';
-            data.forEach((c, i) => {
-                let rank = `#${i+1}`; if(i===0) rank='🥇'; if(i===1) rank='🥈'; if(i===2) rank='🥉';
-                tbody.innerHTML += `<tr><td class="ps-4 text-warning fw-bold">${rank}</td><td class="fw-bold text-white">${c.name}</td><td class="text-center"><span class="badge bg-primary text-white">${c.count}</span></td><td class="text-end text-success fw-bold">$${c.total_amount.toFixed(2)}</td><td class="text-end pe-4 text-muted">$${(c.total_amount/c.count).toFixed(2)}</td></tr>`;
+            
+            data.forEach((c) => {
+                // USA EL RANK QUE VIENE DE LA API (c.rank)
+                let rankDisplay = `#${c.rank}`; 
+                
+                // Iconos para los primeros 3 (Globales)
+                if(c.rank === 1) rankDisplay = '🥇';
+                if(c.rank === 2) rankDisplay = '🥈';
+                if(c.rank === 3) rankDisplay = '🥉';
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="ps-4 text-warning fw-bold">${rankDisplay}</td>
+                        <td class="fw-bold text-white">${c.name}</td>
+                        <td class="text-center"><span class="badge bg-primary text-white">${c.count}</span></td>
+                        <td class="text-end text-success fw-bold">$${c.total_amount.toFixed(2)}</td>
+                        <td class="text-end pe-4 text-muted">$${(c.total_amount/c.count).toFixed(2)}</td>
+                    </tr>`;
             });
+            
+            // Mensaje si no hay resultados
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-3">No se encontraron clientes para esta búsqueda</td></tr>`;
+            }
         });
     }
 
@@ -507,6 +527,15 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('btn-update')?.addEventListener('click', fetchAllData);
     document.getElementById('search-input')?.addEventListener('keypress', function (e) {
         if (e.key === 'Enter') fetchAllData();
+    });
+    
+    // Limpiar búsqueda
+    document.getElementById('btn-clear-search')?.addEventListener('click', function() {
+        const input = document.getElementById('search-input');
+        if (input) {
+            input.value = ''; // Borrar texto
+            fetchAllData();   // Recargar todo limpio
+        }
     });
 
     // Eventos Colapso

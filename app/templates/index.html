@@ -40,7 +40,12 @@
                     <!-- NUEVO: BUSCADOR -->
                     <div class="col-md-4">
                         <label class="form-label text-muted small"><i class="fa-solid fa-magnifying-glass me-1"></i> Búsqueda Global</label>
-                        <input type="text" class="form-control" id="search-input" placeholder="ID Pedido o Nombre Cliente...">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="search-input" placeholder="ID Pedido (Exacto) o Cliente...">
+                            <button class="btn btn-outline-secondary border-secondary" type="button" id="btn-clear-search" style="border-left: 0;">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="col-md-2 text-end">
                         <button class="btn btn-primary w-100" id="btn-update">

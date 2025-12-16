@@ -9,6 +9,7 @@ from app.db.base import Order, OrderStatusLog, Driver, Store, Customer
 # --- HELPER: BÚSQUEDA GLOBAL ---
 def apply_search(query, search_query: str):
     if search_query:
+        # Busca por ID de Pedido O Nombre del Cliente
         return query.join(Customer, Order.customer_id == Customer.id, isouter=True)\
             .filter(or_(
                 Order.external_id.ilike(f"%{search_query}%"),
@@ -39,7 +40,6 @@ def get_daily_trends(db: Session, start_date: Optional[date] = None, end_date: O
     if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
-    # Aplicar Búsqueda
     query = apply_search(query, search_query)
 
     results = query.group_by('date').order_by('date').all()
@@ -105,28 +105,55 @@ def calculate_bottlenecks(db: Session, store_name: Optional[str] = None, search_
 
 def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
     """
-    Top 20 Clientes Fieles (SOLO VENTAS REALES/ENTREGADAS).
+    Top clientes con CÁLCULO DE RANKING GLOBAL REAL.
     """
+    # 1. Obtenemos TODOS los clientes ordenados por gasto (o pedidos), aplicando solo filtros de fecha/tienda
     query = db.query(
         Customer.name,
         func.count(Order.id).label("total_orders"),
         func.sum(Order.total_amount).label("total_spent")
     ).join(Order, Order.customer_id == Customer.id)\
-     .filter(Order.current_status == 'delivered') # <--- FILTRO CLAVE: Solo lo cobrado
+     .filter(Order.current_status == 'delivered')
 
-    # Filtros
     if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
     if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
-    
-    query = apply_search(query, search_query)
 
-    results = query.group_by(Customer.name).order_by(desc("total_spent")).limit(20).all()
+    # Obtenemos la lista completa ordenada para calcular el ranking real
+    # (Para 2000 clientes esto es rápido en memoria)
+    all_results = query.group_by(Customer.name).order_by(desc("total_spent")).all()
+
+    final_list = []
+    search_lower = search_query.lower() if search_query else None
+
+    # 2. Recorremos asignando el Ranking (1, 2, 3...)
+    for index, row in enumerate(all_results):
+        rank = index + 1
+        name = row.name or "Cliente Desconocido"
+        
+        # 3. Si hay búsqueda, filtramos AQUÍ (después de calcular el rank)
+        if search_lower:
+            # Si el nombre no coincide, lo saltamos
+            if search_lower not in name.lower():
+                continue
+
+        final_list.append({
+            "rank": rank, # <--- Enviamos el Ranking Real
+            "name": name,
+            "count": row.total_orders,
+            "total_amount": float(row.total_spent or 0)
+        })
+
+        # Si hay búsqueda, no necesitamos devolver miles, con los primeros 20 coincidencias basta
+        if search_lower and len(final_list) >= 20: break
     
-    return [{"name": row.name or "Cliente Desconocido", "count": row.total_orders, "total_amount": float(row.total_spent or 0)} for row in results]
+    # Si no hay búsqueda, devolvemos el Top 20 estándar
+    if not search_query:
+        return final_list[:20]
+    
+    return final_list
 
 def get_total_duration_for_order(db: Session, order_id: int):
-    # Esta función es específica por ID interno, no aplica búsqueda global
     logs = db.query(OrderStatusLog).filter(OrderStatusLog.order_id == order_id).order_by(OrderStatusLog.timestamp).all()
     if logs and len(logs) >= 2: return {"total_seconds": (logs[-1].timestamp - logs[0].timestamp).total_seconds(), "source": "live_logs"}
     order = db.query(Order).filter(Order.id == order_id).first()
@@ -136,11 +163,13 @@ def get_total_duration_for_order(db: Session, order_id: int):
     return {"total_seconds": 0, "source": "unknown"}
 
 def get_cancellation_reasons(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
+    # Esta función YA tiene apply_search, por lo que filtra correctamente por usuario/pedido
     query = db.query(Order.cancellation_reason, func.count(Order.id).label('count')).filter(Order.current_status == 'canceled', Order.cancellation_reason != None)
     if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
     if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
+    # Aquí el filtro de búsqueda hace que solo cuente cancelaciones del usuario buscado
     query = apply_search(query, search_query)
 
     results = query.group_by(Order.cancellation_reason).order_by(desc('count')).all()
