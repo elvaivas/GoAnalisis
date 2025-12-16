@@ -27,6 +27,36 @@ def redis_lock(lock_key: str, expire: int):
             redis_client.delete(lock_key)
 
 # --- HELPERS ---
+def normalize_cancellation_reason(text: str) -> str:
+    """Estandariza los motivos de cancelación (V2 Mejorada)."""
+    if not text or text == ".": return "Sin especificar"
+    
+    # 1. Limpieza básica
+    text = text.replace("del pedido :", "").replace("del pedido", "").strip()
+    text_lower = text.lower()
+
+    # 2. Categorización Inteligente
+    
+    # INVENTARIO / PRODUCTO
+    if any(x in text_lower for x in ['disponible', 'existencia', 'vencido', 'dañado', 'no hay', 'no tenemos', 'blister', 'inventario', 'coca cola']):
+        return "Producto No Disponible / Dañado"
+        
+    # PAGO
+    if "payment" in text_lower or "pago" in text_lower:
+        if "agotado" in text_lower: return "Tiempo de Pago Agotado"
+        return "Problemas con el Pago"
+    
+    # ERROR HUMANO / SISTEMA
+    if any(x in text_lower for x in ['equivocado', 'descripcion', 'descripción', 'precio', 'código', 'codigo']):
+        return "Error en Pedido / Descripción"
+        
+    # ADMINISTRATIVO
+    if any(x in text_lower for x in ['nota', 'prueba', 'test', 'orden de', 'admin']):
+        return "Cancelación Administrativa"
+
+    # Si no coincide, devolvemos el texto limpio (Title Case)
+    return text.title()
+
 def parse_spanish_date(date_str: str):
     if not date_str: return datetime.utcnow()
     month_map = {
@@ -184,7 +214,7 @@ def process_drone_data(db, data: dict):
                 distance_km=dist_km,
                 latitude=cust_lat,
                 longitude=cust_lng,
-                cancellation_reason=data.get('cancellation_reason'),
+                cancellation_reason=normalize_cancellation_reason(data.get('cancellation_reason')),
                 delivery_time_minutes=minutes_calc,
                 duration=data.get('duration_text'),
                 store_id=store.id if store else None,
@@ -206,6 +236,8 @@ def process_drone_data(db, data: dict):
             if data.get('service_fee'): order.service_fee = data['service_fee']
             if minutes_calc: order.delivery_time_minutes = minutes_calc
             if data.get('duration_text'): order.duration = data['duration_text']
+            if data.get('cancellation_reason'):
+                 order.cancellation_reason = normalize_cancellation_reason(data.get('cancellation_reason'))
             
             if cust_lat: 
                 order.latitude=cust_lat; order.longitude=cust_lng; order.distance_km=dist_km; order.order_type=order_type
@@ -223,43 +255,51 @@ def process_drone_data(db, data: dict):
 @shared_task(bind=True)
 def backfill_historical_data(self):
     """
-    Backfill V4 (Deep Dive):
-    1. Escanea paginación para obtener IDs y Duraciones.
-    2. Procesa cada uno con el Dron.
+    Backfill V4 (Deep Dive - INFINITO):
+    1. Escanea TODAS las páginas de la lista para obtener IDs.
+    2. Procesa cada ID con el Dron (Finanzas + Mapas + Status).
     """
     key = "celery_lock_backfill_historical_data"
-    with redis_lock(key, 14400) as acquired:
+    # Lock extendido a 12 horas (43200s) para asegurar que termine todo el historial
+    with redis_lock(key, 43200) as acquired:
         if not acquired: return "Task running"
 
-        logger.info("🚀 Iniciando Backfill Histórico V4 (Deep Dive)...")
+        logger.info("🚀 Iniciando Backfill Histórico V4 (Modo Infinito)...")
         
         list_scraper = OrderScraper()
         drone = DroneScraper()
         db = SessionLocal()
         
         try:
-            # 1. Obtener IDs y Duraciones de la lista
+            # 1. Obtener IDs Masivos (Sin límite de páginas)
             if not list_scraper.login(): return
-            # Escanear 20 páginas (aprox 500 pedidos)
-            items = list_scraper.get_historical_ids(max_pages=20) 
+            
+            logger.info("📄 Escaneando la totalidad de páginas disponibles...")
+            # Al no pasar argumentos, usa el while True hasta que se acabe el botón 'Siguiente'
+            items = list_scraper.get_historical_ids() 
+            
             list_scraper.close_driver()
             
-            logger.info(f"📦 Recolectados {len(items)} items. Iniciando Dron...")
+            total_items = len(items)
+            logger.info(f"📦 Recolección completada: {total_items} pedidos encontrados. Iniciando Dron...")
 
             # 2. Procesar detalle con Dron
             if not drone.login(): return
             
             count = 0
-            for item in items:
+            for i, item in enumerate(items):
                 eid = item['id']
                 duration = item['duration']
                 
-                # Opcional: Saltar si ya está completo
+                # Optimización: Si ya tiene datos completos (Mapa + Tiempo numérico), saltar.
+                # Si prefieres re-escanear todo para actualizar finanzas, comenta este bloque if:
                 existing = db.query(Order).filter(Order.external_id == eid).first()
-                if existing and existing.delivery_time_minutes and existing.latitude: 
+                if existing and existing.delivery_time_minutes is not None and existing.latitude is not None: 
                     continue
                 
-                logger.info(f"⏳ ({count+1}/{len(items)}) Detalle #{eid}...")
+                logger.info(f"⏳ ({i+1}/{total_items}) Procesando Detalle #{eid}...")
+                
+                # Inmersión Profunda
                 data = drone.scrape_detail(eid, mode='full')
                 
                 # Inyectar duración de la lista al detalle
@@ -267,8 +307,12 @@ def backfill_historical_data(self):
                 
                 process_drone_data(db, data)
                 count += 1
+                
+                # Reporte de progreso cada 50 pedidos
+                if count % 50 == 0:
+                    logger.info(f"💾 Progreso Backfill: {count} pedidos procesados y guardados.")
 
-            return f"Backfill Finalizado. Procesados: {count}"
+            return f"Backfill Finalizado. Total Procesados: {count}"
 
         except Exception as e:
             logger.error(f"Error fatal backfill: {e}")
@@ -353,15 +397,24 @@ def enrich_missing_data(self):
                     processed += 1
                 db.commit()
 
-            # Prioridad 2: Entregados sin mapa
+            # 2. Prioridad: MAPAS, DINERO Y **CLIENTES FALTANTES**
             if processed < BATCH_SIZE:
-                limit = BATCH_SIZE - processed
-                targets = db.query(Order).filter(Order.current_status == 'delivered', (Order.latitude == None) | (Order.gross_delivery_fee == 0)).limit(limit).all()
-                if targets:
+                limit_coords = BATCH_SIZE - processed
+                
+                # --- CAMBIO AQUÍ: AGREGAMOS (Order.customer_id == None) ---
+                missing_data = db.query(Order).filter(
+                    Order.current_status == 'delivered',
+                    (Order.latitude == None) | 
+                    (Order.gross_delivery_fee == 0) | 
+                    (Order.customer_id == None) # <--- NUEVA CONDICIÓN
+                ).limit(limit_coords).all()
+                
+                if missing_data:
+                    logger.info(f"🚁 Drone: Reparando {len(missing_data)} pedidos incompletos...")
                     if not drone.driver: drone.login()
-                    for order in targets:
-                        # OJO: Aquí el Dron NO tiene acceso a la duración de la lista
-                        # así que solo enriquece finanzas y mapas
+                    
+                    for order in missing_data:
+                        # Escaneo completo (El dron V4.1 ya sabe distinguir cliente de chofer)
                         data = drone.scrape_detail(order.external_id, mode='full')
                         process_drone_data(db, data)
                         processed += 1

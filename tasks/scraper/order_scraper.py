@@ -24,10 +24,11 @@ class OrderScraper:
     def setup_driver(self):
         if self.driver: return
         chrome_options = Options()
-        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--remote-allow-origins=*")
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         service = ChromeService(ChromeDriverManager().install())
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -97,9 +98,10 @@ class OrderScraper:
         
         return orders_found
 
-    def get_historical_ids(self, max_pages: int = 10) -> List[Dict[str, str]]:
+    def get_historical_ids(self, max_pages: int = None) -> List[Dict[str, str]]:
         """
-        Navega paginación extrayendo ID y Duración.
+        Navega por la paginación hasta el final.
+        Si max_pages es None, sigue hasta que no haya botón 'Siguiente'.
         """
         if not self.driver: self.setup_driver(); self.login()
         all_data = []
@@ -109,7 +111,12 @@ class OrderScraper:
             WebDriverWait(self.driver, 15).until(EC.presence_of_element_located((By.ID, "datatable")))
             
             current_page = 1
-            while current_page <= max_pages:
+            while True:
+                # Freno de emergencia opcional (si se pasa un número explícito)
+                if max_pages and current_page > max_pages:
+                    logger.info(f"🛑 Límite de seguridad alcanzado ({max_pages} págs). Deteniendo.")
+                    break
+
                 logger.info(f"📄 Escaneando pág {current_page}...")
                 
                 rows = self.driver.find_elements(By.XPATH, "//table[@id='datatable']/tbody/tr")
@@ -129,18 +136,34 @@ class OrderScraper:
                 
                 all_data.extend(page_data)
                 
-                # Paginación
+                # --- LÓGICA DE PAGINACIÓN INFINITA ---
                 try:
                     next_btn = self.driver.find_element(By.XPATH, "//a[@aria-label='Next »']")
-                    if "disabled" in next_btn.find_element(By.XPATH, "./..").get_attribute("class"): break
+                    
+                    # Verificamos si el botón está deshabilitado (clase 'disabled' en el padre <li>)
+                    parent = next_btn.find_element(By.XPATH, "./..")
+                    if "disabled" in parent.get_attribute("class"):
+                        logger.info("🚫 Fin de la paginación (Botón deshabilitado).")
+                        break
+                    
+                    # Click para avanzar
                     self.driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(3)
+                    
+                    # Esperamos que cargue la siguiente página
+                    # (Pequeña pausa técnica para no saturar y dar tiempo al DOM)
+                    time.sleep(2) 
+                    
                     current_page += 1
-                except: break
+                except NoSuchElementException:
+                    logger.info("🚫 No se encontró botón siguiente. Fin de la lista.")
+                    break
+                except Exception as e:
+                    logger.error(f"⚠️ Error al cambiar de página: {e}")
+                    break
                     
         except Exception as e:
             logger.error(f"Error backfill: {e}")
         
-        # Deduplicar por ID (usando un dict auxiliar)
+        # Deduplicar
         unique = {d['id']: d for d in all_data}
         return list(unique.values())

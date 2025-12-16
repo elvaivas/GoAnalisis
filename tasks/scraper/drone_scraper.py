@@ -24,10 +24,11 @@ class DroneScraper:
     def setup_driver(self):
         if self.driver: return
         chrome_options = Options()
-        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--remote-allow-origins=*")
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         service = ChromeService(ChromeDriverManager().install())
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -53,7 +54,6 @@ class DroneScraper:
             except: pass
             self.driver = None
 
-    # --- EXTRACTORES ---
     def _parse_money(self, text: str) -> float:
         try:
             match = re.search(r"(\d+(?:,\d{3})*(?:\.\d+)?)", text)
@@ -73,8 +73,6 @@ class DroneScraper:
         data['coupon_discount'] = get_val("Descuento del cupón")
         data['tips'] = get_val("Propinas al repartidor")
         data['real_delivery_fee'] = get_val("Tarifa de entrega")
-        
-        # Total Amount (Buscar "Total:" seguido de USD)
         data['total_amount'] = get_val("Total:")
         return data
 
@@ -90,14 +88,21 @@ class DroneScraper:
     def _extract_maps(self) -> Dict[str, float]:
         result = {}
         try:
-            # 1. CLIENTE (Contextual en tarjeta de entrega)
+            # 1. CLIENTE (Contextual)
             try:
+                # Buscamos en tarjeta de entrega
                 client_link = self.driver.find_element(By.CSS_SELECTOR, ".delivery--information-single a[href*='maps.google.com']")
                 c = self._parse_href_coords(client_link.get_attribute("href"))
                 if c: result["customer_lat"], result["customer_lng"] = c
-            except: pass
+            except: 
+                # Fallback: XPath
+                try:
+                    client_link = self.driver.find_element(By.XPATH, "//h5[contains(., 'Información de entrega')]/ancestor::div[contains(@class, 'card-body')]//a[contains(@href, 'maps.google.com')]")
+                    c = self._parse_href_coords(client_link.get_attribute("href"))
+                    if c: result["customer_lat"], result["customer_lng"] = c
+                except: pass
 
-            # 2. TIENDA (Clase específica o posición)
+            # 2. TIENDA
             try:
                 store_link = self.driver.find_element(By.CSS_SELECTOR, "a.__gap-5px[href*='maps.google.com']")
                 c = self._parse_href_coords(store_link.get_attribute("href"))
@@ -109,33 +114,42 @@ class DroneScraper:
     def _extract_basic_info(self) -> Dict[str, str]:
         info = {}
         try:
-            # Estado (Badge derecha)
+            # Estado
             status_el = self.driver.find_element(By.XPATH, "//div[contains(@class, 'order-invoice-right')]//span[contains(@class, 'badge')]")
             info['status_text'] = status_el.text.strip()
         except: info['status_text'] = "pending"
 
-        try: # Cliente
-            el = self.driver.find_element(By.CSS_SELECTOR, ".customer--information-single .media-body span")
-            info['customer_name'] = el.text.strip()
-        except: info['customer_name'] = "Desconocido"
+        # --- CORRECCIÓN DEFINITIVA DE NOMBRES ---
+        
+        # 1. CLIENTE: Buscamos enlace que contenga 'customer/view'
+        try: 
+            # El nombre suele estar en un span o div dentro del enlace del cliente
+            client_el = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/customer/view/'] .media-body")
+            # Limpiamos saltos de linea para obtener solo el nombre
+            raw_text = client_el.text.split('\n')[0]
+            info['customer_name'] = raw_text.strip()
+        except: 
+            info['customer_name'] = "Desconocido"
 
-        try: # Tienda
-            el = self.driver.find_element(By.CSS_SELECTOR, ".resturant--information-single .media-body span")
-            info['store_name'] = el.text.strip()
-        except: info['store_name'] = "Desconocida"
-
-        try: # Repartidor
-            # Buscar card que diga "Repartidor"
-            el = self.driver.find_element(By.XPATH, "//h5[contains(., 'Repartidor')]/ancestor::div[@class='card-body']//span[contains(@class, 'text-body')]")
-            info['driver_name'] = el.text.strip()
+        # 2. REPARTIDOR: Buscamos enlace que contenga 'delivery-man'
+        try: 
+            driver_el = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/delivery-man/'] .media-body span")
+            info['driver_name'] = driver_el.text.strip()
         except: info['driver_name'] = "N/A"
         
-        try: # Teléfono Cliente
+        # 3. TIENDA: Buscamos enlace que contenga 'store/view'
+        try: 
+            store_el = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/store/view/'] .media-body span")
+            info['store_name'] = store_el.text.strip()
+        except: info['store_name'] = "Desconocida"
+
+        # 4. TELEFONO CLIENTE
+        try: 
             el = self.driver.find_element(By.CSS_SELECTOR, ".delivery--information-single a[href^='tel:']")
             info['customer_phone'] = el.text.strip()
         except: pass
 
-        # Fecha creación (Texto del header)
+        # Fecha
         try:
             header_text = self.driver.find_element(By.CLASS_NAME, "order-invoice-left").text
             date_match = re.search(r'(\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\s+\d{2}:\d{2})', header_text)
@@ -145,34 +159,17 @@ class DroneScraper:
         return info
 
     def _extract_reason_smart(self) -> Optional[str]:
-        """Extrae el motivo limpiando prefijos basura con Regex."""
         try:
-            # 1. Buscar en etiquetas específicas
-            labels = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Motivo') or contains(text(), 'Razón') or contains(text(), 'del pedido')]")
-            
+            labels = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Motivo de cancelación') or contains(text(), 'Razón')]")
             for label in labels:
                 try:
                     parent = label.find_element(By.XPATH, "./..")
-                    raw_text = parent.text.strip()
-                    
-                    # Regex: Busca "Motivo" o "del pedido", seguido opcionalmente de ":" o espacios
-                    # y captura todo lo que sigue.
-                    # Ej: "del pedido : Cliente no está" -> Captura "Cliente no está"
-                    clean_match = re.search(r"(?:Motivo|Razón|del pedido)[\s:\-]*(.*)", raw_text, re.IGNORECASE | re.DOTALL)
-                    
-                    if clean_match:
-                        cleaned = clean_match.group(1).strip()
-                        if len(cleaned) > 2: return cleaned
-                        
+                    raw_text = parent.text
+                    garbage = [label.text, "Motivo de cancelación", "del pedido", ":", "-"]
+                    for g in garbage: raw_text = raw_text.replace(g, "")
+                    clean = raw_text.strip()
+                    if len(clean) > 2: return clean
                 except: continue
-            
-            # 2. Fallback: Buscar en todo el cuerpo
-            body_text = self.driver.find_element(By.TAG_NAME, "body").text
-            # Busca patrones comunes de Gopharma
-            match = re.search(r"(?:Motivo|del pedido)[\s:\-]*(.*)", body_text, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-                
         except: pass
         return None
 
@@ -186,20 +183,13 @@ class DroneScraper:
             WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
             body_text = self.driver.find_element(By.TAG_NAME, "body").text
             
-            # 1. Información Básica
             result.update(self._extract_basic_info())
-            
-            # 2. Finanzas
             result.update(self._extract_financials(body_text))
-            
-            # 3. Mapas
             result.update(self._extract_maps())
 
-            # 4. Motivos (si aplica)
             if "cancelado" in result.get('status_text', '').lower():
-                # Lógica simplificada de búsqueda en texto
-                match = re.search(r"(?:Motivo|Razón)(?:\s+de\s+cancelación)?\s*:?\s*(.*)", body_text, re.IGNORECASE)
-                if match: result['cancellation_reason'] = match.group(1).split('\n')[0].strip()
+                reason = self._extract_reason_smart()
+                if reason: result['cancellation_reason'] = reason
 
         except Exception as e:
             logger.error(f"❌ Error scraping {external_id}: {e}")
