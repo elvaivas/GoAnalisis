@@ -547,6 +547,19 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    // --- BOTÓN "TODO EL HISTORIAL" ---
+    document.getElementById('btn-all-history')?.addEventListener('click', function() {
+        const today = new Date();
+        const startOfTime = "2024-04-25"; // Fecha arbitraria antigua para cubrir todo
+        
+        // Forzamos al calendario a seleccionar todo el rango
+        // Esto disparará el evento 'onClose' automáticamente, que llama a fetchAllData
+        datePicker.setDate([startOfTime, today]);
+        
+        // Feedback visual en consola
+        console.log("♾️ Cargando historial completo...");
+    });
+
     // Eventos Colapso
     document.getElementById('collapseMap')?.addEventListener('shown.bs.collapse', function () {
         if (mapInstance) setTimeout(() => { mapInstance.invalidateSize(); updateHeatmap(); }, 100);
