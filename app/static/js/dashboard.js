@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', function () {
     // --- TRADUCCIONES Y ORDEN ---
     const statusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
     
+    const today = new Date();
+    
     const statusTranslations = {
         'pending': 'Pendiente',
         'processing': 'Facturando',
@@ -520,7 +522,14 @@ document.addEventListener('DOMContentLoaded', function () {
         updateHeatmap();
     }
 
-    datePicker = flatpickr("#date-range-picker", { mode: "range", dateFormat: "Y-m-d", theme: "dark", onClose: fetchAllData });
+    datePicker = flatpickr("#date-range-picker", { 
+        mode: "range", 
+        dateFormat: "Y-m-d", 
+        theme: "dark", 
+        defaultDate: [today, today], // <--- ESTA ES LA CLAVE
+        onClose: fetchAllData 
+    });
+
     loadStoreFilterOptions();
 
     // Eventos Buscador

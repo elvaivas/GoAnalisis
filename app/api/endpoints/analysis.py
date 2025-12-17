@@ -1,26 +1,24 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import date
+from datetime import date # <--- Importante para date.today()
 
 # Importamos deps y nuestros servicios
 from app.api import deps
 from app.services import analysis_service, task_service
 
-# --- ¡ESTA LÍNEA ES LA QUE FALTABA O SE BORRÓ! ---
 router = APIRouter()
-# -------------------------------------------------
 
 @router.get("/bottlenecks", summary="Calcular Tiempos Promedio por Estado")
 def get_bottleneck_analysis(
     db: Session = Depends(deps.get_db),
     store_name: Optional[str] = Query(None, description="Filtrar por nombre de tienda"),
-    search: Optional[str] = Query(None, description="Buscar por ID o Cliente") # <--- NUEVO
+    search: Optional[str] = Query(None, description="Buscar por ID o Cliente")
 ):
     bottlenecks = analysis_service.calculate_bottlenecks(
         db=db, 
         store_name=store_name,
-        search_query=search # <--- Pasamos el filtro
+        search_query=search
     )
     return bottlenecks
 
@@ -39,20 +37,27 @@ def get_cancellation_analysis(
     db: Session = Depends(deps.get_db),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
-    store_name: Optional[str] = Query(None, description="Filtrar por nombre de tienda")
+    store_name: Optional[str] = Query(None, description="Filtrar por nombre de tienda"),
+    search: Optional[str] = Query(None, description="Buscar por ID o Cliente")
 ):
+    # --- LÓGICA: SI NO HAY FILTROS, MOSTRAR SOLO HOY ---
+    if not start_date and not end_date and not store_name and not search:
+        start_date = date.today()
+        end_date = date.today()
+    # ---------------------------------------------------
+
     return analysis_service.get_cancellation_reasons(
         db=db, 
         start_date=start_date, 
         end_date=end_date,
-        store_name=store_name
+        store_name=store_name,
+        search_query=search
     )
 
 @router.post("/trigger-drone", status_code=202, summary="Activar Drone de Enriquecimiento")
 def trigger_drone_task(
     force: bool = Query(False, description="Set a True para borrar candados zombies.")
 ):
-    # Pasamos el parámetro force al servicio
     task_id = task_service.trigger_drone(force=force)
     
     msg = "Drone desplegado."

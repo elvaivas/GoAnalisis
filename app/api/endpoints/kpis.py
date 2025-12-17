@@ -8,22 +8,21 @@ from app.services import kpi_service
 
 router = APIRouter()
 
-@router.get("/main", summary="Obtener KPIs Principales con Filtros")
+@router.get("/main", summary="Obtener KPIs Principales")
 def get_main_kpis(
     db: Session = Depends(deps.get_db),
-    start_date: Optional[date] = Query(None, description="Fecha de inicio (YYYY-MM-DD)"),
-    end_date: Optional[date] = Query(None, description="Fecha de fin (YYYY-MM-DD)"),
-    store_name: Optional[str] = Query(None, description="Filtrar por nombre de tienda"),
-    search: Optional[str] = Query(None, description="Buscar por ID de Pedido o Nombre de Cliente") # <--- NUEVO
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    store_name: Optional[str] = Query(None),
+    search: Optional[str] = Query(None)
 ):
-    """
-    Devuelve KPIs principales filtrados por fecha, tienda y búsqueda global.
-    """
-    kpis = kpi_service.get_main_kpis(
-        db=db, 
-        start_date=start_date, 
-        end_date=end_date,
-        store_name=store_name,
-        search_query=search # <--- Pasamos el parámetro de búsqueda al servicio
+    # Si no hay ningún filtro, forzamos HOY
+    if not start_date and not end_date and not store_name and not search:
+        start_date = date.today()
+        end_date = date.today()
+
+    return kpi_service.get_main_kpis(
+        db=db, start_date=start_date, end_date=end_date, 
+        store_name=store_name, search_query=search
     )
     return kpis

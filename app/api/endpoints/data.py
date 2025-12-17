@@ -13,31 +13,37 @@ router = APIRouter()
 
 # --- HELPER INTERNO PARA REUTILIZAR FILTROS ---
 def apply_filters(query, start_date, end_date, store_name, search):
+    has_filters = False
+
     # 1. Filtro Fecha
     if start_date:
         query = query.filter(cast(Order.created_at, Date) >= start_date)
+        has_filters = True
     if end_date:
         query = query.filter(cast(Order.created_at, Date) <= end_date)
+        has_filters = True
     
     # 2. Filtro Tienda
     if store_name:
         query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+        has_filters = True
     
-    # 3. FILTRO BÚSQUEDA (EL CEREBRO NUEVO)
+    # 3. Filtro Búsqueda (Search)
     if search:
-        # Limpiamos espacios
         term = search.strip()
-        
-        # Si es un número puro, asumimos búsqueda de ID de Pedido (Prioridad Exacta o Inicio)
-        # Esto cumple tu requerimiento de "ID Exacto" o aproximado numérico
         if term.isdigit():
              query = query.filter(Order.external_id.like(f"{term}%"))
         else:
-             # Si es texto, buscamos en Nombre Cliente (Partial Match)
-             # Necesitamos unir con Customer si no se ha hecho
              query = query.join(Customer, Order.customer_id == Customer.id, isouter=True)\
                           .filter(Customer.name.ilike(f"%{term}%"))
+        has_filters = True
     
+    # --- REGLA DE ORO: SI NO HAY FILTROS, SOLO HOY ---
+    if not has_filters:
+        today = date.today()
+        query = query.filter(cast(Order.created_at, Date) == today)
+    # -------------------------------------------------
+
     return query
 
 # ---------------------------------------------------------
@@ -143,3 +149,10 @@ def get_top_customers_data(
     search: Optional[str] = Query(None)
 ):
     return analysis_service.get_top_customers(db, start_date, end_date, store_name, search)
+
+# --- ESTE ES EL QUE FALTABA PARA EL FILTRO ---
+@router.get("/all-stores-names", summary="Lista completa de tiendas para filtros")
+def get_all_stores_names(db: Session = Depends(deps.get_db)):
+    """Retorna TODAS las tiendas para el dropdown."""
+    stores = db.query(Store.name).order_by(Store.name.asc()).all()
+    return [s.name for s in stores if s.name]
