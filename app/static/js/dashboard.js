@@ -550,7 +550,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // --- BOTÓN "TODO EL HISTORIAL" ---
     document.getElementById('btn-all-history')?.addEventListener('click', function() {
         const today = new Date();
-        const startOfTime = "2024-04-25"; // Fecha arbitraria antigua para cubrir todo
+        const startOfTime = "2025-04-25"; // Fecha arbitraria antigua para cubrir todo
         
         // Forzamos al calendario a seleccionar todo el rango
         // Esto disparará el evento 'onClose' automáticamente, que llama a fetchAllData
