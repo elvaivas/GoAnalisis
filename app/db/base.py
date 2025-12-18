@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Enum, Boolean
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
 import enum
@@ -93,3 +93,11 @@ class Driver(Base):
     external_id = Column(String, unique=True, index=True)
     name = Column(String, nullable=True)
     orders = relationship("Order", back_populates="driver")
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    role = Column(String, default="viewer") # 'admin' o 'viewer'
+    is_active = Column(Boolean, default=True)
