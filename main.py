@@ -48,6 +48,10 @@ async def login_page(request: Request):
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+@app.get("/report", response_class=HTMLResponse)
+async def report_page(request: Request):
+    return templates.TemplateResponse("report.html", {"request": request})
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}

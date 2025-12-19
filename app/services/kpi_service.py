@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, cast, Date, or_ # <--- Agregamos or_
+from sqlalchemy import func, cast, Date, or_
 from typing import Dict, Any, Optional
-from datetime import date
-from app.db.base import Order, Store, Customer # <--- Agregamos Customer
+from datetime import date, datetime
+from app.db.base import Order, Store, Customer
 
 def get_main_kpis(
     db: Session, 
@@ -12,71 +12,125 @@ def get_main_kpis(
     search_query: Optional[str] = None
 ) -> Dict[str, Any]:
     
+    # --- 1. CONSTRUCCIÓN DE LA CONSULTA ---
     base_query = db.query(Order)
 
-    # --- FILTROS ---
-    if start_date:
-        base_query = base_query.filter(cast(Order.created_at, Date) >= start_date)
-    if end_date:
-        base_query = base_query.filter(cast(Order.created_at, Date) <= end_date)
-    if store_name:
-        base_query = base_query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+    if start_date: base_query = base_query.filter(cast(Order.created_at, Date) >= start_date)
+    if end_date: base_query = base_query.filter(cast(Order.created_at, Date) <= end_date)
+    if store_name: base_query = base_query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
     if search_query:
         base_query = base_query.join(Customer, Order.customer_id == Customer.id, isouter=True)\
             .filter(or_(Order.external_id.ilike(f"%{search_query}%"), Customer.name.ilike(f"%{search_query}%")))
 
-    # --- CONTADORES ---
-    total_orders = base_query.count()
-    total_deliveries = base_query.filter(Order.order_type == 'Delivery').count()
-    total_pickups = base_query.filter(Order.order_type == 'Pickup').count()
-    total_canceled = base_query.filter(Order.current_status == 'canceled').count()
-
-    # --- FINANZAS (CÁLCULO REAL) ---
+    # --- 2. CÁLCULO FINANCIERO DETALLADO (Iterando) ---
+    # Traemos los objetos para aplicar las fórmulas complejas
+    orders = base_query.all()
     
-    # 1. Movimiento Total (GMV)
-    total_revenue = base_query.filter(Order.current_status == 'delivered')\
-        .with_entities(func.sum(Order.total_amount)).scalar() or 0.0
-
-    # 2. DINERO PERDIDO (NUEVO KPI)
-    # Suma de montos de pedidos cancelados
-    lost_revenue = base_query.filter(Order.current_status == 'canceled')\
-        .with_entities(func.sum(Order.total_amount)).scalar() or 0.0
+    total_revenue = 0.0
+    total_fees_gross = 0.0
+    total_coupons = 0.0
     
-    # 3. Base Delivery (Precio real del viaje, pagado o no)
-    total_gross_delivery = base_query.with_entities(func.sum(func.coalesce(Order.gross_delivery_fee, Order.delivery_fee))).scalar() or 0.0
+    driver_payout = 0.0
     
-    # 4. Costo Cupones (Inversión de la empresa)
-    total_coupons = base_query.with_entities(func.sum(Order.coupon_discount)).scalar() or 0.0
+    # Los 3 pilares de la ganancia
+    profit_delivery = 0.0
+    profit_service = 0.0
+    profit_commission = 0.0
 
-    # 5. Service Fee (Ingreso administrativo)
-    total_service_fee = base_query.with_entities(func.sum(Order.service_fee)).scalar() or 0.0
+    count_deliveries = 0
+    count_pickups = 0
+    count_canceled = 0
+    lost_revenue = 0.0
+    
+    durations_minutes = []
 
-    # 6. REPARTICIÓN
-    driver_payout = total_gross_delivery * 0.80  # El motorizado siempre cobra su 80% del valor real
-    company_share_delivery = total_gross_delivery * 0.20 # El 20% teórico de la empresa
+    for o in orders:
+        # Contadores básicos
+        if o.current_status == 'canceled': 
+            count_canceled += 1
+            lost_revenue += (o.total_amount or 0.0)
+            # Los cancelados NO suman a la ganancia
+            continue 
+        elif o.order_type == 'Delivery': count_deliveries += 1
+        elif o.order_type == 'Pickup': count_pickups += 1
 
-    # 7. GANANCIA NETA REAL (REAL PROFIT)
-    # (Lo que le toca a la empresa + Service Fee) - (Lo que la empresa pagó en cupones)
-    real_net_profit = (company_share_delivery + total_service_fee) - total_coupons
+        if o.current_status == 'delivered' and o.order_type == 'Delivery' and o.delivery_time_minutes:
+            durations_minutes.append(o.delivery_time_minutes)
 
-    # --- TIEMPOS ---
-    avg_delivery_minutes = base_query.filter(
-        Order.current_status == 'delivered',
-        Order.order_type == 'Delivery',
-        Order.delivery_time_minutes != None
-    ).with_entities(func.avg(Order.delivery_time_minutes)).scalar() or 0.0
+        # --- EXTRACCIÓN DE VALORES ---
+        total_amt = o.total_amount or 0.0
+        # Delivery Bruto (Lo que vale el viaje, no lo que pagó el cliente)
+        delivery_real = o.gross_delivery_fee if o.gross_delivery_fee > 0 else (o.delivery_fee or 0.0)
+        coupon = o.coupon_discount or 0.0
+        prod_price = o.product_price or 0.0
+        svc_fee = o.service_fee or 0.0 # Tarifa de servicio base (ej: 0.375)
+
+        # Acumuladores Globales
+        total_revenue += total_amt
+        total_fees_gross += delivery_real
+        total_coupons += coupon
+
+        # --- FÓRMULAS DE GANANCIA (SEGÚN TUS INSTRUCCIONES) ---
+
+        # 1. GANANCIA DELIVERY (20% del valor del delivery, entre 1.16)
+        # El 80% va al motorizado
+        driver_payout += (delivery_real * 0.80)
+        profit_delivery += (delivery_real * 0.20) / 1.16
+
+        # 2. GANANCIA SERVICIO (5% del Total Bruto, entre 1.16)
+        # Fórmula: (Producto + IVA(16%) + Delivery + ServiceFeeBase) * 5% / 1.16
+        # IVA del producto
+        iva_prod = prod_price * 0.16
+        # Base imponible total
+        base_calc = prod_price + iva_prod + delivery_real + svc_fee
+        
+        profit_service += (base_calc * 0.05) / 1.16
+
+        # 3. GANANCIA COMISIÓN ALIADO (Producto * %)
+        # Obtenemos % de la tienda (o 0 si no se ha scrapeado)
+        rate = o.store.commission_rate if o.store and o.store.commission_rate else 0.0
+        profit_commission += prod_price * (rate / 100.0)
+
+    # --- RESULTADOS FINALES ---
+    
+    # Ganancia Neta = Suma de Ganancias - Inversión en Cupones
+    company_net_profit = (profit_delivery + profit_service + profit_commission) - total_coupons
+
+    # Promedios
+    avg_ticket = (total_revenue / len(orders)) if orders else 0.0
+    avg_time = sum(durations_minutes) / len(durations_minutes) if durations_minutes else 0.0
+
+    # Usuarios
+    total_users_historic = db.query(Customer).count()
+    
+    # Nuevos usuarios en el periodo (usando joined_at)
+    new_users_q = db.query(Customer)
+    if start_date: new_users_q = new_users_q.filter(cast(Customer.joined_at, Date) >= start_date)
+    if end_date: new_users_q = new_users_q.filter(cast(Customer.joined_at, Date) <= end_date)
+    new_users_count = new_users_q.count()
+    
+    # Usuarios Activos (Únicos que compraron)
+    active_users = len(set(o.customer_id for o in orders if o.customer_id))
 
     return {
-        "total_orders": total_orders,
-        "total_revenue": float(total_revenue),
-        "lost_revenue": float(lost_revenue),
-        "total_fees": float(total_gross_delivery), # Mostramos el valor bruto del delivery generado
-        "total_coupons": float(total_coupons),
-        "driver_payout": float(driver_payout),
-        "company_profit": float(real_net_profit), # Puede ser negativo
-        "total_deliveries": total_deliveries,
-        "total_pickups": total_pickups,
-        "total_canceled": total_canceled,
-        "avg_delivery_minutes": round(float(avg_delivery_minutes), 1)
+        "total_orders": len(orders),
+        "total_revenue": round(total_revenue, 2),
+        "total_fees": round(total_fees_gross, 2),
+        "total_coupons": round(total_coupons, 2),
+        
+        "driver_payout": round(driver_payout, 2),
+        "company_profit": round(company_net_profit, 2),
+        
+        "total_deliveries": count_deliveries,
+        "total_pickups": count_pickups,
+        "total_canceled": count_canceled,
+        "lost_revenue": round(lost_revenue, 2),
+        
+        "avg_delivery_minutes": round(avg_time, 1),
+        "avg_ticket": round(avg_ticket, 2),
+        
+        "total_users_historic": total_users_historic,
+        "active_users_period": active_users,
+        "new_users_registered": new_users_count
     }

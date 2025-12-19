@@ -64,16 +64,25 @@ class DroneScraper:
         data = {}
         def get_val(keyword):
             try:
-                pattern = re.escape(keyword) + r".*?USD\s*([\d\.]+)"
+                # Busca: Keyword ... USD 123.45
+                pattern = re.escape(keyword) + r".*?USD\s*([\d\.,]+)"
                 match = re.search(pattern, body_text, re.IGNORECASE | re.DOTALL)
-                return float(match.group(1)) if match else 0.0
-            except: return 0.0
+                if match:
+                    # Limpiar comas (1,200.00 -> 1200.00)
+                    return float(match.group(1).replace(',', ''))
+            except: pass
+            return 0.0
+        
+        # --- NUEVO: PRECIO PRODUCTO ---
+        data['product_price'] = get_val("Precio de productos")
+        # ------------------------------
         
         data['service_fee'] = get_val("Tarifa de servicio")
         data['coupon_discount'] = get_val("Descuento del cupón")
         data['tips'] = get_val("Propinas al repartidor")
         data['real_delivery_fee'] = get_val("Tarifa de entrega")
         data['total_amount'] = get_val("Total:")
+        
         return data
 
     def _parse_href_coords(self, href: str) -> Optional[Tuple[float, float]]:
@@ -139,8 +148,15 @@ class DroneScraper:
         
         # 3. TIENDA: Buscamos enlace que contenga 'store/view'
         try: 
-            store_el = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/store/view/'] .media-body span")
-            info['store_name'] = store_el.text.strip()
+            store_link = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/store/view/']")
+            info['store_name'] = store_link.find_element(By.CSS_SELECTOR, ".media-body span").text.strip()
+            
+            # NUEVO: Extraer ID real (ej: /store/view/20 -> 20)
+            href = store_link.get_attribute("href")
+            match = re.search(r"/store/view/(\d+)", href)
+            if match:
+                info['store_real_id'] = match.group(1)
+                
         except: info['store_name'] = "Desconocida"
 
         # 4. TELEFONO CLIENTE

@@ -46,3 +46,9 @@ def trigger_drone(force: bool = False):
     
     logger.info(f"🚁 Drone lanzado (Force={force}). ID: {task.id}")
     return task.id
+
+def trigger_customer_sync():
+    broker_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+    simple_app = Celery("sender", broker=broker_url)
+    simple_app.send_task("tasks.celery_tasks.sync_customer_database")
+    return "Sync Started"

@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', function () {
-    console.log("🚀 Dashboard V5.0 (Seguro) Cargado");
+    console.log("🚀 Dashboard V5.1 (Seguro & Estable) Cargado");
 
     // --- 1. SEGURIDAD: VERIFICACIÓN DE ACCESO ---
     const token = localStorage.getItem('token');
@@ -8,25 +8,20 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!token) {
         console.warn("⛔ No hay token. Redirigiendo al login...");
         window.location.href = '/login';
-        return; // Detener ejecución
+        return; 
     }
 
     // --- 2. GESTIÓN DE ROLES (ATC vs ADMIN) ---
-    // Si el rol no es admin, ocultamos elementos sensibles visualmente
-    // (El backend también debe proteger los datos)
     if (role !== 'admin') {
         document.body.classList.add('role-viewer');
         console.log("🔒 Modo Visualizador (Datos financieros ocultos)");
         
-        // CSS inyectado para ocultar elementos financieros a viewers
         const style = document.createElement('style');
         style.innerHTML = `
-            .role-viewer .card-header.text-success, 
-            .role-viewer .text-success.fw-bold,
-            .role-viewer #kpi-total-revenue,
-            .role-viewer #kpi-total-fees,
-            .role-viewer #kpi-company-profit,
-            .role-viewer #trendsChart { display: none !important; }
+            #kpi-total-revenue, #kpi-total-fees, #kpi-total-coupons, 
+            #kpi-driver-payout, #kpi-company-profit, #trendsChart
+            { display: none !important; }
+            .col-money { visibility: hidden; } 
         `;
         document.head.appendChild(style);
     }
@@ -38,14 +33,28 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // --- CONFIGURACIÓN GLOBAL ---
-    Chart.defaults.color = '#94a3b8'; 
-    Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.05)'; 
+    Chart.defaults.color = '#4b5563'; 
+    Chart.defaults.borderColor = '#f3f4f6'; 
+    Chart.defaults.font.family = "'Segoe UI', sans-serif";
 
     let datePicker, driverLeaderboardChart, bottleneckChart, orderTypeChart, trendsChart, cancellationChartInstance;
     let mapInstance, heatLayer, ordersInterval;
 
+    // --- ¡AQUÍ ESTABAN LOS FALTANTES! ---
+    const statusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
+    
+    const statusTranslations = {
+        'pending': 'Pendiente',
+        'processing': 'Facturando/Prep.',
+        'confirmed': 'Solicitando Motorizado',
+        'driver_assigned': 'Motorizado Asignado',
+        'on_the_way': 'En Camino',
+        'delivered': 'Entregado',
+        'canceled': 'Cancelado'
+    };
+    // -------------------------------------
+
     // --- HELPER: PETICIÓN SEGURA (AUTH FETCH) ---
-    // Reemplaza al fetch normal. Inyecta el token automáticamente.
     async function authFetch(url) {
         try {
             const response = await fetch(url, {
@@ -109,13 +118,14 @@ document.addEventListener('DOMContentLoaded', function () {
         setVal('kpi-total-orders', data.total_orders);
         setVal('kpi-deliveries', data.total_deliveries);
         setVal('kpi-pickups', data.total_pickups);
-        
-        // Cancelados con HTML
+        setVal('kpi-new-users', data.new_users_registered ?? 0);
+
+        // Cancelados
         const cancelEl = document.getElementById('kpi-canceled');
         if (cancelEl) {
             const count = data.total_canceled ?? 0;
             const lost = (data.lost_revenue || 0).toFixed(2);
-            cancelEl.innerHTML = `${count} <span style="font-size: 0.6em; opacity: 0.8;">(-$${lost})</span>`;
+            cancelEl.innerHTML = `${count} <span class="text-danger opacity-75 small" style="font-size: 0.7em;">(-$${lost})</span>`;
         }
         
         setVal('kpi-avg-time', `${data.avg_delivery_minutes || 0} min`);
@@ -152,29 +162,40 @@ document.addEventListener('DOMContentLoaded', function () {
             else if (order.current_status === 'processing') badgeClass = 'bg-warning text-dark';
             else if (order.current_status === 'confirmed') badgeClass = 'bg-info bg-opacity-50 text-dark';
 
+            // AQUÍ SE USAN LAS VARIABLES QUE FALTABAN
             const statusEs = statusTranslations[order.current_status] || order.current_status;
             
-            // Cliente + WhatsApp
-            let clientHtml = `<span class="fw-bold text-white d-block" style="font-size: 0.9rem;">${order.customer_name || 'Unknown'}</span>`;
+            let clientHtml = `<span class="fw-bold text-dark d-block" style="font-size: 0.9rem;">${order.customer_name || 'Desconocido'}</span>`;
             if (order.customer_phone) {
                 const rawPhone = order.customer_phone.replace(/\D/g, '');
                 clientHtml += `<a href="https://wa.me/${rawPhone}" target="_blank" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp me-1"></i>${order.customer_phone}</a>`;
             }
 
-            // Distancia
             let distHtml = '<span class="text-muted small">--</span>';
-            if (order.distance_km && order.distance_km > 0) distHtml = `<span class="badge bg-dark border border-secondary text-info">${order.distance_km.toFixed(1)} km</span>`;
+            if (order.distance_km && order.distance_km > 0) distHtml = `<span class="badge bg-light text-dark border">${order.distance_km.toFixed(1)} km</span>`;
 
             let timeHtml = '';
             if (order.current_status === 'delivered') {
-                timeHtml = `<div class="d-flex flex-column align-items-end"><span class="fw-bold text-white fs-6">${cleanDurationText(order.duration_text)}</span><small class="text-success" style="font-size:0.7rem;">COMPLETADO</small></div>`;
+                timeHtml = `<div class="d-flex flex-column align-items-end"><span class="fw-bold text-dark fs-6">${cleanDurationText(order.duration_text)}</span><small class="text-success" style="font-size:0.7rem;">COMPLETADO</small></div>`;
             } else if (order.current_status === 'canceled') {
-                timeHtml = `<span class="badge bg-danger bg-opacity-25 text-danger border border-danger">CANCELADO</span>`;
+                timeHtml = `<span class="badge bg-danger bg-opacity-10 text-danger border border-danger">CANCELADO</span>`;
             } else {
-                timeHtml = `<div class="d-flex flex-column align-items-end live-timer-container" data-created="${order.created_at}" data-state-start="${order.state_start_at}"><span class="fw-bold text-white fs-5 timer-total" style="font-family: monospace;">--:--</span><small class="text-white-50" style="font-size: 0.75rem;">En estado: <span class="timer-state fw-semibold text-info">--:--</span></small></div>`;
+                timeHtml = `<div class="d-flex flex-column align-items-end live-timer-container" data-created="${order.created_at}" data-state-start="${order.state_start_at}"><span class="fw-bold text-dark fs-5 timer-total" style="font-family: monospace;">--:--</span><small class="text-muted" style="font-size: 0.75rem;">En estado: <span class="timer-state fw-semibold text-info">--:--</span></small></div>`;
             }
 
-            html += `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);"><td class="ps-4"><span class="fw-bold text-white">#${order.external_id}</span></td><td>${clientHtml}</td><td><span class="badge ${badgeClass}">${statusEs.toUpperCase()}</span></td><td>${distHtml}</td><td class="text-white fw-bold">$${(order.total_amount||0).toFixed(2)}</td><td class="text-success fw-bold">$${(order.delivery_fee||0).toFixed(2)}</td><td class="text-end pe-4">${timeHtml}</td></tr>`;
+            const feeToShow = order.gross_delivery_fee > 0 ? order.gross_delivery_fee : order.delivery_fee;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f3f4f6;">
+                    <td class="ps-4"><span class="fw-bold text-dark">#${order.external_id}</span></td>
+                    <td>${clientHtml}</td>
+                    <td><span class="badge ${badgeClass}">${statusEs.toUpperCase()}</span></td>
+                    <td>${distHtml}</td>
+                    <td class="text-dark fw-bold">$${(order.total_amount||0).toFixed(2)}</td>
+                    <td class="text-primary fw-bold">$${(feeToShow||0).toFixed(2)}</td>
+                    <td class="text-end pe-4">${timeHtml}</td>
+                </tr>
+            `;
         });
         tableBody.innerHTML = html;
         startLiveTimers();
@@ -198,7 +219,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 let createdStr = el.dataset.created;
                 let stateStr = el.dataset.stateStart;
                 if (!stateStr.endsWith('Z')) stateStr += 'Z';
-                
+
                 const totalSeconds = Math.floor((now - new Date(createdStr)) / 1000);
                 const stateSeconds = Math.floor((now - new Date(stateStr)) / 1000);
                 
@@ -207,7 +228,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 
                 if(totalEl) totalEl.textContent = formatTime(totalSeconds);
                 if(stateEl) stateEl.textContent = formatTime(stateSeconds);
-                
                 if (totalSeconds > 2700 && totalEl) totalEl.classList.add('text-danger');
             });
         }, 1000);
@@ -225,8 +245,10 @@ document.addEventListener('DOMContentLoaded', function () {
     async function updateHeatmap() {
         initMap();
         if(!mapInstance) return;
+        
         const container = mapInstance.getContainer();
-        if (container.clientHeight === 0) return;
+        if (container.clientHeight === 0 || container.clientWidth === 0) return;
+
         mapInstance.invalidateSize();
 
         const res = await authFetch(buildUrl('/api/data/heatmap'));
@@ -241,7 +263,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (bounds.length > 0) mapInstance.fitBounds(bounds);
             } catch(e) {}
         }
-        
+
         const resStores = await authFetch('/api/data/stores-locations');
         if(resStores) {
             const stores = await resStores.json();
@@ -251,18 +273,26 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // --- GRÁFICOS VARIOS (Usando authFetch) ---
+    // --- GRÁFICOS VARIOS ---
     async function updateBottleneckChart() {
         const res = await authFetch(buildUrl('/api/analysis/bottlenecks'));
         if (!res) return;
         const data = await res.json();
         
-        const filtered = data.filter(d => d.avg_duration_seconds > 0).sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
+        // AQUÍ SE USA statusOrder (DEFINIDO ARRIBA)
+        const filtered = data.filter(d => d.avg_duration_seconds > 0)
+                             .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
+
         const ctx = document.getElementById('bottleneckChart')?.getContext('2d');
         if(!ctx) return;
         if (bottleneckChart) bottleneckChart.destroy();
         bottleneckChart = new Chart(ctx, {
-            type: 'bar', data: { labels: filtered.map(d => statusTranslations[d.status] || d.status.toUpperCase()), datasets: [{ label: 'Min', data: filtered.map(d => (d.avg_duration_seconds/60).toFixed(1)), backgroundColor: '#f59e0b' }] },
+            type: 'bar', 
+            data: { 
+                // AQUÍ SE USA statusTranslations (DEFINIDO ARRIBA)
+                labels: filtered.map(d => statusTranslations[d.status] || d.status.toUpperCase()), 
+                datasets: [{ label: 'Min', data: filtered.map(d => (d.avg_duration_seconds/60).toFixed(1)), backgroundColor: '#f59e0b' }] 
+            },
             options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } } }
         });
     }
@@ -273,7 +303,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (orderTypeChart) orderTypeChart.destroy();
         orderTypeChart = new Chart(ctx, {
             type: 'doughnut', data: { labels: ['Delivery', 'Retiro'], datasets: [{ data: [d, p], backgroundColor: ['#3b82f6', '#f59e0b'], borderWidth: 0 }] },
-            options: { cutout: '70%', maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#f8fafc' } } } }
+            options: { cutout: '70%', maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#374151' } } } }
         });
     }
 
@@ -287,10 +317,11 @@ document.addEventListener('DOMContentLoaded', function () {
         let labels = [], values = [];
         if (data && data.length > 0) { labels = data.map(d => d.reason || 'Sin motivo'); values = data.map(d => d.count); } 
         else { labels = ['Sin datos']; values = [0]; }
+        
         if (cancellationChartInstance) cancellationChartInstance.destroy();
         cancellationChartInstance = new Chart(ctx, {
-            type: 'pie', data: { labels: labels, datasets: [{ data: values, backgroundColor: ['#ef4444', '#f97316', '#84cc16', '#3b82f6', '#8b5cf6', '#6366f1'], borderWidth: 0 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#f8fafc', boxWidth: 10 } } } }
+            type: 'pie', data: { labels: labels, datasets: [{ data: values, backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#3b82f6', '#6366f1'], borderWidth: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#374151', boxWidth: 10 } } } }
         });
     }
 
@@ -303,7 +334,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (trendsChart) trendsChart.destroy();
         trendsChart = new Chart(ctx, {
             type: 'line', data: { labels: data.labels, datasets: [{ label: 'Ingresos', data: data.revenue, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', yAxisID: 'y', fill: true }, { label: 'Pedidos', data: data.orders, backgroundColor: 'rgba(59, 130, 246, 0.5)', borderColor: '#3b82f6', borderWidth: 1, type: 'bar', yAxisID: 'y1', order: 2 }, { label: 'Tiempo (min)', data: data.avg_times, borderColor: '#ef4444', backgroundColor: 'transparent', yAxisID: 'y1', borderDash: [5,5], type: 'line', order: 1 }] },
-            options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { y: { display: true, position: 'left', grid: { color: 'rgba(255,255,255,0.05)' } }, y1: { display: true, position: 'right', grid: { display: false } } }, plugins: { legend: { labels: { color: '#f8fafc' } } } }
+            options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { y: { display: true, position: 'left', grid: { color: '#e5e7eb' } }, y1: { display: true, position: 'right', grid: { display: false } } }, plugins: { legend: { labels: { color: '#374151' } } } }
         });
     }
 
@@ -314,12 +345,22 @@ document.addEventListener('DOMContentLoaded', function () {
         const ctx = document.getElementById('driverLeaderboardChart')?.getContext('2d');
         if(!ctx) return;
         if (driverLeaderboardChart) driverLeaderboardChart.destroy();
-        const bgColors = data.map(d => (d.status === 'active' ? '#10b981' : d.status === 'warning' ? '#f59e0b' : '#ef4444'));
-        const labels = data.map(d => `${d.name} (${d.days_inactive}d)`);
+        
+        const bgColors = data.map(d => {
+            if (d.status === 'new') return '#3b82f6';
+            if (d.status === 'active') return '#10b981';
+            if (d.status === 'warning') return '#f59e0b';
+            return '#ef4444';
+        });
+
+        const labels = data.map(d => {
+            let timeMsg = d.days_inactive === 0 ? "Hoy" : `${d.days_inactive}d`;
+            return `${d.name} (${timeMsg})`;
+        });
 
         driverLeaderboardChart = new Chart(ctx, {
             type: 'bar', data: { labels: labels, datasets: [{ label: 'Entregas', data: data.map(d => d.orders), backgroundColor: bgColors }] },
-            options: { indexAxis: 'y', maintainAspectRatio: false, scales: { x: { grid: { color: 'rgba(255,255,255,0.05)' } } }, plugins: { legend: { display: false } } }
+            options: { indexAxis: 'y', maintainAspectRatio: false, scales: { x: { grid: { color: '#e5e7eb' } } }, plugins: { legend: { display: false } } }
         });
     }
 
@@ -330,7 +371,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const list = document.getElementById('top-stores-list');
         if(!list) return;
         list.innerHTML = '';
-        data.forEach(s => { list.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center px-4 py-3"><div class="d-flex flex-column"><span class="text-white fw-bold"><i class="fa-solid fa-store me-2 text-muted"></i>${s.name}</span><small class="text-muted ms-4" style="font-size: 0.7rem;">Desde: ${s.first_seen}</small></div><span class="badge bg-success rounded-pill">${s.orders}</span></li>`; });
+        data.forEach(s => { list.innerHTML += `<li class="list-group-item d-flex justify-content-between align-items-center px-4 py-3"><div class="d-flex flex-column"><span class="text-dark fw-bold"><i class="fa-solid fa-store me-2 text-muted"></i>${s.name}</span><small class="text-muted ms-4" style="font-size: 0.7rem;">Desde: ${s.first_seen}</small></div><span class="badge bg-success rounded-pill">${s.orders}</span></li>`; });
     }
 
     async function loadTopCustomers() {
@@ -342,11 +383,10 @@ document.addEventListener('DOMContentLoaded', function () {
         tbody.innerHTML = '';
         data.forEach((c, i) => {
             let rank = `#${c.rank}`; if(c.rank===1) rank='🥇'; if(c.rank===2) rank='🥈'; if(c.rank===3) rank='🥉';
-            tbody.innerHTML += `<tr><td class="ps-4 text-warning fw-bold">${rank}</td><td class="fw-bold text-white">${c.name}</td><td class="text-center"><span class="badge bg-primary text-white">${c.count}</span></td><td class="text-end text-success fw-bold">$${c.total_amount.toFixed(2)}</td><td class="text-end pe-4 text-muted">$${(c.total_amount/c.count).toFixed(2)}</td></tr>`;
+            tbody.innerHTML += `<tr><td class="ps-4 text-warning fw-bold">${rank}</td><td class="fw-bold text-dark">${c.name}</td><td class="text-center"><span class="badge bg-primary text-white">${c.count}</span></td><td class="text-end text-success fw-bold">$${c.total_amount.toFixed(2)}</td><td class="text-end pe-4 text-muted">$${(c.total_amount/c.count).toFixed(2)}</td></tr>`;
         });
     }
 
-    // --- CARGAR FILTROS ---
     async function loadStoreFilterOptions() {
         const res = await authFetch('/api/data/all-stores-names');
         if (!res) return;
@@ -363,6 +403,11 @@ document.addEventListener('DOMContentLoaded', function () {
     // --- MAIN ---
     function fetchAllData(isSearch = false) {
         if (isSearch) window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        const now = new Date();
+        const updateEl = document.getElementById('last-updated');
+        if(updateEl) updateEl.textContent = now.toLocaleTimeString();
+
         updateKpis();
         updateBottleneckChart();
         updateRecentOrdersTable();
@@ -374,16 +419,19 @@ document.addEventListener('DOMContentLoaded', function () {
         updateHeatmap();
     }
 
-    datePicker = flatpickr("#date-range-picker", { mode: "range", dateFormat: "Y-m-d", theme: "dark", defaultDate: [new Date(), new Date()], onClose: fetchAllData });
+    datePicker = flatpickr("#date-range-picker", { mode: "range", dateFormat: "Y-m-d", theme: "light", defaultDate: [new Date(), new Date()], onClose: fetchAllData });
     loadStoreFilterOptions();
 
-    // Listeners
     document.getElementById('btn-update')?.addEventListener('click', () => fetchAllData(true));
     document.getElementById('btn-all-history')?.addEventListener('click', () => { datePicker.setDate(["2024-01-01", new Date()]); fetchAllData(); });
     document.getElementById('search-input')?.addEventListener('keypress', (e) => { if (e.key === 'Enter') fetchAllData(true); });
-    document.getElementById('btn-clear-search')?.addEventListener('click', () => { 
-        document.getElementById('search-input').value = ''; 
-        fetchAllData(); 
+    document.getElementById('btn-clear-search')?.addEventListener('click', () => { document.getElementById('search-input').value = ''; fetchAllData(); });
+
+    // Botón Reporte Inteligente
+    document.getElementById('btn-open-report')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        let url = '/report' + buildUrl('').search; 
+        window.open(url, '_blank');
     });
 
     const mapCollapse = document.getElementById('collapseMap');

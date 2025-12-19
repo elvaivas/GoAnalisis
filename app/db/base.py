@@ -19,6 +19,7 @@ class Order(Base):
     # Datos financieros
     total_amount = Column(Float, nullable=True)
     delivery_fee = Column(Float, nullable=True)
+    product_price = Column(Float, default=0.0)
     
     # Estado y Tipo
     current_status = Column(String, default="pending")
@@ -76,6 +77,7 @@ class Store(Base):
     external_id = Column(String, unique=True, index=True)
     name = Column(String, nullable=True)
     latitude = Column(Float, nullable=True)
+    commission_rate = Column(Float, default=0.0)
     longitude = Column(Float, nullable=True)
     orders = relationship("Order", back_populates="store")
 
@@ -85,6 +87,7 @@ class Customer(Base):
     name = Column(String, nullable=True)
     external_id = Column(String, unique=True)
     phone = Column(String, nullable=True) # <--- NUEVO CAMPO
+    joined_at = Column(DateTime, nullable=True)
     orders = relationship("Order", back_populates="customer")
 
 class Driver(Base):

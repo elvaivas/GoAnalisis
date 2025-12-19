@@ -65,3 +65,8 @@ def trigger_drone_task(
         msg += " (AVISO: Se forzó la liberación del candado)."
         
     return {"message": msg, "task_id": task_id}
+
+@router.post("/trigger-customer-sync", status_code=202)
+def trigger_customer_sync_task():
+    task_service.trigger_customer_sync()
+    return {"message": "Sincronización de clientes iniciada"}

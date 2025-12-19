@@ -3,6 +3,8 @@ import re
 import time
 import math
 from datetime import datetime
+from tasks.scraper.customer_scraper import CustomerScraper 
+from tasks.scraper.store_scraper import StoreScraper
 from contextlib import contextmanager
 from celery import shared_task
 import redis
@@ -393,6 +395,7 @@ def enrich_missing_data(self):
                     data = drone.scrape_detail(order.external_id, mode='reason')
                     order.cancellation_reason = data.get("cancellation_reason", "Sin especificar")
                     # Intentar capturar finanzas de paso
+                    if "product_price" in data: order.product_price = data["product_price"]
                     if "service_fee" in data: order.service_fee = data["service_fee"]
                     processed += 1
                 db.commit()
@@ -429,3 +432,101 @@ def enrich_missing_data(self):
         finally:
             if drone: drone.close_driver()
             db.close()
+
+@shared_task(bind=True)
+def sync_customers_task(self):
+    """
+    Sincroniza la base de datos de clientes (Fechas de registro).
+    """
+    key = "celery_lock_sync_customers"
+    # Lock de 1 hora
+    with redis_lock(key, 3600) as acquired:
+        if not acquired: return "Sync running"
+
+        logger.info("👥 Iniciando Sincronización Masiva de Clientes...")
+        scraper = CustomerScraper()
+        db = SessionLocal()
+        
+        try:
+            # Traemos 50 páginas por lote (aprox 1250 clientes)
+            # Puedes subirlo si el servidor aguanta
+            users_data = scraper.scrape_customers(max_pages=50)
+            scraper.close_driver()
+            
+            count_new = 0
+            count_updated = 0
+            
+            for u in users_data:
+                # Buscamos por nombre (o teléfono si estuviera limpio)
+                # Usamos ILIKE para coincidencia flexible
+                customer = db.query(Customer).filter(Customer.name.ilike(f"{u['name']}")).first()
+                
+                if customer:
+                    # Actualizamos fecha si no la tiene o es diferente
+                    if u['joined_at']: 
+                        customer.joined_at = u['joined_at']
+                        count_updated += 1
+                    if u['phone']: customer.phone = u['phone']
+                else:
+                    # Si el cliente no existe (raro, pero posible si nunca compró)
+                    # Lo creamos para tener el registro
+                    new_c = Customer(
+                        name=u['name'], 
+                        phone=u['phone'], 
+                        joined_at=u['joined_at'],
+                        external_id=f"reg_{int(time.time())}_{count_new}" # ID temporal
+                    )
+                    db.add(new_c)
+                    count_new += 1
+            
+            db.commit()
+            return f"Clientes: {count_new} nuevos, {count_updated} actualizados."
+
+        except Exception as e:
+            logger.error(f"Error sync customers: {e}")
+        finally:
+            if scraper: scraper.close_driver()
+            db.close()
+
+@shared_task(bind=True)
+def sync_store_commissions(self):
+    """
+    Recorre las tiendas y actualiza su % de comisión.
+    """
+    key = "celery_lock_sync_stores"
+    with redis_lock(key, 1800) as acquired:
+        if not acquired: return "Sync stores running"
+        
+        db = SessionLocal()
+        stores = db.query(Store).all()
+        
+        scraper = StoreScraper()
+        if not scraper.login(): return
+        
+        updated = 0
+        for s in stores:
+            # Asumimos que external_id es "store_XX" o similar. 
+            # O mejor, usamos el Dron de pedidos para que guarde el ID real en una columna nueva 'real_id'
+            # Si no tienes 'real_id', intentamos extraer números del external_id
+            try:
+                # Intento de extraer ID numérico
+                # Si external_id="store_FarmaciaX", esto fallará. 
+                # NECESITAS que el Dron de pedidos haya guardado el ID real o extraerlo del nombre.
+                # Por ahora, intentaremos extraer dígitos si existen.
+                real_id_match = re.search(r'\d+', s.external_id or "")
+                if not real_id_match: continue
+                
+                real_id = real_id_match.group(0)
+                
+                commission = scraper.scrape_commission(real_id)
+                if commission > 0:
+                    s.commission_rate = commission
+                    updated += 1
+                    logger.info(f"🏪 {s.name}: Comisión actualizada a {commission}%")
+            except:
+                continue
+        
+        db.commit()
+        scraper.close_driver()
+        db.close()
+        return f"Tiendas actualizadas: {updated}"
