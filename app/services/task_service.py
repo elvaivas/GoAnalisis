@@ -50,5 +50,8 @@ def trigger_drone(force: bool = False):
 def trigger_customer_sync():
     broker_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
     simple_app = Celery("sender", broker=broker_url)
-    simple_app.send_task("tasks.celery_tasks.sync_customer_database")
-    return "Sync Started"
+    
+    # Enviamos kwargs con limit_pages=None para que sea INFINITO
+    simple_app.send_task("tasks.celery_tasks.sync_customer_database", kwargs={"limit_pages": None})
+    
+    return "Sync Full Started"

@@ -1,14 +1,15 @@
 import os
 from celery import Celery
-from celery.schedules import crontab # <--- Importar crontab
+from celery.schedules import crontab
 
+# Leemos la variable del docker-compose
 broker_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 celery_app = Celery(
     "goanalisis_tasks", 
     broker=broker_url, 
     backend=broker_url,
-    include=['tasks.celery_tasks']
+    include=['tasks.celery_tasks'] 
 )
 
 celery_app.conf.update(
@@ -18,18 +19,32 @@ celery_app.conf.update(
     timezone='America/Caracas',
     enable_utc=True,
     broker_connection_retry_on_startup=True,
+    worker_cancel_long_running_tasks_on_connection_loss=True,
 )
 
-# --- PROGRAMACIÓN AUTOMÁTICA (BEAT) ---
+# --- PROGRAMACIÓN AUTOMÁTICA (CRONOGRAMA) ---
 celery_app.conf.beat_schedule = {
-    # 1. Monitor en Vivo: AHORA CORRE CADA MINUTO
+    
+    # 1. Monitor en Vivo (Cada minuto)
+    # Busca pedidos nuevos en la página 1 y 2
     'monitor-every-minute': {
         'task': 'tasks.celery_tasks.monitor_active_orders',
-        'schedule': crontab(minute='*'), # El asterisco significa "cada minuto"
+        'schedule': crontab(minute='*'), 
     },
-    # 2. Dron de Limpieza: Sigue cada 30 min
+
+    # 2. Dron de Limpieza (Cada 30 minutos)
+    # Revisa si quedaron pedidos sin mapa o sin finanzas y los arregla
     'drone-cleanup-every-30-mins': {
         'task': 'tasks.celery_tasks.enrich_missing_data',
         'schedule': crontab(minute='*/30'),
+    },
+
+    # 3. VIGILANCIA DE CLIENTES (NUEVO)
+    # Ejecuta a las 3:00 AM todos los días.
+    # 'kwargs' pasa el argumento limit_pages=10 a la función
+    'customer-surveillance-daily': {
+        'task': 'tasks.celery_tasks.sync_customer_database',
+        'schedule': crontab(hour=3, minute=0),
+        'kwargs': {'limit_pages': 10} 
     },
 }

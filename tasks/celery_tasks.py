@@ -240,21 +240,26 @@ def enrich_missing_data(self):
 
 # --- AQUÍ ESTABA EL PROBLEMA: EL NOMBRE DE LA TAREA ---
 # Forzamos el nombre exacto que está pidiendo el error log
-@shared_task(bind=True, name="tasks.celery_tasks.sync_customer_database")
-def sync_customer_database(self):
+@shared_task(bind=True)
+def sync_customer_database(self, limit_pages: int = None):
     """
-    Sincroniza la base de datos de clientes (Fechas de registro).
+    Sincroniza clientes.
+    :param limit_pages: Si es None, busca TODO. Si es número, es modo vigilancia.
     """
     key = "celery_lock_sync_customers"
-    with redis_lock(key, 3600) as acquired:
+    # Lock extendido a 2 horas por si es full sync
+    with redis_lock(key, 7200) as acquired:
         if not acquired: return "Sync running"
 
-        logger.info("👥 Iniciando Sincronización Masiva de Clientes...")
+        mode_txt = f"Vigilancia ({limit_pages} págs)" if limit_pages else "FULL SYNC (Infinito)"
+        logger.info(f"👥 Iniciando Sincronización de Clientes: {mode_txt}")
+        
         scraper = CustomerScraper()
         db = SessionLocal()
         
         try:
-            users_data = scraper.scrape_customers(max_pages=50) # Ajusta max_pages si quieres
+            # Pasamos el límite (o None) al scraper
+            users_data = scraper.scrape_customers(max_pages=limit_pages)
             scraper.close_driver()
             
             count_new = 0
@@ -262,12 +267,11 @@ def sync_customer_database(self):
             
             for u in users_data:
                 customer = db.query(Customer).filter(Customer.name.ilike(f"{u['name']}")).first()
+                
                 if customer:
-                    if u['joined_at']: 
-                        customer.joined_at = u['joined_at']
-                        count_updated += 1
-                    if u['phone'] and not customer.phone: 
-                        customer.phone = u['phone']
+                    if u['joined_at']: customer.joined_at = u['joined_at']
+                    if u['phone'] and not customer.phone: customer.phone = u['phone']
+                    count_updated += 1
                 else:
                     new_c = Customer(
                         name=u['name'], 

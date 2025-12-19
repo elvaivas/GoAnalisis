@@ -53,42 +53,39 @@ class CustomerScraper:
             self.driver = None
 
     def _parse_spanish_date(self, text):
-        """Convierte '14 abr. 2025' a datetime"""
         if not text: return None
-        # Mapa de meses abreviados en español
-        month_map = {
-            'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may': '05', 'jun': '06',
-            'jul': '07', 'ago': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dic': '12'
-        }
+        month_map = {'ene':'01','feb':'02','mar':'03','abr':'04','may':'05','jun':'06','jul':'07','ago':'08','sep':'09','oct':'10','nov':'11','dic':'12'}
         try:
             clean = text.lower().replace('.', '')
-            # Buscar coincidencia de mes
             for m, n in month_map.items():
-                if m in clean: 
-                    clean = clean.replace(m, n)
-                    break
-            
-            # Buscar patrón DD MM YYYY
+                if m in clean: clean = clean.replace(m, n); break
             match = re.search(r'(\d{1,2})\s+(\d{2})\s+(\d{4})', clean)
             if match:
                 return datetime.strptime(f"{match.group(1)} {match.group(2)} {match.group(3)}", '%d %m %Y')
         except: pass
         return None
 
-    def scrape_customers(self, max_pages: int = 10) -> List[Dict]:
+    def scrape_customers(self, max_pages: int = None) -> List[Dict]:
         """
-        Recorre la paginación de clientes y extrae sus datos.
+        Si max_pages es None, recorre hasta el final de la lista.
+        Si max_pages es un número (ej: 5), solo revisa esas páginas (Modo Vigilancia).
         """
         if not self.driver: self.setup_driver(); self.login()
         customers_data = []
         
         try:
-            logger.info(f"👥 Navegando a lista de clientes: {self.users_url}")
+            logger.info(f"👥 Scrapeando Clientes: {self.users_url}")
             self.driver.get(self.users_url)
             WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "datatable")))
 
             current_page = 1
-            while current_page <= max_pages:
+            
+            while True:
+                # 1. Freno de mano (Opcional)
+                if max_pages and current_page > max_pages:
+                    logger.info(f"🛑 Límite de vigilancia alcanzado ({max_pages} pág). Deteniendo.")
+                    break
+
                 logger.info(f"   📄 Procesando página de clientes {current_page}...")
                 
                 rows = self.driver.find_elements(By.XPATH, "//table[@id='datatable']/tbody/tr")
@@ -96,22 +93,17 @@ class CustomerScraper:
                 for row in rows:
                     try:
                         cols = row.find_elements(By.TAG_NAME, "td")
-                        # Tu HTML tiene ~9 columnas (ID, Nombre, Tipo, Contacto, Pedido, Monto, Fecha, Activo, Acciones)
-                        if len(cols) < 7: continue 
+                        if len(cols) < 7: continue
                         
-                        # 1. Nombre (Col 2)
                         name = cols[1].text.split('\n')[0].strip()
                         
-                        # 2. Teléfono (Col 4) - Buscamos link tel:
                         phone = None
                         try:
                             phone_el = cols[3].find_element(By.XPATH, ".//a[contains(@href, 'tel:')]")
                             phone = phone_el.text.strip()
                         except: pass
                         
-                        # 3. Fecha de Ingreso (Col 7) - La clave
-                        # En tu HTML: <td><label class="badge">14 abr. 2025</label></td>
-                        # Eso es indice 6 (0-based)
+                        # Columna 6 (index 6) es Fecha de Ingreso
                         date_text = cols[6].text.strip()
                         joined_at = self._parse_spanish_date(date_text)
 
@@ -123,22 +115,21 @@ class CustomerScraper:
                             })
                     except: continue
 
-                # Paginación
+                # 2. Paginación Infinita
                 try:
-                    # Buscamos el botón "Siguiente" (›)
-                    # En tu HTML es: <a class="page-link" ... aria-label="Next »">›</a>
                     next_btn = self.driver.find_element(By.XPATH, "//a[@aria-label='Next »']")
                     parent = next_btn.find_element(By.XPATH, "./..")
                     
+                    # Si el botón está deshabilitado, llegamos al final REAL
                     if "disabled" in parent.get_attribute("class"):
-                        logger.info("🚫 Fin de lista de clientes.")
+                        logger.info("🚫 Fin de lista de clientes (Última página alcanzada).")
                         break
                     
                     self.driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(2) # Esperar carga
+                    time.sleep(2)
                     current_page += 1
                 except: 
-                    logger.info("🚫 No más páginas.")
+                    logger.info("🚫 No se encontró botón siguiente.")
                     break
 
         except Exception as e:
