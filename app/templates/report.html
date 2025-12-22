@@ -2,257 +2,283 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Reporte Ejecutivo - GoAnalisis</title>
-    <!-- Bootstrap 5 & Icons -->
+    <title>Reporte de Gestión - GoPharma</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
+    <!-- Chart.js + Plugin DataLabels (Para los %) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
     <style>
-        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body { background-color: #ffffff; color: #374151; font-family: 'Segoe UI', sans-serif; -webkit-print-color-adjust: exact; }
         
-        /* Tarjetas KPI */
-        .report-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; height: 100%; page-break-inside: avoid; }
-        .kpi-title { font-size: 0.75rem; text-transform: uppercase; color: #6b7280; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 5px; }
-        .kpi-value { font-size: 1.6rem; font-weight: 800; color: #111827; }
+        /* Panel de Control (No imprimir) */
+        .controls-panel { background: #f1f5f9; padding: 15px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #cbd5e1; }
         
-        /* Explicación de Fórmulas */
-        .formula-text { font-size: 0.65rem; color: #9ca3af; margin-top: 8px; border-top: 1px dashed #e5e7eb; padding-top: 4px; line-height: 1.2; font-family: 'Consolas', monospace; }
-        
-        /* Secciones */
-        .section-header { margin-top: 30px; margin-bottom: 15px; border-bottom: 2px solid #e5e7eb; padding-bottom: 5px; color: #374151; font-weight: bold; font-size: 1.1rem; }
-        
-        /* Tablas */
-        .table-sm td, .table-sm th { padding: 0.4rem; font-size: 0.85rem; }
-        
-        /* Impresión */
+        /* Tarjetas */
+        .report-card { 
+            background: white; border: 1px solid #e5e7eb; border-radius: 6px; 
+            padding: 20px; height: 100%; position: relative;
+        }
+        .kpi-lbl { font-size: 0.75rem; text-transform: uppercase; color: #6b7280; font-weight: 700; margin-bottom: 5px; }
+        .kpi-val { font-size: 2rem; font-weight: 800; color: #111827; line-height: 1; }
+        .kpi-sub { font-size: 0.75rem; color: #9ca3af; margin-top: 5px; }
+
+        .section-header { 
+            margin-top: 30px; margin-bottom: 15px; 
+            font-size: 0.9rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; 
+            border-bottom: 1px solid #f3f4f6; padding-bottom: 5px;
+        }
+
+        /* Utilidades */
+        .text-soft-dark { color: #374151; }
+        .hidden-section { display: none !important; }
+
         @media print {
             .no-print { display: none !important; }
-            body { background: white; padding: 0; }
-            .report-card { box-shadow: none; border: 1px solid #ccc; }
-            .container { max-width: 100% !important; width: 100% !important; }
+            body { padding: 0; }
+            .report-card { border: 1px solid #ddd; }
+            .section-header { margin-top: 20px; }
         }
     </style>
 </head>
-<body class="py-4">
+<body class="p-4">
 
+    <!-- PANEL DE CONTROL -->
+    <div class="container no-print mb-4">
+        <div class="controls-panel d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-3">
+                <strong class="text-dark"><i class="fa-solid fa-sliders me-2"></i>Personalizar:</strong>
+                
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="toggle-finance" checked>
+                    <label class="form-check-label" for="toggle-finance">Finanzas</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="toggle-areas" checked>
+                    <label class="form-check-label" for="toggle-areas">Áreas de Mejora</label>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="toggle-map" checked>
+                    <label class="form-check-label" for="toggle-map">Mapa</label>
+                </div>
+            </div>
+            <div>
+                <button onclick="window.print()" class="btn btn-dark btn-sm fw-bold"><i class="fa-solid fa-print me-2"></i>Imprimir / PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- REPORTE -->
     <div class="container">
-        <!-- Header -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
+        
+        <!-- HEADER -->
+        <div class="d-flex justify-content-between align-items-end mb-4 border-bottom pb-3">
             <div class="d-flex align-items-center">
-                <!-- Logo: Asegúrate de que la ruta sea correcta -->
-                <img src="/static/img/logo.png" height="45" class="me-3" alt="GoPharma"> 
+                <img src="/static/img/logo.png" height="45" class="me-3" alt="Logo">
                 <div>
-                    <h3 class="fw-bold mb-0 text-dark">Reporte de Gestión</h3>
-                    <p class="text-muted mb-0" id="report-range">Generando...</p>
+                    <h2 class="fw-bold mb-0">Reporte de Gestión</h2>
+                    <p class="text-muted mb-0 small" id="report-range">Generando...</p>
                 </div>
             </div>
-            <div class="no-print">
-                <button onclick="window.print()" class="btn btn-dark"><i class="fa-solid fa-print me-2"></i>Imprimir / PDF</button>
-                <button onclick="window.close()" class="btn btn-outline-secondary">Cerrar</button>
+            <div class="text-end">
+                <small class="text-muted d-block">Fecha de Emisión</small>
+                <strong id="report-date">--</strong>
             </div>
         </div>
 
-        <!-- 1. FINANZAS (El Núcleo del Negocio) -->
-        <div class="section-header"><i class="fa-solid fa-coins me-2"></i>Desempeño Financiero Real</div>
+        <!-- 1. VOLUMEN DE PEDIDOS -->
+        <div class="section-header">Volumen de Operación</div>
         <div class="row g-3">
-            
-            <!-- GMV -->
-            <div class="col-md-3">
-                <div class="report-card border-top border-4 border-secondary">
-                    <div class="kpi-title text-secondary">Recaudación Total (GMV)</div>
-                    <div class="kpi-value" id="r-revenue">--</div>
-                    <div class="formula-text">Suma total facturada en pedidos entregados.</div>
+            <div class="col-md-4">
+                <div class="report-card border-start border-4 border-primary">
+                    <div class="kpi-lbl text-primary">Pedidos Totales</div>
+                    <div class="kpi-val" id="r-orders">--</div>
                 </div>
             </div>
-
-            <!-- Costo Delivery Bruto -->
-            <div class="col-md-3">
-                <div class="report-card border-top border-4 border-primary">
-                    <div class="kpi-title text-primary">Valor Bruto Envíos</div>
-                    <div class="kpi-value text-primary" id="r-fee">--</div>
-                    <div class="formula-text">Suma de tarifas de envío reales (antes de descuentos).</div>
+            <div class="col-md-4">
+                <div class="report-card border-start border-4 border-info">
+                    <div class="kpi-lbl text-info">Pedidos Delivery</div>
+                    <div class="kpi-val" id="r-delivery">--</div>
                 </div>
             </div>
-
-            <!-- Nómina Motorizados -->
-            <div class="col-md-3">
-                <div class="report-card border-top border-4 border-warning">
-                    <div class="kpi-title text-warning">Pago a Motorizados</div>
-                    <div class="kpi-value text-warning" id="r-payout">--</div>
-                    <div class="formula-text"><strong>80%</strong> del Valor Bruto de Envíos.</div>
-                </div>
-            </div>
-
-            <!-- Inversión Marketing -->
-            <div class="col-md-3">
-                <div class="report-card border-top border-4 border-danger">
-                    <div class="kpi-title text-danger">Subsidio / Cupones</div>
-                    <div class="kpi-value text-danger" id="r-coupons">--</div>
-                    <div class="formula-text">Costo asumido por la empresa (Delivery Gratis).</div>
+            <div class="col-md-4">
+                <div class="report-card border-start border-4 border-warning">
+                    <div class="kpi-lbl text-warning">Pedidos Pickup</div>
+                    <div class="kpi-val" id="r-pickup">--</div>
                 </div>
             </div>
         </div>
 
-        <div class="row g-3 mt-1">
-             <!-- GANANCIA NETA -->
-             <div class="col-md-4">
-                <div class="report-card bg-success bg-opacity-10 border border-success">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <div class="kpi-title text-success fw-bold">GANANCIA NETA (EBITDA)</div>
-                            <div class="kpi-value text-success" id="r-profit">--</div>
-                        </div>
-                        <i class="fa-solid fa-chart-line fa-3x text-success opacity-25"></i>
-                    </div>
-                    <div class="formula-text text-dark mt-2">
-                        <strong>Fórmula:</strong><br>
-                        [(20% Delivery + 5% Servicio + % Comisión) / 1.16] - Cupones
-                    </div>
-                </div>
-            </div>
-
-            <!-- Dinero Perdido -->
-            <div class="col-md-4">
-                <div class="report-card border-top border-4 border-dark">
-                    <div class="kpi-title">Costo de Oportunidad</div>
-                    <div class="kpi-value text-muted" id="r-lost">--</div>
-                    <div class="formula-text">Valor total de pedidos <strong>Cancelados</strong> (Ventas perdidas).</div>
-                </div>
-            </div>
-
-            <!-- Ticket Promedio -->
-            <div class="col-md-4">
-                <div class="report-card border-top border-4 border-info">
-                    <div class="kpi-title text-info">Ticket Promedio</div>
-                    <div class="kpi-value text-info" id="r-ticket">--</div>
-                    <div class="formula-text">Recaudación / Cantidad de Pedidos.</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 2. CRECIMIENTO Y OPERACIONES -->
-        <div class="section-header"><i class="fa-solid fa-users me-2"></i>Crecimiento y Eficiencia</div>
+        <!-- 2. USUARIOS -->
+        <div class="section-header">Crecimiento de Usuarios</div>
         <div class="row g-3">
-            <div class="col-md-2">
-                <div class="report-card text-center">
-                    <div class="kpi-title">Pedidos Totales</div>
-                    <div class="h4 fw-bold mb-0" id="r-orders">--</div>
+            <div class="col-md-4">
+                <div class="report-card">
+                    <div class="kpi-lbl text-success">Nuevos Usuarios</div>
+                    <div class="kpi-val" id="r-new-users">--</div>
+                    <div class="kpi-sub">Registrados en este periodo</div>
                 </div>
             </div>
-            <div class="col-md-2">
-                <div class="report-card text-center">
-                    <div class="kpi-title text-info">Delivery</div>
-                    <div class="h4 fw-bold mb-0 text-info" id="r-delivery">--</div>
+            <div class="col-md-4">
+                <div class="report-card">
+                    <div class="kpi-lbl text-primary">Usuarios Activos</div>
+                    <div class="kpi-val" id="r-active-users">--</div>
+                    <div class="kpi-sub">Compraron en este periodo</div>
                 </div>
             </div>
-            <div class="col-md-2">
-                <div class="report-card text-center">
-                    <div class="kpi-title text-warning">Pickup</div>
-                    <div class="h4 fw-bold mb-0 text-warning" id="r-pickup">--</div>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="report-card text-center">
-                    <div class="kpi-title text-success">Nuevos Usuarios</div>
-                    <div class="h4 fw-bold mb-0 text-success" id="r-new-users">--</div>
-                    <small class="text-muted" style="font-size: 0.6em;">Registrados en periodo</small>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="report-card text-center">
-                    <div class="kpi-title text-primary">Usuarios Activos</div>
-                    <div class="h4 fw-bold mb-0 text-primary" id="r-active-users">--</div>
-                    <small class="text-muted" style="font-size: 0.6em;">Compraron en periodo</small>
-                </div>
-            </div>
-            <div class="col-md-2">
-                <div class="report-card text-center">
-                    <div class="kpi-title">Tiempo Promedio</div>
-                    <div class="h4 fw-bold mb-0" id="r-time">--</div>
-                    <small class="text-muted" style="font-size: 0.6em;">Minutos</small>
+            <div class="col-md-4">
+                <div class="report-card">
+                    <div class="kpi-lbl text-dark">Total Usuarios Registrados</div>
+                    <div class="kpi-val" id="r-total-users">--</div>
+                    <div class="kpi-sub">Base de datos completa</div>
                 </div>
             </div>
         </div>
 
-        <!-- 3. GRÁFICOS Y DETALLES -->
-        <div class="row g-4 mt-2">
+        <!-- 3. PROMEDIOS Y EFICIENCIA -->
+        <div class="section-header">Indicadores de Eficiencia</div>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="report-card bg-light">
+                    <div class="kpi-lbl">Tiempo Promedio Entrega</div>
+                    <div class="kpi-val" id="r-time">--</div>
+                    <div class="kpi-sub">Minutos</div>
+                </div>
+            </div>
+            <div class="col-md-3" id="sec-ticket-global"> <!-- Parte de Finanzas -->
+                <div class="report-card bg-light">
+                    <div class="kpi-lbl">Ticket Promedio Global</div>
+                    <div class="kpi-val text-dark" id="r-ticket">--</div>
+                </div>
+            </div>
+            <div class="col-md-3" id="sec-ticket-delivery"> <!-- Parte de Finanzas -->
+                <div class="report-card bg-light">
+                    <div class="kpi-lbl text-info">Ticket Prom. Delivery</div>
+                    <div class="kpi-val text-info" id="r-ticket-delivery">--</div>
+                </div>
+            </div>
+            <div class="col-md-3" id="sec-fee-avg"> <!-- Parte de Finanzas -->
+                <div class="report-card bg-light">
+                    <div class="kpi-lbl text-success">Tarifa Servicio Prom.</div>
+                    <div class="kpi-val text-success" id="r-service-avg">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. GRÁFICOS Y DETALLES -->
+        <div class="section-header">Análisis Visual</div>
+        <div class="row g-4">
+            <!-- Tendencia -->
             <div class="col-md-8">
                 <div class="report-card">
-                    <h6 class="fw-bold mb-3 small text-uppercase">Tendencia de Ingresos vs Pedidos</h6>
-                    <div style="height: 300px;"><canvas id="rTrendsChart"></canvas></div>
+                    <h6 class="fw-bold mb-3 small text-muted">TENDENCIA DE PEDIDOS</h6>
+                    <div style="height: 280px;"><canvas id="rTrendsChart"></canvas></div>
                 </div>
             </div>
+            
+            <!-- Top Farmacias -->
             <div class="col-md-4">
-                <div class="report-card">
-                    <h6 class="fw-bold mb-3 small text-uppercase">Razones de Cancelación</h6>
-                    <div style="height: 300px;"><canvas id="rCancelChart"></canvas></div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row g-4 mt-2">
-            <div class="col-md-6">
-                <div class="report-card">
-                    <h6 class="fw-bold mb-2 small text-uppercase text-success">Top 10 Farmacias (Ventas)</h6>
-                    <table class="table table-sm table-striped">
-                        <thead><tr class="text-muted"><th>Nombre</th><th class="text-end">Pedidos</th></tr></thead>
+                <div class="report-card p-0 overflow-hidden">
+                    <div class="p-3 border-bottom bg-light">
+                        <h6 class="fw-bold mb-0 small text-uppercase">Top 10 Farmacias</h6>
+                    </div>
+                    <table class="table table-sm table-striped mb-0">
                         <tbody id="r-stores-body"></tbody>
                     </table>
                 </div>
             </div>
-            <div class="col-md-6">
+        </div>
+
+        <!-- Fila de Cancelaciones y Mapa -->
+        <div class="row g-4 mt-1">
+            <!-- Áreas de Mejora (Cancelaciones) -->
+            <div class="col-md-4" id="sec-areas-mejora">
                 <div class="report-card">
-                    <h6 class="fw-bold mb-2 small text-uppercase text-warning">Top 10 Motorizados (Eficiencia)</h6>
-                    <table class="table table-sm table-striped">
-                        <thead><tr class="text-muted"><th>Nombre</th><th class="text-end">Entregas</th><th class="text-end">Estado</th></tr></thead>
-                        <tbody id="r-drivers-body"></tbody>
-                    </table>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="fw-bold mb-0 small text-uppercase text-danger">Áreas de Mejora</h6>
+                        <span class="badge bg-danger bg-opacity-10 text-danger" id="r-canceled-total">-- Cancelados</span>
+                    </div>
+                    <!-- Gráfico SOLO PORCENTAJES -->
+                    <div style="height: 250px;"><canvas id="rCancelChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Mapa -->
+            <div class="col-md-8" id="sec-map-container">
+                <div class="report-card p-0">
+                    <div class="p-3 border-bottom bg-light d-flex justify-content-between">
+                        <h6 class="fw-bold mb-0 small text-uppercase">Mapa de Calor</h6>
+                        <small class="text-muted">Clientes vs Tiendas</small>
+                    </div>
+                    <div id="reportMap" style="height: 300px; width: 100%;"></div>
                 </div>
             </div>
         </div>
 
     </div>
 
-    <!-- SCRIPT DE CARGA -->
     <script>
+        // --- CONTROL DE VISTAS ---
+        const toggles = {
+            'toggle-finance': ['sec-ticket-global', 'sec-ticket-delivery', 'sec-fee-avg'],
+            'toggle-areas': ['sec-areas-mejora'],
+            'toggle-map': ['sec-map-container']
+        };
+
+        Object.keys(toggles).forEach(id => {
+            document.getElementById(id).addEventListener('change', (e) => {
+                toggles[id].forEach(targetId => {
+                    const el = document.getElementById(targetId);
+                    if(el) e.target.checked ? el.classList.remove('hidden-section') : el.classList.add('hidden-section');
+                });
+            });
+        });
+
+        // --- CARGA ---
         document.addEventListener('DOMContentLoaded', async () => {
             const token = localStorage.getItem('token');
-            if (!token) { alert("Acceso denegado. Inicie sesión."); window.location.href='/login'; return; }
+            if (!token) window.location.href = '/login';
 
-            // Leer URL Params
             const params = new URLSearchParams(window.location.search);
-            const start = params.get('start_date') || "Inicio";
-            const end = params.get('end_date') || "Hoy";
-            document.getElementById('report-range').textContent = `Periodo analizado: ${start} al ${end}`;
+            document.getElementById('report-range').textContent = `${params.get('start_date')||'Inicio'} al ${params.get('end_date')||'Hoy'}`;
+            document.getElementById('report-date').textContent = new Date().toLocaleDateString();
 
             const headers = { 'Authorization': `Bearer ${token}` };
             const api = '/api';
-
-            const fmt = (n) => `$${(n||0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            const fmt = (n) => `$${(n||0).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
 
             try {
-                // 1. CARGAR KPIs
+                // KPIs
                 const kpiRes = await fetch(`${api}/kpi/main?${params}`, {headers});
                 const kpi = await kpiRes.json();
 
-                document.getElementById('r-revenue').textContent = fmt(kpi.total_revenue);
-                document.getElementById('r-fee').textContent = fmt(kpi.total_fees);
-                document.getElementById('r-payout').textContent = fmt(kpi.driver_payout);
-                document.getElementById('r-coupons').textContent = `-${fmt(kpi.total_coupons)}`;
-                document.getElementById('r-profit').textContent = fmt(kpi.company_profit);
-                document.getElementById('r-lost').textContent = fmt(kpi.lost_revenue);
-                document.getElementById('r-ticket').textContent = fmt(kpi.avg_ticket);
-
+                // Fila 1
                 document.getElementById('r-orders').textContent = kpi.total_orders;
                 document.getElementById('r-delivery').textContent = kpi.total_deliveries;
                 document.getElementById('r-pickup').textContent = kpi.total_pickups;
+                
+                // Fila 2
                 document.getElementById('r-new-users').textContent = kpi.new_users_registered;
                 document.getElementById('r-active-users').textContent = kpi.active_users_period;
-                document.getElementById('r-time').textContent = kpi.avg_delivery_minutes;
+                document.getElementById('r-total-users').textContent = kpi.total_users_historic;
 
-                // 2. GRÁFICOS
+                // Fila 3
+                document.getElementById('r-time').textContent = kpi.avg_delivery_minutes;
+                document.getElementById('r-ticket').textContent = fmt(kpi.avg_ticket);
+                document.getElementById('r-ticket-delivery').textContent = fmt(kpi.avg_delivery_ticket); // Nuevo
+                document.getElementById('r-service-avg').textContent = fmt(kpi.avg_service_fee); // Nuevo
+
+                // Áreas de Mejora
+                document.getElementById('r-canceled-total').textContent = `${kpi.total_canceled} Cancelados`;
+
+                // GRÁFICO TENDENCIA (Solo Pedidos y Delivery)
                 const trendsRes = await fetch(`${api}/data/trends?${params}`, {headers});
                 const trends = await trendsRes.json();
                 new Chart(document.getElementById('rTrendsChart'), {
@@ -260,37 +286,60 @@
                     data: {
                         labels: trends.labels,
                         datasets: [
-                            { type: 'line', label: 'Ingresos', data: trends.revenue, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill:true, yAxisID: 'y', tension:0.4 },
-                            { type: 'bar', label: 'Pedidos', data: trends.orders, backgroundColor: '#3b82f6', yAxisID: 'y1' }
+                            { label: 'Pedidos Totales', data: trends.orders, backgroundColor: '#3b82f6', borderRadius: 4 }
                         ]
                     },
-                    options: { responsive:true, maintainAspectRatio:false, scales: { y:{position:'left'}, y1:{position:'right', grid:{display:false}} } }
+                    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{display:false}}} }
                 });
 
+                // TOP TIENDAS
+                const storesRes = await fetch(`${api}/data/top-stores?${params}`, {headers});
+                const stores = await storesRes.json();
+                const sBody = document.getElementById('r-stores-body');
+                stores.slice(0,10).forEach(s => {
+                    sBody.innerHTML += `<tr><td class="small">${s.name}</td><td class="text-end fw-bold small">${s.orders}</td></tr>`;
+                });
+
+                // GRÁFICO CANCELACIONES (% ONLY)
                 const cancelRes = await fetch(`${api}/analysis/cancellations?${params}`, {headers});
                 const cancels = await cancelRes.json();
                 new Chart(document.getElementById('rCancelChart'), {
                     type: 'doughnut',
+                    plugins: [ChartDataLabels],
                     data: {
                         labels: cancels.map(d=>d.reason),
-                        datasets: [{ data: cancels.map(d=>d.count), backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#3b82f6'] }]
+                        datasets: [{ data: cancels.map(d=>d.count), backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#84cc16'] }]
                     },
-                    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'right'}} }
+                    options: {
+                        responsive:true, maintainAspectRatio:false,
+                        plugins: {
+                            legend: { position:'bottom', labels:{boxWidth:10, font:{size:9}} },
+                            datalabels: {
+                                color: '#fff',
+                                font: {weight:'bold'},
+                                formatter: (val, ctx) => {
+                                    let sum = 0;
+                                    let dataArr = ctx.chart.data.datasets[0].data;
+                                    dataArr.map(d => { sum += d; });
+                                    let pct = (val*100 / sum).toFixed(0) + "%";
+                                    return pct; // SOLO %
+                                }
+                            }
+                        }
+                    }
                 });
 
-                // 3. TABLAS
-                const storesRes = await fetch(`${api}/data/top-stores?${params}`, {headers});
-                const stores = await storesRes.json();
-                const sBody = document.getElementById('r-stores-body');
-                stores.slice(0,10).forEach(s => sBody.innerHTML += `<tr><td>${s.name}</td><td class="text-end fw-bold">${s.orders}</td></tr>`);
+                // MAPA
+                const map = L.map('reportMap', {zoomControl:false}).setView([10.4806, -66.9036], 11);
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+                
+                const heatRes = await fetch(`${api}/data/heatmap?${params}`, {headers});
+                const heatData = await heatRes.json();
+                if (heatData.length) L.heatLayer(heatData, { radius: 18, blur: 15, maxZoom: 13 }).addTo(map);
 
-                const driversRes = await fetch(`${api}/data/driver-leaderboard?${params}`, {headers});
-                const drivers = await driversRes.json();
-                const dBody = document.getElementById('r-drivers-body');
-                drivers.slice(0,10).forEach(d => {
-                    const statusColor = d.status === 'active' ? 'success' : (d.status==='warning'?'warning':'danger');
-                    dBody.innerHTML += `<tr><td>${d.name}</td><td class="text-end fw-bold">${d.orders}</td><td class="text-end"><span class="badge bg-${statusColor}">${d.status.toUpperCase()}</span></td></tr>`;
-                });
+                const storeLocRes = await fetch(`${api}/data/stores-locations`, {headers});
+                const storeLoc = await storeLocRes.json();
+                storeLoc.forEach(s => L.circleMarker([s.lat, s.lng], { radius: 3, color:'#3b82f6', fillOpacity:1 }).addTo(map));
 
             } catch (e) { console.error(e); }
         });
