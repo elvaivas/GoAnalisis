@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, cast, Date, or_
 from typing import List, Optional, Any
 from datetime import date
+from sqlalchemy import text
 
 from app.api import deps
 # Importamos User para la seguridad
@@ -14,11 +15,16 @@ router = APIRouter()
 
 # --- HELPER INTERNO ---
 def apply_filters(query, start_date, end_date, store_name, search):
-    # 1. Filtro Fecha
+    # 1. Filtro Fecha (CON CORRECCIÓN DE ZONA HORARIA VENEZUELA)
+    # Convertimos la fecha UTC de la DB a 'America/Caracas' antes de comparar con la fecha del filtro
     if start_date:
-        query = query.filter(cast(Order.created_at, Date) >= start_date)
+        query = query.filter(
+            func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)).cast(Date) >= start_date
+        )
     if end_date:
-        query = query.filter(cast(Order.created_at, Date) <= end_date)
+        query = query.filter(
+            func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)).cast(Date) <= end_date
+        )
     
     # 2. Filtro Tienda
     if store_name:

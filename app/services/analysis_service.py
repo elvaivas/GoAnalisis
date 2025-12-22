@@ -59,7 +59,9 @@ def get_driver_leaderboard(db: Session, start_date: Optional[date] = None, end_d
     
     query = apply_search(query, search_query)
 
-    results = query.group_by(Driver.name).order_by(desc('total_orders')).limit(10).all()
+    results = query.group_by(Driver.name)\
+                   .order_by(desc('total_orders'), Driver.name)\
+                   .limit(50).all()
     data = []
     now = datetime.utcnow()
     for row in results:
