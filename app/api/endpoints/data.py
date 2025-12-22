@@ -3,28 +3,24 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, cast, Date, or_
 from typing import List, Optional, Any
 from datetime import date
-from sqlalchemy import text
 
 from app.api import deps
-# Importamos User para la seguridad
 from app.db.base import Order, Store, OrderStatusLog, Customer, Driver, User
 from app.schemas.order import OrderSchema
 from app.services import analysis_service
 
 router = APIRouter()
 
-# --- HELPER INTERNO ---
+# --- HELPER INTERNO CON TIMEZONE FIX ---
 def apply_filters(query, start_date, end_date, store_name, search):
-    # 1. Filtro Fecha (CON CORRECCIÓN DE ZONA HORARIA VENEZUELA)
-    # Convertimos la fecha UTC de la DB a 'America/Caracas' antes de comparar con la fecha del filtro
+    # Definir fecha local para comparar
+    local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
+
+    # 1. Filtro Fecha
     if start_date:
-        query = query.filter(
-            func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)).cast(Date) >= start_date
-        )
+        query = query.filter(local_date >= start_date)
     if end_date:
-        query = query.filter(
-            func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)).cast(Date) <= end_date
-        )
+        query = query.filter(local_date <= end_date)
     
     # 2. Filtro Tienda
     if store_name:
@@ -49,8 +45,8 @@ def get_recent_orders(
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
     store_name: Optional[str] = Query(None),
-    search: Optional[str] = Query(None), # <--- ¡AQUÍ FALTABA LA COMA!
-    current_user: User = Depends(deps.get_current_user) # <--- SEGURIDAD ACTIVADA
+    search: Optional[str] = Query(None),
+    current_user: User = Depends(deps.get_current_user)
 ):
     query = db.query(Order)
     query = apply_filters(query, start_date, end_date, store_name, search)
@@ -69,6 +65,7 @@ def get_recent_orders(
             "order_type": o.order_type,
             "total_amount": o.total_amount,
             "delivery_fee": o.delivery_fee,
+            "gross_delivery_fee": o.gross_delivery_fee, # Importante para mostrar fee real en tabla
             "created_at": o.created_at,
             "state_start_at": state_start,
             "duration_text": o.duration,
@@ -81,7 +78,7 @@ def get_recent_orders(
 @router.get("/stores-locations", summary="Ubicación de Tiendas")
 def get_stores_locations(
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_user) # <--- SEGURIDAD
+    current_user: User = Depends(deps.get_current_user)
 ):
     stores = db.query(Store).filter(Store.latitude != None).all()
     return [{"name": s.name, "lat": s.latitude, "lng": s.longitude} for s in stores]
@@ -93,7 +90,7 @@ def get_heatmap_data(
     end_date: Optional[date] = Query(None),
     store_name: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user) # <--- SEGURIDAD
+    current_user: User = Depends(deps.get_current_user)
 ):
     query = db.query(Order.latitude, Order.longitude).filter(
         Order.latitude != None, 
@@ -111,16 +108,9 @@ def get_trends_data(
     end_date: Optional[date] = Query(None),
     store_name: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user) # <--- SEGURIDAD
+    current_user: User = Depends(deps.get_current_user)
 ):
-    data = analysis_service.get_daily_trends(db, start_date, end_date, store_name, search)
-    
-    # CENSURA PARA VIEWERS
-    if current_user.role != 'admin':
-        # Reemplazamos la lista de ingresos con ceros
-        data['revenue'] = [0] * len(data['revenue'])
-        
-    return data
+    return analysis_service.get_daily_trends(db, start_date, end_date, store_name, search)
 
 @router.get("/driver-leaderboard", summary="Ranking Repartidores")
 def get_driver_leaderboard_data(
@@ -129,7 +119,7 @@ def get_driver_leaderboard_data(
     end_date: Optional[date] = Query(None),
     store_name: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user) # <--- SEGURIDAD
+    current_user: User = Depends(deps.get_current_user)
 ):
     return analysis_service.get_driver_leaderboard(db, start_date, end_date, store_name, search)
 
@@ -140,7 +130,7 @@ def get_top_stores_data(
     end_date: Optional[date] = Query(None),
     store_name: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user) # <--- SEGURIDAD
+    current_user: User = Depends(deps.get_current_user)
 ):
     return analysis_service.get_top_stores(db, start_date, end_date, store_name, search)
 
@@ -151,14 +141,14 @@ def get_top_customers_data(
     end_date: Optional[date] = Query(None),
     store_name: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user) # <--- SEGURIDAD
+    current_user: User = Depends(deps.get_current_user)
 ):
     return analysis_service.get_top_customers(db, start_date, end_date, store_name, search)
 
 @router.get("/all-stores-names", summary="Lista completa de tiendas para filtros")
 def get_all_stores_names(
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_user) # <--- SEGURIDAD
+    current_user: User = Depends(deps.get_current_user)
 ):
     stores = db.query(Store.name).order_by(Store.name.asc()).all()
     return [s.name for s in stores if s.name]

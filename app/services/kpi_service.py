@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date, or_
 from typing import Dict, Any, Optional
-from datetime import date, datetime
+from datetime import date
 from app.db.base import Order, Store, Customer
 
 def get_main_kpis(
@@ -12,24 +12,33 @@ def get_main_kpis(
     search_query: Optional[str] = None
 ) -> Dict[str, Any]:
     
-    # 1. BASE QUERY
     base_query = db.query(Order)
 
-    if start_date: base_query = base_query.filter(cast(Order.created_at, Date) >= start_date)
-    if end_date: base_query = base_query.filter(cast(Order.created_at, Date) <= end_date)
-    if store_name: base_query = base_query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+    # --- CORRECCIÓN DE ZONA HORARIA (VENEZUELA) ---
+    # Convertimos la fecha guardada (UTC) a America/Caracas antes de extraer el día
+    local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
+    local_date = func.date(local_created_at)
+
+    # --- FILTROS ---
+    if start_date:
+        base_query = base_query.filter(local_date >= start_date)
+    if end_date:
+        base_query = base_query.filter(local_date <= end_date)
+    
+    if store_name:
+        base_query = base_query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+    
     if search_query:
         base_query = base_query.join(Customer, Order.customer_id == Customer.id, isouter=True)\
             .filter(or_(Order.external_id.ilike(f"%{search_query}%"), Customer.name.ilike(f"%{search_query}%")))
 
-    # --- CÁLCULO SEGURO ---
+    # --- CÁLCULO DE DATOS (Igual que antes) ---
     orders = base_query.all()
     
     total_revenue = 0.0
     total_fees_gross = 0.0
     total_coupons = 0.0
     driver_payout = 0.0
-    
     profit_delivery = 0.0
     profit_service = 0.0
     profit_commission = 0.0
@@ -42,7 +51,6 @@ def get_main_kpis(
     durations_minutes = []
 
     for o in orders:
-        # Contadores
         if o.current_status == 'canceled': 
             count_canceled += 1
             lost_revenue += (o.total_amount or 0.0)
@@ -53,14 +61,12 @@ def get_main_kpis(
         if o.current_status == 'delivered' and o.order_type == 'Delivery' and o.delivery_time_minutes:
             durations_minutes.append(o.delivery_time_minutes)
 
-        # Valores Base (Con validación de tipos)
         total_amt = float(o.total_amount or 0.0)
         delivery_real = float(o.gross_delivery_fee if o.gross_delivery_fee and o.gross_delivery_fee > 0 else (o.delivery_fee or 0.0))
         coupon = float(o.coupon_discount or 0.0)
         prod_price = float(o.product_price or 0.0)
         svc_fee = float(o.service_fee or 0.0)
 
-        # Acumuladores
         total_revenue += total_amt
         total_fees_gross += delivery_real
         total_coupons += coupon
@@ -69,31 +75,32 @@ def get_main_kpis(
         driver_payout += (delivery_real * 0.80)
         profit_delivery += (delivery_real * 0.20) / 1.16
         
-        # Ganancia Servicio
         iva_prod = prod_price * 0.16
         base_service = prod_price + iva_prod + delivery_real + svc_fee
-        profit_service += (base_calc * 0.05) / 1.16 if 'base_calc' in locals() else (total_amt * 0.05) / 1.16 # Fallback seguro
+        profit_service += (base_service * 0.05) / 1.16
 
-        # Ganancia Comisión (Validar que store exista)
         rate = 0.0
         if o.store and o.store.commission_rate:
             rate = float(o.store.commission_rate)
         
         profit_commission += prod_price * (rate / 100.0)
 
-    # Totales Finales
     real_net_profit = (profit_delivery + profit_service + profit_commission) - total_coupons
-
-    # Métricas Usuario
+    
     avg_ticket = (total_revenue / len(orders)) if orders else 0.0
     avg_time = sum(durations_minutes) / len(durations_minutes) if durations_minutes else 0.0
+
+    # Usuarios (Total Histórico y Nuevos en Periodo)
     total_users_historic = db.query(Customer).count()
-    unique_customers = {o.customer_id for o in orders if o.customer_id}
     
+    # Nuevos usuarios (Usando Timezone también en joined_at)
+    local_joined_at = func.date(func.timezone('America/Caracas', func.timezone('UTC', Customer.joined_at)))
     new_users_q = db.query(Customer)
-    if start_date: new_users_q = new_users_q.filter(cast(Customer.joined_at, Date) >= start_date)
-    if end_date: new_users_q = new_users_q.filter(cast(Customer.joined_at, Date) <= end_date)
+    if start_date: new_users_q = new_users_q.filter(local_joined_at >= start_date)
+    if end_date: new_users_q = new_users_q.filter(local_joined_at <= end_date)
     
+    unique_customers = {o.customer_id for o in orders if o.customer_id}
+
     return {
         "total_orders": len(orders),
         "total_revenue": round(total_revenue, 2),
