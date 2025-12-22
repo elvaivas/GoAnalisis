@@ -1,7 +1,7 @@
 import logging
 import re
 import time
-from typing import List, Dict, Any
+from typing import List, Dict
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -17,19 +17,20 @@ logger = logging.getLogger(__name__)
 
 class CustomerScraper:
     def __init__(self):
-        self.base_url = "https://ecosistema.gopharma.com.ve/login/admin"
         self.users_url = "https://ecosistema.gopharma.com.ve/admin/users/customer/list"
+        self.base_url = "https://ecosistema.gopharma.com.ve/login/admin"
         self.driver = None
 
     def setup_driver(self):
         if self.driver: return
         chrome_options = Options()
-        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--headless=new") # Modo headless nuevo (más estable)
         chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-dev-shm-usage") # Vital para Docker
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--remote-allow-origins=*")
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        
         service = ChromeService(ChromeDriverManager().install())
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
 
@@ -48,48 +49,61 @@ class CustomerScraper:
 
     def close_driver(self):
         if self.driver:
-            try: self.driver.quit()
+            try: 
+                self.driver.quit()
+                logger.info("🛑 Driver cerrado correctamente.")
             except: pass
             self.driver = None
 
     def _parse_spanish_date(self, text):
+        """Intenta parsear fechas variadas."""
         if not text: return None
-        month_map = {'ene':'01','feb':'02','mar':'03','abr':'04','may':'05','jun':'06','jul':'07','ago':'08','sep':'09','oct':'10','nov':'11','dic':'12'}
+        
+        # Diccionario ampliado
+        month_map = {
+            'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may': '05', 'jun': '06',
+            'jul': '07', 'ago': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dic': '12',
+            'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04', 'mayo': '05', 'junio': '06',
+            'julio': '07', 'agosto': '08', 'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+        }
+        
         try:
-            clean = text.lower().replace('.', '')
-            for m, n in month_map.items():
-                if m in clean: clean = clean.replace(m, n); break
-            match = re.search(r'(\d{1,2})\s+(\d{2})\s+(\d{4})', clean)
+            clean = text.lower().replace('.', '').strip()
+            
+            # Reemplazar nombre de mes por número
+            for m_name, m_num in month_map.items():
+                if m_name in clean:
+                    clean = clean.replace(m_name, m_num)
+                    break
+            
+            # Buscar patrón DD MM YYYY (con espacios o /)
+            match = re.search(r'(\d{1,2})[\s/-]+(\d{2})[\s/-]+(\d{4})', clean)
             if match:
                 return datetime.strptime(f"{match.group(1)} {match.group(2)} {match.group(3)}", '%d %m %Y')
-        except: pass
+                
+        except Exception as e:
+            # logger.warning(f"Error fecha '{text}': {e}")
+            pass
         return None
 
     def scrape_customers(self, max_pages: int = None) -> List[Dict]:
-        """
-        Si max_pages es None, recorre hasta el final de la lista.
-        Si max_pages es un número (ej: 5), solo revisa esas páginas (Modo Vigilancia).
-        """
         if not self.driver: self.setup_driver(); self.login()
-        customers_data = []
+        customers = []
         
         try:
-            logger.info(f"👥 Scrapeando Clientes: {self.users_url}")
+            logger.info(f"👥 Navegando a lista de clientes...")
             self.driver.get(self.users_url)
             WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "datatable")))
 
             current_page = 1
-            
             while True:
-                # 1. Freno de mano (Opcional)
-                if max_pages and current_page > max_pages:
-                    logger.info(f"🛑 Límite de vigilancia alcanzado ({max_pages} pág). Deteniendo.")
-                    break
+                if max_pages and current_page > max_pages: break
 
-                logger.info(f"   📄 Procesando página de clientes {current_page}...")
+                logger.info(f"   📄 Procesando página {current_page}...")
                 
                 rows = self.driver.find_elements(By.XPATH, "//table[@id='datatable']/tbody/tr")
-                
+                if not rows: break
+
                 for row in rows:
                     try:
                         cols = row.find_elements(By.TAG_NAME, "td")
@@ -103,36 +117,35 @@ class CustomerScraper:
                             phone = phone_el.text.strip()
                         except: pass
                         
-                        # Columna 6 (index 6) es Fecha de Ingreso
+                        # INTENTO DE FECHA ROBUSTO
                         date_text = cols[6].text.strip()
                         joined_at = self._parse_spanish_date(date_text)
 
-                        if name and joined_at:
-                            customers_data.append({
+                        if name:
+                            customers.append({
                                 "name": name,
                                 "phone": phone,
-                                "joined_at": joined_at
+                                "joined_at": joined_at # Puede ser None
                             })
                     except: continue
 
-                # 2. Paginación Infinita
+                # Paginación
                 try:
                     next_btn = self.driver.find_element(By.XPATH, "//a[@aria-label='Next »']")
                     parent = next_btn.find_element(By.XPATH, "./..")
-                    
-                    # Si el botón está deshabilitado, llegamos al final REAL
-                    if "disabled" in parent.get_attribute("class"):
-                        logger.info("🚫 Fin de lista de clientes (Última página alcanzada).")
+                    if "disabled" in parent.get_attribute("class"): 
+                        logger.info("🚫 Fin de la lista.")
                         break
                     
                     self.driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(2)
+                    time.sleep(2) 
                     current_page += 1
-                except: 
-                    logger.info("🚫 No se encontró botón siguiente.")
-                    break
+                except: break
 
         except Exception as e:
             logger.error(f"Error scraping customers: {e}")
+        finally:
+            # CIERRE SEGURO SIEMPRE
+            self.close_driver()
         
-        return customers_data
+        return customers
