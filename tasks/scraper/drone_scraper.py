@@ -168,8 +168,10 @@ class DroneScraper:
         # Fecha
         try:
             header_text = self.driver.find_element(By.CLASS_NAME, "order-invoice-left").text
-            date_match = re.search(r'(\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\s+\d{2}:\d{2})', header_text)
-            if date_match: info['created_at_text'] = date_match.group(1)
+            date_match = re.search(r'(\d{1,2}\s+[A-Za-z\.]+\s+\d{4}\s+\d{1,2}:\d{2})', header_text)
+            if date_match: 
+                info['created_at_text'] = date_match.group(1)
+                # logger.info(f"📅 Fecha detectada: {info['created_at_text']}")
         except: pass
 
         return info
