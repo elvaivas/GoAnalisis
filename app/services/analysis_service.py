@@ -29,20 +29,34 @@ def _parse_duration_string(duration_str: str) -> int:
 
 # --- FUNCIONES DE ANÁLISIS ---
 
-def get_daily_trends(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None) -> Dict[str, List]:
+def get_daily_trends(db: Session, start_date=None, end_date=None, store_name=None, search_query=None) -> Dict[str, List]:
+    # Usamos timezone para agrupar por el día CORRECTO en Venezuela
+    date_col = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
+    
     query = db.query(
-        cast(Order.created_at, Date).label('date'),
+        date_col.label('date'),
         func.count(Order.id).label('total_orders'),
         func.sum(Order.total_amount).label('total_revenue'),
-        func.avg(case((and_(Order.current_status == 'delivered', Order.order_type == 'Delivery', Order.delivery_time_minutes != None), Order.delivery_time_minutes), else_=None)).label('avg_time')
+        func.avg(case(
+            (and_(
+                Order.current_status == 'delivered', 
+                Order.order_type == 'Delivery',
+                Order.delivery_time_minutes != None
+            ), Order.delivery_time_minutes),
+            else_=None
+        )).label('avg_time')
     )
-    if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
-    if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
-    if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+
+    # Filtros usando la misma lógica de zona horaria
+    if start_date: 
+        query = query.filter(date_col >= start_date)
+    if end_date: 
+        query = query.filter(date_col <= end_date)
     
+    if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     query = apply_search(query, search_query)
 
-    results = query.group_by('date').order_by('date').all()
+    results = query.group_by(date_col).order_by(date_col).all()
 
     return {
         "labels": [r.date.strftime('%Y-%m-%d') for r in results],
