@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, cast, Date, case, and_, or_
+from sqlalchemy import func, desc, cast, Date, case, and_, or_, text
 from typing import List, Dict, Any, Optional
 from datetime import date, datetime, timedelta
 import re
@@ -9,7 +9,6 @@ from app.db.base import Order, OrderStatusLog, Driver, Store, Customer
 # --- HELPER: BÚSQUEDA GLOBAL ---
 def apply_search(query, search_query: str):
     if search_query:
-        # Busca por ID de Pedido O Nombre del Cliente
         return query.join(Customer, Order.customer_id == Customer.id, isouter=True)\
             .filter(or_(
                 Order.external_id.ilike(f"%{search_query}%"),
@@ -29,8 +28,9 @@ def _parse_duration_string(duration_str: str) -> int:
 
 # --- FUNCIONES DE ANÁLISIS ---
 
-def get_daily_trends(db: Session, start_date=None, end_date=None, store_name=None, search_query=None) -> Dict[str, List]:
+def get_daily_trends(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None) -> Dict[str, List]:
     # Usamos timezone para agrupar por el día CORRECTO en Venezuela
+    # Convertimos UTC -> America/Caracas y luego extraemos la fecha
     date_col = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
     
     query = db.query(
@@ -47,11 +47,9 @@ def get_daily_trends(db: Session, start_date=None, end_date=None, store_name=Non
         )).label('avg_time')
     )
 
-    # Filtros usando la misma lógica de zona horaria
-    if start_date: 
-        query = query.filter(date_col >= start_date)
-    if end_date: 
-        query = query.filter(date_col <= end_date)
+    # Filtros con Timezone
+    if start_date: query = query.filter(date_col >= start_date)
+    if end_date: query = query.filter(date_col <= end_date)
     
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     query = apply_search(query, search_query)
@@ -66,16 +64,25 @@ def get_daily_trends(db: Session, start_date=None, end_date=None, store_name=Non
     }
 
 def get_driver_leaderboard(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
-    query = db.query(Driver.name, func.count(Order.id).label('total_orders'), func.max(Order.created_at).label('last_delivery'), func.min(Order.created_at).label('first_delivery')).join(Order, Order.driver_id == Driver.id)
-    if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
-    if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
+    # Usamos la misma lógica de fecha local para filtros
+    local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
+
+    query = db.query(
+        Driver.name, 
+        func.count(Order.id).label('total_orders'), 
+        func.max(Order.created_at).label('last_delivery'), 
+        func.min(Order.created_at).label('first_delivery')
+    ).join(Order, Order.driver_id == Driver.id)
+
+    if start_date: query = query.filter(local_date >= start_date)
+    if end_date: query = query.filter(local_date <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
     query = apply_search(query, search_query)
 
-    results = query.group_by(Driver.name)\
-                   .order_by(desc('total_orders'), Driver.name)\
-                   .limit(50).all()
+    # Límite aumentado a 50
+    results = query.group_by(Driver.name).order_by(desc('total_orders'), Driver.name).limit(50).all()
+    
     data = []
     now = datetime.utcnow()
     for row in results:
@@ -94,25 +101,39 @@ def get_driver_leaderboard(db: Session, start_date: Optional[date] = None, end_d
     return data
 
 def get_top_stores(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
+    # Subquery para fecha de inicio
     start_date_subquery = db.query(Order.store_id, func.min(Order.created_at).label('first_order_date')).group_by(Order.store_id).subquery()
-    query = db.query(Store.name, func.count(Order.id).label('total_orders'), start_date_subquery.c.first_order_date).join(Order, Order.store_id == Store.id).outerjoin(start_date_subquery, Store.id == start_date_subquery.c.store_id)
-    if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
-    if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
-    if store_name: query = query.filter(Store.name == store_name)
     
+    query = db.query(
+        Store.name, 
+        func.count(Order.id).label('total_orders'), 
+        start_date_subquery.c.first_order_date
+    ).join(Order, Order.store_id == Store.id).outerjoin(start_date_subquery, Store.id == start_date_subquery.c.store_id)
+    
+    # Filtro fecha local
+    local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
+    if start_date: query = query.filter(local_date >= start_date)
+    if end_date: query = query.filter(local_date <= end_date)
+    
+    if store_name: query = query.filter(Store.name == store_name)
     query = apply_search(query, search_query)
 
+    # SIN LIMIT
     results = query.group_by(Store.name, start_date_subquery.c.first_order_date).order_by(desc('total_orders')).all()
     return [{"name": row.name or "Tienda Desconocida", "orders": row.total_orders, "first_seen": row.first_order_date.strftime('%d/%m/%Y') if row.first_order_date else "N/A"} for row in results]
 
 def calculate_bottlenecks(db: Session, store_name: Optional[str] = None, search_query: Optional[str] = None):
+    # Nota: Bottlenecks no suele filtrarse por fecha en este diseño, pero si quisieras, usa la misma lógica.
     base_query = db.query(OrderStatusLog.order_id, OrderStatusLog.status, OrderStatusLog.timestamp).join(Order, OrderStatusLog.order_id == Order.id)
     if store_name: base_query = base_query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
     base_query = apply_search(base_query, search_query)
 
     subquery_cte = base_query.cte("filtered_logs")
-    subquery = db.query(subquery_cte.c.order_id, subquery_cte.c.status, subquery_cte.c.timestamp, func.lead(subquery_cte.c.timestamp).over(partition_by=subquery_cte.c.order_id, order_by=subquery_cte.c.timestamp).label('next_timestamp')).subquery()
+    subquery = db.query(
+        subquery_cte.c.order_id, subquery_cte.c.status, subquery_cte.c.timestamp,
+        func.lead(subquery_cte.c.timestamp).over(partition_by=subquery_cte.c.order_id, order_by=subquery_cte.c.timestamp).label('next_timestamp')
+    ).subquery()
     results = db.query(subquery.c.status, func.avg(subquery.c.next_timestamp - subquery.c.timestamp).label('avg_duration')).group_by(subquery.c.status).all()
     data = []
     for row in results:
@@ -120,53 +141,35 @@ def calculate_bottlenecks(db: Session, store_name: Optional[str] = None, search_
     return data
 
 def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
-    """
-    Top clientes con CÁLCULO DE RANKING GLOBAL REAL.
-    """
-    # 1. Obtenemos TODOS los clientes ordenados por gasto (o pedidos), aplicando solo filtros de fecha/tienda
+    # Filtro fecha local
+    local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
+    
     query = db.query(
-        Customer.name,
-        func.count(Order.id).label("total_orders"),
+        Customer.name, 
+        func.count(Order.id).label("total_orders"), 
         func.sum(Order.total_amount).label("total_spent")
-    ).join(Order, Order.customer_id == Customer.id)\
-     .filter(Order.current_status == 'delivered')
-
-    if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
-    if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
+    ).join(Order, Order.customer_id == Customer.id).filter(Order.current_status == 'delivered')
+    
+    if start_date: query = query.filter(local_date >= start_date)
+    if end_date: query = query.filter(local_date <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+    
+    query = apply_search(query, search_query)
 
-    # Obtenemos la lista completa ordenada para calcular el ranking real
-    # (Para 2000 clientes esto es rápido en memoria)
     all_results = query.group_by(Customer.name).order_by(desc("total_spent")).all()
-
+    
     final_list = []
     search_lower = search_query.lower() if search_query else None
 
-    # 2. Recorremos asignando el Ranking (1, 2, 3...)
     for index, row in enumerate(all_results):
         rank = index + 1
         name = row.name or "Cliente Desconocido"
+        if search_lower and search_lower not in name.lower(): continue
         
-        # 3. Si hay búsqueda, filtramos AQUÍ (después de calcular el rank)
-        if search_lower:
-            # Si el nombre no coincide, lo saltamos
-            if search_lower not in name.lower():
-                continue
-
-        final_list.append({
-            "rank": rank, # <--- Enviamos el Ranking Real
-            "name": name,
-            "count": row.total_orders,
-            "total_amount": float(row.total_spent or 0)
-        })
-
-        # Si hay búsqueda, no necesitamos devolver miles, con los primeros 20 coincidencias basta
+        final_list.append({"rank": rank, "name": name, "count": row.total_orders, "total_amount": float(row.total_spent or 0)})
         if search_lower and len(final_list) >= 20: break
     
-    # Si no hay búsqueda, devolvemos el Top 20 estándar
-    if not search_query:
-        return final_list[:20]
-    
+    if not search_query: return final_list[:20]
     return final_list
 
 def get_total_duration_for_order(db: Session, order_id: int):
@@ -179,13 +182,14 @@ def get_total_duration_for_order(db: Session, order_id: int):
     return {"total_seconds": 0, "source": "unknown"}
 
 def get_cancellation_reasons(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
-    # Esta función YA tiene apply_search, por lo que filtra correctamente por usuario/pedido
+    local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
+    
     query = db.query(Order.cancellation_reason, func.count(Order.id).label('count')).filter(Order.current_status == 'canceled', Order.cancellation_reason != None)
-    if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
-    if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
+    
+    if start_date: query = query.filter(local_date >= start_date)
+    if end_date: query = query.filter(local_date <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
-    # Aquí el filtro de búsqueda hace que solo cuente cancelaciones del usuario buscado
     query = apply_search(query, search_query)
 
     results = query.group_by(Order.cancellation_reason).order_by(desc('count')).all()
