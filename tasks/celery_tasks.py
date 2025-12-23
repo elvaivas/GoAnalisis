@@ -65,6 +65,40 @@ def calculate_distance_km(lat1, lon1, lat2, lon2):
         return round(R * c, 3)
     except: return 0.0
 
+def normalize_cancellation_reason(text: str) -> str:
+    """Estandariza los motivos de cancelación (V4 Definitiva)."""
+    if not text or text == "." or len(text) < 3: return "Sin especificar"
+    
+    # 1. Limpieza básica
+    text = text.replace("del pedido :", "").replace("del pedido", "").strip()
+    text_lower = text.lower()
+
+    # 2. Categorización Inteligente
+    
+    # INVENTARIO (Agregado: 'existente', 'falta')
+    if any(x in text_lower for x in [
+        'disponible', 'existencia', 'vencido', 'dañado', 'no hay', 'no tenemos', 
+        'blister', 'inventario', 'coca cola', 'falta', 'agotado', 'stock', 'medicamento',
+        'existente' 
+    ]):
+        return "Producto No Disponible / Dañado"
+        
+    # PAGO
+    if any(x in text_lower for x in ['payment', 'pago', 'transferencia', 'zelle', 'móvil', 'movil']):
+        if "agotado" in text_lower or "tiempo" in text_lower: return "Tiempo de Pago Agotado"
+        return "Problemas con el Pago"
+    
+    # ERROR HUMANO
+    if any(x in text_lower for x in ['equivocado', 'descripcion', 'descripción', 'precio', 'código', 'codigo', 'error']):
+        return "Error en Pedido / Descripción"
+        
+    # ADMINISTRATIVO (Agregado: 'traspaso')
+    if any(x in text_lower for x in ['nota', 'prueba', 'test', 'orden de', 'admin', 'traspaso']):
+        return "Cancelación Administrativa"
+
+    # Si no coincide, devolvemos el texto limpio (Title Case) para detectarlo luego
+    return text.title()
+
 def process_drone_data(db, data: dict):
     # (Tu función process_drone_data intacta, la omito para ahorrar espacio visual pero DEBE ESTAR AQUÍ)
     # ... (Copia el contenido de process_drone_data que ya tenías) ...
@@ -124,7 +158,7 @@ def process_drone_data(db, data: dict):
                 external_id=external_id, created_at=created_at_dt, total_amount=data.get('total_amount',0), delivery_fee=data.get('delivery_fee',0),
                 gross_delivery_fee=data.get('real_delivery_fee',0), service_fee=data.get('service_fee',0), coupon_discount=data.get('coupon_discount',0), tips=data.get('tips',0),
                 current_status=db_status, order_type=order_type, distance_km=dist_km, latitude=cust_lat, longitude=cust_lng,
-                cancellation_reason=data.get('cancellation_reason'), delivery_time_minutes=minutes_calc, duration=data.get('duration_text'),
+                cancellation_reason=normalize_cancellation_reason(data.get('cancellation_reason')),
                 store_id=store.id if store else None, customer_id=customer.id if customer else None, driver_id=driver.id if driver else None
             )
             db.add(order); db.commit(); db.refresh(order)
@@ -141,6 +175,8 @@ def process_drone_data(db, data: dict):
             if minutes_calc: order.delivery_time_minutes = minutes_calc
             if cust_lat: order.latitude=cust_lat; order.longitude=cust_lng; order.distance_km=dist_km; order.order_type=order_type
             if driver: order.driver_id = driver.id
+            if data.get('cancellation_reason'):
+                 order.cancellation_reason = normalize_cancellation_reason(data.get('cancellation_reason'))
         
         db.commit()
     except Exception as e:
