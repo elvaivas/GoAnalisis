@@ -278,21 +278,25 @@ def enrich_missing_data(self):
             # 2. Entregados sin mapa
             if processed < BATCH_SIZE:
                 limit = BATCH_SIZE - processed
-                targets = db.query(Order).filter(Order.current_status == 'delivered', (Order.latitude == None) | (Order.gross_delivery_fee == 0)).limit(limit).all()
+                
+                # --- AQUÍ ESTÁ EL CAMBIO ---
+                targets = db.query(Order).filter(
+                    Order.current_status == 'delivered',
+                    # Busca si falta mapa O si falta el fee bruto (nuestra marca de "falta info")
+                    (Order.latitude == None) | (Order.gross_delivery_fee == 0)
+                ).limit(limit).all()
+                # ---------------------------
+                
                 if targets:
+                    logger.info(f"🚁 Drone: Enriqueciendo {len(targets)} pedidos (Faltan datos)...")
                     if not drone.driver: drone.login()
+                    
                     for order in targets:
+                        # Escaneo completo (Trae Productos, Finanzas y Mapa)
                         data = drone.scrape_detail(order.external_id, mode='full')
                         process_drone_data(db, data)
                         processed += 1
-            if processed > 0:
-                enrich_missing_data.apply_async(countdown=2)
-                return f"Enriched {processed}"
-            return "All Done"
-        except Exception as e: logger.error(f"Drone error: {e}")
-        finally:
-            if drone: drone.close_driver()
-            db.close()
+                    db.commit()
 
 # --- AQUÍ ESTABA EL PROBLEMA: EL NOMBRE DE LA TAREA ---
 # Forzamos el nombre exacto que está pidiendo el error log
