@@ -59,7 +59,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     env_file:
       - .env
-    command: celery -A tasks.celery_app worker --loglevel=info
+    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=3
     volumes:
       - .:/app
     depends_on:
