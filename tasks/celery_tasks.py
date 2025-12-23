@@ -10,10 +10,11 @@ import redis
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.db.base import Order, Store, Customer, Driver, OrderStatusLog, OrderItem
-# IMPORTANTE: Asegúrate de que este archivo exista
+# Asegúrate de tener estos archivos creados
 from tasks.scraper.order_scraper import OrderScraper 
 from tasks.scraper.drone_scraper import DroneScraper 
 from tasks.scraper.customer_scraper import CustomerScraper 
+from tasks.scraper.store_scraper import StoreScraper 
 
 redis_client = redis.Redis.from_url(settings.REDIS_URL)
 logger = logging.getLogger(__name__)
@@ -66,42 +67,25 @@ def calculate_distance_km(lat1, lon1, lat2, lon2):
     except: return 0.0
 
 def normalize_cancellation_reason(text: str) -> str:
-    """Estandariza los motivos de cancelación (V4 Definitiva)."""
+    """Estandariza los motivos de cancelación."""
     if not text or text == "." or len(text) < 3: return "Sin especificar"
     
-    # 1. Limpieza básica
     text = text.replace("del pedido :", "").replace("del pedido", "").strip()
     text_lower = text.lower()
 
-    # 2. Categorización Inteligente
-    
-    # INVENTARIO (Agregado: 'existente', 'falta')
-    if any(x in text_lower for x in [
-        'disponible', 'existencia', 'vencido', 'dañado', 'no hay', 'no tenemos', 
-        'blister', 'inventario', 'coca cola', 'falta', 'agotado', 'stock', 'medicamento',
-        'existente' 
-    ]):
+    if any(x in text_lower for x in ['disponible','existencia','vencido','dañado','no hay','no tenemos','blister','inventario','coca cola','falta','agotado','stock','medicamento','existente']):
         return "Producto No Disponible / Dañado"
-        
-    # PAGO
-    if any(x in text_lower for x in ['payment', 'pago', 'transferencia', 'zelle', 'móvil', 'movil']):
+    if any(x in text_lower for x in ['payment','pago','transferencia','zelle','móvil','movil']):
         if "agotado" in text_lower or "tiempo" in text_lower: return "Tiempo de Pago Agotado"
         return "Problemas con el Pago"
-    
-    # ERROR HUMANO
-    if any(x in text_lower for x in ['equivocado', 'descripcion', 'descripción', 'precio', 'código', 'codigo', 'error']):
+    if any(x in text_lower for x in ['equivocado','descripcion','descripción','precio','código','codigo','error']):
         return "Error en Pedido / Descripción"
-        
-    # ADMINISTRATIVO (Agregado: 'traspaso')
-    if any(x in text_lower for x in ['nota', 'prueba', 'test', 'orden de', 'admin', 'traspaso']):
+    if any(x in text_lower for x in ['nota','prueba','test','orden de','admin','traspaso']):
         return "Cancelación Administrativa"
-
-    # Si no coincide, devolvemos el texto limpio (Title Case) para detectarlo luego
+    
     return text.title()
 
 def process_drone_data(db, data: dict):
-    # (Tu función process_drone_data intacta, la omito para ahorrar espacio visual pero DEBE ESTAR AQUÍ)
-    # ... (Copia el contenido de process_drone_data que ya tenías) ...
     try:
         external_id = data.get('external_id')
         if not external_id: return
@@ -111,8 +95,12 @@ def process_drone_data(db, data: dict):
         db_status = "pending"
         if "entregado" in status_text: db_status = "delivered"
         elif "cancelado" in status_text: db_status = "canceled"
+        elif "entrega" in status_text and "repartidor" in status_text:
+             driver_name = data.get('driver_name', 'N/A')
+             if driver_name and "N/A" not in driver_name and len(driver_name) > 2: db_status = "driver_assigned"
+             else: db_status = "confirmed" # Solicitando
+        elif "asignado" in status_text: db_status = "driver_assigned"
         elif "camino" in status_text or "ruta" in status_text: db_status = "on_the_way"
-        elif "asignado" in status_text or ("driver_name" in data and "N/A" not in data['driver_name']): db_status = "driver_assigned"
         elif "proceso" in status_text: db_status = "processing"
         elif "confirmado" in status_text: db_status = "confirmed"
 
@@ -121,18 +109,15 @@ def process_drone_data(db, data: dict):
         if data.get('store_name'):
             store = db.query(Store).filter(Store.name == data['store_name']).first()
             if not store:
-                store = Store(name=data['store_name'], external_id=f"store_{data['store_name']}")
-                db.add(store); db.commit(); db.refresh(store)
+                store = Store(name=data['store_name'], external_id=f"store_{data['store_name']}"); db.add(store); db.commit(); db.refresh(store)
             if "store_lat" in data and store.latitude is None:
-                store.latitude = data['store_lat']
-                store.longitude = data['store_lng']
+                store.latitude = data['store_lat']; store.longitude = data['store_lng']
 
         customer = None
         if data.get('customer_name'):
             customer = db.query(Customer).filter(Customer.name == data['customer_name']).first()
             if not customer:
-                customer = Customer(name=data['customer_name'], external_id=f"cust_{data['customer_name']}")
-                db.add(customer); db.commit(); db.refresh(customer)
+                customer = Customer(name=data['customer_name'], external_id=f"cust_{data['customer_name']}"); db.add(customer); db.commit(); db.refresh(customer)
             if data.get('customer_phone'): customer.phone = data['customer_phone']
 
         driver = None
@@ -145,6 +130,7 @@ def process_drone_data(db, data: dict):
         order = db.query(Order).filter(Order.external_id == external_id).first()
         created_at_dt = parse_spanish_date(data.get('created_at_text', ''))
         minutes_calc = parse_duration_to_minutes(data.get('duration_text', ''))
+        
         dist_km = 0.0
         cust_lat, cust_lng = data.get('customer_lat'), data.get('customer_lng')
         if cust_lat and store and store.latitude: dist_km = calculate_distance_km(store.latitude, store.longitude, cust_lat, cust_lng)
@@ -153,12 +139,15 @@ def process_drone_data(db, data: dict):
         if db_status == "canceled": order_type = None
         elif dist_km < 0.1 and dist_km > 0: order_type = "Pickup"
 
+        c_reason = normalize_cancellation_reason(data.get('cancellation_reason'))
+
         if not order:
             order = Order(
                 external_id=external_id, created_at=created_at_dt, total_amount=data.get('total_amount',0), delivery_fee=data.get('delivery_fee',0),
                 gross_delivery_fee=data.get('real_delivery_fee',0), service_fee=data.get('service_fee',0), coupon_discount=data.get('coupon_discount',0), tips=data.get('tips',0),
+                product_price=data.get('product_price',0),
                 current_status=db_status, order_type=order_type, distance_km=dist_km, latitude=cust_lat, longitude=cust_lng,
-                cancellation_reason=normalize_cancellation_reason(data.get('cancellation_reason')),
+                cancellation_reason=c_reason, delivery_time_minutes=minutes_calc, duration=data.get('duration_text'),
                 store_id=store.id if store else None, customer_id=customer.id if customer else None, driver_id=driver.id if driver else None
             )
             db.add(order); db.commit(); db.refresh(order)
@@ -170,35 +159,23 @@ def process_drone_data(db, data: dict):
                 order.current_status = db_status
             
             # Updates
-            if data.get('total_amount'): order.total_amount = data['total_amount']
+            order.total_amount = data.get('total_amount', order.total_amount)
             if data.get('real_delivery_fee'): order.gross_delivery_fee = data['real_delivery_fee']
+            if data.get('service_fee'): order.service_fee = data['service_fee']
+            if data.get('product_price'): order.product_price = data['product_price']
+            if c_reason: order.cancellation_reason = c_reason
+            
             if minutes_calc: order.delivery_time_minutes = minutes_calc
             if cust_lat: order.latitude=cust_lat; order.longitude=cust_lng; order.distance_km=dist_km; order.order_type=order_type
             if driver: order.driver_id = driver.id
-            if data.get('cancellation_reason'):
-                 order.cancellation_reason = normalize_cancellation_reason(data.get('cancellation_reason'))
+        
+        # PRODUCTOS
+        if "items" in data and data["items"]:
+            db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
+            for item in data["items"]:
+                db.add(OrderItem(order_id=order.id, name=item['name'], quantity=item['quantity'], unit_price=item['unit_price'], total_price=item['total_price'], barcode=item.get('barcode')))
         
         db.commit()
-
-        # 4. GUARDAR PRODUCTOS (NUEVO)
-        if "items" in data and data["items"]:
-            # A. Borrar items existentes de este pedido (Limpieza)
-            db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
-            
-            # B. Insertar nuevos
-            for item in data["items"]:
-                new_item = OrderItem(
-                    order_id=order.id,
-                    name=item['name'],
-                    quantity=item['quantity'],
-                    unit_price=item['unit_price'],
-                    total_price=item['total_price'],
-                    barcode=item.get('barcode')
-                )
-                db.add(new_item)
-            
-            # Commit final de items
-            db.commit()
     except Exception as e:
         logger.error(f"Error save {data.get('external_id')}: {e}"); db.rollback()
 
@@ -212,7 +189,6 @@ def backfill_historical_data(self):
     key = "celery_lock_backfill_historical_data"
     with redis_lock(key, 14400) as acquired:
         if not acquired: return
-        logger.info("🚀 Backfill V4...")
         ls = OrderScraper(); drone = DroneScraper(); db = SessionLocal()
         try:
             if not ls.login(): return
@@ -222,7 +198,7 @@ def backfill_historical_data(self):
             for item in items:
                 eid = item['id']
                 existing = db.query(Order).filter(Order.external_id == eid).first()
-                if existing and existing.delivery_time_minutes and existing.latitude: continue
+                if existing and existing.delivery_time_minutes and existing.latitude and existing.product_price: continue
                 data = drone.scrape_detail(eid, mode='full')
                 data['duration_text'] = item['duration']
                 process_drone_data(db, data)
@@ -261,7 +237,7 @@ def monitor_active_orders(self):
 def enrich_missing_data(self):
     key = "celery_lock_drone_enrichment"
     with redis_lock(key, 300) as acquired:
-        if not acquired: return "Drone busy"
+        if not acquired: return
         db = SessionLocal(); drone = DroneScraper(); processed = 0; BATCH_SIZE = 50 
         try:
             # 1. Cancelados
@@ -270,88 +246,76 @@ def enrich_missing_data(self):
                 if not drone.login(): return
                 for order in missing_reasons:
                     data = drone.scrape_detail(order.external_id, mode='reason')
-                    order.cancellation_reason = data.get("cancellation_reason", "Sin especificar")
+                    order.cancellation_reason = normalize_cancellation_reason(data.get("cancellation_reason"))
                     if "service_fee" in data: order.service_fee = data["service_fee"]
                     processed += 1
                 db.commit()
 
-            # 2. Entregados sin mapa
+            # 2. Faltantes (Mapa, Dinero, Productos)
             if processed < BATCH_SIZE:
                 limit = BATCH_SIZE - processed
-                
-                # --- AQUÍ ESTÁ EL CAMBIO ---
                 targets = db.query(Order).filter(
-                    Order.current_status == 'delivered',
-                    # Busca si falta mapa O si falta el fee bruto (nuestra marca de "falta info")
-                    (Order.latitude == None) | (Order.gross_delivery_fee == 0)
+                    Order.current_status == 'delivered', 
+                    (Order.latitude == None) | (Order.gross_delivery_fee == 0) | (Order.product_price == 0)
                 ).limit(limit).all()
-                # ---------------------------
-                
                 if targets:
-                    logger.info(f"🚁 Drone: Enriqueciendo {len(targets)} pedidos (Faltan datos)...")
                     if not drone.driver: drone.login()
-                    
                     for order in targets:
-                        # Escaneo completo (Trae Productos, Finanzas y Mapa)
                         data = drone.scrape_detail(order.external_id, mode='full')
                         process_drone_data(db, data)
                         processed += 1
-                    db.commit()
+            if processed > 0:
+                enrich_missing_data.apply_async(countdown=2)
+                return f"Enriched {processed}"
+            return "All Done"
+        except Exception as e: logger.error(f"Drone error: {e}")
+        finally:
+            if drone: drone.close_driver()
+            db.close()
 
-# --- AQUÍ ESTABA EL PROBLEMA: EL NOMBRE DE LA TAREA ---
-# Forzamos el nombre exacto que está pidiendo el error log
 @shared_task(bind=True)
 def sync_customer_database(self, limit_pages: int = None):
-    """
-    Sincroniza clientes.
-    :param limit_pages: Si es None, busca TODO. Si es número, es modo vigilancia.
-    """
     key = "celery_lock_sync_customers"
-    # Lock extendido a 2 horas por si es full sync
     with redis_lock(key, 7200) as acquired:
-        if not acquired: return "Sync running"
-
-        mode_txt = f"Vigilancia ({limit_pages} págs)" if limit_pages else "FULL SYNC (Infinito)"
-        logger.info(f"👥 Iniciando Sincronización de Clientes: {mode_txt}")
-        
-        scraper = CustomerScraper()
-        db = SessionLocal()
-        
+        if not acquired: return
+        logger.info("👥 Sync Clientes...")
+        scraper = CustomerScraper(); db = SessionLocal()
         try:
-            # Pasamos el límite (o None) al scraper
             users_data = scraper.scrape_customers(max_pages=limit_pages)
             scraper.close_driver()
-            
-            count_new = 0
-            count_updated = 0
-            
+            count = 0
             for u in users_data:
                 customer = db.query(Customer).filter(Customer.name.ilike(f"{u['name']}")).first()
-                
                 if customer:
                     if u['joined_at']: customer.joined_at = u['joined_at']
-                    if u['phone'] and not customer.phone: customer.phone = u['phone']
-                    count_updated += 1
+                    if u['phone']: customer.phone = u['phone']
                 else:
-                    new_c = Customer(
-                        name=u['name'], 
-                        phone=u['phone'], 
-                        joined_at=u['joined_at'],
-                        external_id=f"reg_{int(time.time())}_{count_new}"
-                    )
-                    db.add(new_c)
-                    count_new += 1
-            
+                    db.add(Customer(name=u['name'], phone=u['phone'], joined_at=u['joined_at'], external_id=f"reg_{int(time.time())}_{count}"))
+                count += 1
             db.commit()
-            return f"Clientes: {count_new} nuevos, {count_updated} actualizados."
-
-        except Exception as e:
-            logger.error(f"Error sync customers: {e}")
+            return f"Clientes procesados: {count}"
+        except Exception as e: logger.error(f"Sync error: {e}")
         finally:
             if scraper: scraper.close_driver()
             db.close()
 
-# Alias por si acaso también lo llamas con el nombre viejo
 @shared_task(bind=True)
-def sync_customers_task(self):
-    return sync_customer_database()
+def sync_store_commissions(self):
+    key = "celery_lock_sync_stores"
+    with redis_lock(key, 1800) as acquired:
+        if not acquired: return
+        db = SessionLocal(); stores = db.query(Store).all(); scraper = StoreScraper()
+        if not scraper.login(): return
+        updated = 0
+        for s in stores:
+            try:
+                real_id = re.search(r'\d+', s.external_id or "").group(0)
+                commission = scraper.scrape_commission(real_id)
+                if commission > 0:
+                    s.commission_rate = commission
+                    updated += 1
+            except: continue
+        db.commit()
+        scraper.close_driver()
+        db.close()
+        return f"Tiendas: {updated}"
