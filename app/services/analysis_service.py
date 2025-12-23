@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, cast, Date, case, and_, or_, text
 from typing import List, Dict, Any, Optional
 from datetime import date, datetime, timedelta
+from app.db.base import OrderItem
 import re
 
 from app.db.base import Order, OrderStatusLog, Driver, Store, Customer
@@ -194,3 +195,47 @@ def get_cancellation_reasons(db: Session, start_date: Optional[date] = None, end
 
     results = query.group_by(Order.cancellation_reason).order_by(desc('count')).all()
     return [{"reason": row.cancellation_reason, "count": row.count} for row in results]
+
+def get_top_products(
+    db: Session, 
+    start_date: Optional[date] = None, 
+    end_date: Optional[date] = None, 
+    store_name: Optional[str] = None, 
+    search_query: Optional[str] = None
+):
+    """
+    Retorna los productos más vendidos (Excluyendo insumos/regalos de < $0.02).
+    """
+    query = db.query(
+        OrderItem.name,
+        func.sum(OrderItem.quantity).label('total_qty'),
+        func.sum(OrderItem.total_price).label('total_revenue')
+    ).join(Order, OrderItem.order_id == Order.id)
+
+    # Filtros Generales
+    if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
+    if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
+    if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+    
+    # Filtro Búsqueda
+    if search_query:
+        query = query.join(Customer, Order.customer_id == Customer.id, isouter=True).filter(or_(
+            OrderItem.name.ilike(f"%{search_query}%"),
+            Customer.name.ilike(f"%{search_query}%"),
+            Order.external_id.ilike(f"%{search_query}%")
+        ))
+
+    # --- FILTRO ANTI-RUIDO (NUEVO) ---
+    # Excluimos productos cuyo precio unitario sea 0.01 o 0.00
+    # Usamos > 0.015 para evitar problemas de punto flotante, o > 0.01
+    query = query.filter(OrderItem.unit_price > 0.01)
+    # ---------------------------------
+
+    # Agrupar y Ordenar
+    results = query.group_by(OrderItem.name).order_by(desc('total_qty')).limit(10).all()
+
+    return [{
+        "name": row.name,
+        "quantity": int(row.total_qty),
+        "revenue": float(row.total_revenue)
+    } for row in results]

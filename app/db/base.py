@@ -52,6 +52,9 @@ class Order(Base):
     distance_km = Column(Float, default=0.0) # Distancia Tienda -> Cliente
     # ...
 
+    # RELACIÓN NUEVA
+    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+
     # Relaciones (Foreing Keys)
     store_id = Column(Integer, ForeignKey("stores.id"), nullable=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
@@ -80,6 +83,21 @@ class Store(Base):
     commission_rate = Column(Float, default=0.0)
     longitude = Column(Float, nullable=True)
     orders = relationship("Order", back_populates="store")
+
+# --- NUEVA CLASE ---
+class OrderItem(Base):
+    __tablename__ = "order_items"
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"))
+    
+    name = Column(String)
+    quantity = Column(Integer)
+    unit_price = Column(Float)
+    total_price = Column(Float)
+    barcode = Column(String, nullable=True)
+    
+    order = relationship("Order", back_populates="items")
+# -------------------
 
 class Customer(Base):
     __tablename__ = "customers"

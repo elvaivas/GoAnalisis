@@ -195,6 +195,24 @@
                 </div>
             </div>
         </div>
+        <!-- SECCIÓN 5: PRODUCTOS (NUEVO) -->
+        <div class="section-header text-dark"><i class="fa-solid fa-box-open me-2"></i>Desempeño de Productos</div>
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="report-card p-0">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-3">Nombre del Producto</th>
+                                <th class="text-center">Cant. Vendida</th>
+                                <th class="text-end pe-3">Total ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="r-products-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
         <!-- Fila de Cancelaciones y Mapa -->
         <div class="row g-4 mt-1">
@@ -355,6 +373,20 @@
                 const sBody = document.getElementById('r-stores-body');
                 stores.slice(0,10).forEach(s => {
                     sBody.innerHTML += `<tr><td class="small">${s.name}</td><td class="text-end fw-bold small">${s.orders}</td></tr>`;
+                });
+
+                // 4. TOP PRODUCTOS
+                const prodRes = await fetch(`${api}/data/top-products?${params}`, {headers});
+                const products = await prodRes.json();
+                const pBody = document.getElementById('r-products-body');
+                products.slice(0, 10).forEach(p => { // Top 10 en reporte
+                    pBody.innerHTML += `
+                        <tr>
+                            <td class="ps-3 small fw-bold">${p.name}</td>
+                            <td class="text-center small">${p.quantity}</td>
+                            <td class="text-end pe-3 small text-success">$${p.revenue.toFixed(2)}</td>
+                        </tr>
+                    `;
                 });
 
                 // GRÁFICO CANCELACIONES (% ONLY)

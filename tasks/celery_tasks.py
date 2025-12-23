@@ -9,7 +9,7 @@ import redis
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.db.base import Order, Store, Customer, Driver, OrderStatusLog
+from app.db.base import Order, Store, Customer, Driver, OrderStatusLog, OrderItem
 # IMPORTANTE: Asegúrate de que este archivo exista
 from tasks.scraper.order_scraper import OrderScraper 
 from tasks.scraper.drone_scraper import DroneScraper 
@@ -179,6 +179,26 @@ def process_drone_data(db, data: dict):
                  order.cancellation_reason = normalize_cancellation_reason(data.get('cancellation_reason'))
         
         db.commit()
+
+        # 4. GUARDAR PRODUCTOS (NUEVO)
+        if "items" in data and data["items"]:
+            # A. Borrar items existentes de este pedido (Limpieza)
+            db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
+            
+            # B. Insertar nuevos
+            for item in data["items"]:
+                new_item = OrderItem(
+                    order_id=order.id,
+                    name=item['name'],
+                    quantity=item['quantity'],
+                    unit_price=item['unit_price'],
+                    total_price=item['total_price'],
+                    barcode=item.get('barcode')
+                )
+                db.add(new_item)
+            
+            # Commit final de items
+            db.commit()
     except Exception as e:
         logger.error(f"Error save {data.get('external_id')}: {e}"); db.rollback()
 

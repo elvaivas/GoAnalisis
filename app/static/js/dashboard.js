@@ -400,6 +400,40 @@ document.addEventListener('DOMContentLoaded', function () {
         sel.onchange = function() { fetchAllData(); };
     }
 
+    // --- TOP PRODUCTOS ---
+    async function updateTopProducts() {
+        const res = await authFetch(buildUrl('/api/data/top-products'));
+        if (!res) return;
+        const data = await res.json();
+        
+        const tbody = document.getElementById('top-products-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        data.forEach((p, i) => {
+            let rank = i + 1;
+            let icon = '📦';
+            if (rank === 1) icon = '🥇';
+            if (rank === 2) icon = '🥈';
+            if (rank === 3) icon = '🥉';
+
+            tbody.innerHTML += `
+                <tr>
+                    <td class="ps-4">
+                        <span class="me-2">${icon}</span>
+                        <span class="fw-bold text-dark">${p.name}</span>
+                    </td>
+                    <td class="text-center">
+                        <span class="badge bg-soft-primary text-primary border border-primary-subtle">${p.quantity}</span>
+                    </td>
+                    <td class="text-end pe-4 text-success fw-bold">
+                        $${p.revenue.toFixed(2)}
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
     // --- MAIN ---
     function fetchAllData(isSearch = false) {
         if (isSearch) window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -415,6 +449,7 @@ document.addEventListener('DOMContentLoaded', function () {
         updateDriverLeaderboard();
         updateTopStoresList();
         loadTopCustomers();
+        updateTopProducts();
         updateCancellationChart();
         updateHeatmap();
     }

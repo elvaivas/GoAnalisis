@@ -75,6 +75,26 @@ def get_recent_orders(
         })
     return data_response
 
+@router.get("/top-products", summary="Productos más vendidos")
+def get_top_products_data(
+    db: Session = Depends(deps.get_db),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    store_name: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    current_user: User = Depends(deps.get_current_user) # <--- Candado de Seguridad
+):
+    """
+    Retorna el Top 10 de productos vendidos según los filtros aplicados.
+    """
+    return analysis_service.get_top_products(
+        db=db, 
+        start_date=start_date, 
+        end_date=end_date, 
+        store_name=store_name, 
+        search_query=search
+    )
+
 @router.get("/stores-locations", summary="Ubicación de Tiendas")
 def get_stores_locations(
     db: Session = Depends(deps.get_db),
