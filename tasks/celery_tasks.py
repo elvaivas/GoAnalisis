@@ -10,7 +10,6 @@ import redis
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.db.base import Order, Store, Customer, Driver, OrderStatusLog, OrderItem
-# Asegúrate de tener estos archivos creados
 from tasks.scraper.order_scraper import OrderScraper 
 from tasks.scraper.drone_scraper import DroneScraper 
 from tasks.scraper.customer_scraper import CustomerScraper 
@@ -31,16 +30,59 @@ def redis_lock(lock_key: str, expire: int):
 
 # --- HELPERS ---
 def parse_spanish_date(date_str: str):
+    """
+    Parsea fechas híbridas (Español/Inglés) con o sin puntos.
+    Ej: '03 ene. 2026', '10 Dec 2025'
+    """
     if not date_str: return datetime.utcnow()
-    month_map = {'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06','Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12','ene':'01','feb':'02','mar':'03','abr':'04','may':'05','jun':'06','jul':'07','ago':'08','sep':'09','oct':'10','nov':'11','dic':'12'}
+    
+    # Mapa Bilingüe y a prueba de errores
+    month_map = {
+        'ene': '01', 'jan': '01', 'enero': '01', 'january': '01',
+        'feb': '02', 'febrero': '02', 'february': '02',
+        'mar': '03', 'marzo': '03', 'march': '03',
+        'abr': '04', 'apr': '04', 'abril': '04', 'april': '04',
+        'may': '05', 'mayo': '05',
+        'jun': '06', 'junio': '06', 'june': '06',
+        'jul': '07', 'julio': '07', 'july': '07',
+        'ago': '08', 'aug': '08', 'agosto': '08', 'august': '08',
+        'sep': '09', 'septiembre': '09', 'september': '09',
+        'oct': '10', 'octubre': '10', 'october': '10',
+        'nov': '11', 'noviembre': '11', 'november': '11',
+        'dic': '12', 'dec': '12', 'diciembre': '12', 'december': '12'
+    }
+    
+    original = date_str
     try:
-        lower_str = date_str.lower().replace('.', '')
-        for m, n in month_map.items(): 
-            if m in lower_str: lower_str = lower_str.replace(m, n); break
-        match = re.search(r'(\d{1,2})\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}:\d{2})', lower_str)
-        if match: return datetime.strptime(f"{match.group(1)} {match.group(2)} {match.group(3)} {match.group(4)}", '%d %m %Y %H:%M')
+        # Limpieza: minúsculas y quitar puntos
+        clean_str = date_str.lower().replace('.', '').strip()
+        
+        # Reemplazo inteligente de mes
+        for m_name, m_num in month_map.items():
+            # Usamos espacios para evitar reemplazar partes de palabras
+            if m_name in clean_str:
+                clean_str = clean_str.replace(m_name, m_num)
+                break
+        
+        # Regex flexible: Busca (Dia) (MesNum) (Año 4 digitos) (Hora:Min)
+        match = re.search(r'(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})\s+(\d{1,2}:\d{2})', clean_str)
+        
+        if match:
+            day, month, year, time_str = match.groups()
+            return datetime.strptime(f"{day} {month} {year} {time_str}", '%d %m %Y %H:%M')
+            
+        # Fallback: Si no encuentra hora, intenta solo fecha
+        match_date = re.search(r'(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})', clean_str)
+        if match_date:
+            day, month, year = match_date.groups()
+            return datetime.strptime(f"{day} {month} {year}", '%d %m %Y')
+
+        logger.warning(f"⚠️ No se pudo parsear fecha: '{original}'. Usando UTC Now.")
         return datetime.utcnow()
-    except: return datetime.utcnow()
+        
+    except Exception as e:
+        logger.error(f"Error parseando fecha '{original}': {e}")
+        return datetime.utcnow()
 
 def parse_duration_to_minutes(duration_str: str):
     if not duration_str: return None
