@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class CustomerScraper:
     def __init__(self):
         self.base_url = "https://ecosistema.gopharma.com.ve/login/admin"
-        self.users_url = "https://ecosistema.gopharma.com.ve/admin/users/customer/list"
+        self.users_url = "https://ecosistema.gopharma.com.ve/admin/users/customer/list?order_wise=latest"
         self.driver = None
 
     def setup_driver(self):
