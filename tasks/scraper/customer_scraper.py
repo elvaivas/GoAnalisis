@@ -30,7 +30,7 @@ class CustomerScraper:
         chrome_options.add_argument("--remote-allow-origins=*")
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         
-        service = ChromeService()
+        service = ChromeService() 
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
 
     def login(self) -> bool:
@@ -40,8 +40,10 @@ class CustomerScraper:
             wait = WebDriverWait(self.driver, 10)
             wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(settings.GOPHARMA_EMAIL)
             self.driver.find_element(By.NAME, "password").send_keys(settings.GOPHARMA_PASSWORD)
+            
             try: self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
             except: self.driver.find_element(By.NAME, "password").submit()
+            
             time.sleep(3)
             return "login" not in self.driver.current_url
         except: return False
@@ -53,67 +55,53 @@ class CustomerScraper:
             self.driver = None
 
     def _parse_spanish_date(self, text):
-        """
-        Parsea: '14 Abr. 2025', '23 Ago. 2024'
-        """
         if not text: return None
-        
-        # Mapa robusto (Minúsculas y sin puntos)
         month_map = {
             'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may': '05', 'jun': '06',
             'jul': '07', 'ago': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dic': '12',
             'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04', 'mayo': '05', 'junio': '06',
             'julio': '07', 'agosto': '08', 'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
         }
-        
-        original = text
         try:
-            # 1. Limpieza: "14 Abr. 2025" -> "14 abr 2025"
             clean = text.lower().replace('.', '').strip()
-            
-            # 2. Reemplazo de mes
             for m_name, m_num in month_map.items():
-                if m_name in clean:
-                    clean = clean.replace(m_name, m_num)
-                    break
+                if m_name in clean: clean = clean.replace(m_name, m_num); break
             
-            # 3. Regex para "14 04 2025" (espacios o guiones)
-            match = re.search(r'(\d{1,2})[\s/-]+(\d{2})[\s/-]+(\d{4})', clean)
+            match = re.search(r'(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})', clean)
             if match:
                 return datetime.strptime(f"{match.group(1)} {match.group(2)} {match.group(3)}", '%d %m %Y')
-            
-            # Si falla, logueamos para ver qué formato raro salió
-            logger.warning(f"⚠️ Fecha no reconocida: '{original}' -> Clean: '{clean}'")
-            return None
-
-        except Exception:
-            return None
+        except: pass
+        return None
 
     def scrape_customers(self, max_pages: int = None) -> List[Dict]:
         if not self.driver: self.setup_driver(); self.login()
         customers = []
         
         try:
-            logger.info(f"👥 Scrapeando Clientes (Total paginas: {max_pages if max_pages else 'Infinitas'})...")
+            logger.info(f"👥 Scrapeando Clientes con Filtro de ID...")
             self.driver.get(self.users_url)
             WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "datatable")))
 
             current_page = 1
             while True:
-                if max_pages and current_page > max_pages: 
-                    logger.info(f"🛑 Límite de páginas alcanzado ({max_pages}).")
-                    break
+                if max_pages and current_page > max_pages: break
 
-                logger.info(f"   📄 Procesando página de clientes {current_page}...")
-                
+                logger.info(f"   📄 Procesando página {current_page}...")
                 rows = self.driver.find_elements(By.XPATH, "//table[@id='datatable']/tbody/tr")
                 
+                if not rows: break
+
                 for row in rows:
                     try:
                         cols = row.find_elements(By.TAG_NAME, "td")
                         if len(cols) < 7: continue
                         
-                        # Col 1: Nombre (Eliminamos saltos de línea extra)
+                        # Col 0: ID REAL (El filtro anti-mentiras)
+                        id_text = cols[0].text.strip()
+                        if not id_text.isdigit(): continue
+                        gopharma_id = int(id_text)
+
+                        # Col 1: Nombre
                         name = cols[1].text.split('\n')[0].strip()
                         
                         # Col 3: Teléfono
@@ -123,26 +111,32 @@ class CustomerScraper:
                             phone = phone_el.text.strip()
                         except: pass
                         
-                        # Col 6: Fecha (Índice 6 según tu log debug)
+                        # Col 6: Fecha
                         date_text = cols[6].text.strip()
                         joined_at = self._parse_spanish_date(date_text)
 
+                        # --- FILTRO DE COHERENCIA ---
+                        # Si la fecha dice 2026, pero el ID es bajo (ej: < 23000), es FALSO.
+                        # El ID 23000 es aprox Enero 2026.
+                        if joined_at and joined_at.year >= 2026:
+                            if gopharma_id < 23000:
+                                # logger.warning(f"⚠️ Fecha falsa detectada para ID {gopharma_id} ({joined_at}). Ignorando.")
+                                joined_at = None 
+                        # ----------------------------
+
                         if name:
                             customers.append({
+                                "id": str(gopharma_id), # Guardamos el ID real
                                 "name": name,
                                 "phone": phone,
                                 "joined_at": joined_at
                             })
                     except: continue
 
-                # Paginación
                 try:
                     next_btn = self.driver.find_element(By.XPATH, "//a[@aria-label='Next »']")
                     parent = next_btn.find_element(By.XPATH, "./..")
-                    if "disabled" in parent.get_attribute("class"): 
-                        logger.info("🚫 Fin de lista de clientes.")
-                        break
-                    
+                    if "disabled" in parent.get_attribute("class"): break
                     self.driver.execute_script("arguments[0].click();", next_btn)
                     time.sleep(2) 
                     current_page += 1

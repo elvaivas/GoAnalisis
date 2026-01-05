@@ -327,13 +327,35 @@ def sync_customer_database(self, limit_pages: int = None):
             scraper.close_driver()
             count = 0
             for u in users_data:
-                customer = db.query(Customer).filter(Customer.name.ilike(f"{u['name']}")).first()
+                # 1. Intentar buscar por ID externo real primero (Más preciso)
+                customer = None
+                if u.get('id'):
+                    customer = db.query(Customer).filter(Customer.external_id == u['id']).first()
+                
+                # 2. Si no, buscar por nombre (Fallback)
+                if not customer:
+                    customer = db.query(Customer).filter(Customer.name.ilike(f"{u['name']}")).first()
+                
                 if customer:
-                    if u['joined_at']: customer.joined_at = u['joined_at']
+                    # Actualizamos fecha si no la tiene o si la nueva es válida
+                    if u['joined_at']: 
+                        customer.joined_at = u['joined_at']
+                        count_updated += 1
                     if u['phone']: customer.phone = u['phone']
+                    # Actualizamos el ID real si no lo tenía
+                    if u.get('id') and not customer.external_id:
+                        customer.external_id = u['id']
                 else:
-                    db.add(Customer(name=u['name'], phone=u['phone'], joined_at=u['joined_at'], external_id=f"reg_{int(time.time())}_{count}"))
-                count += 1
+                    # Crear nuevo
+                    new_c = Customer(
+                        name=u['name'], 
+                        phone=u['phone'], 
+                        joined_at=u['joined_at'],
+                        # Usamos el ID real de Gopharma como external_id
+                        external_id=u.get('id') or f"reg_{int(time.time())}_{count_new}" 
+                    )
+                    db.add(new_c)
+                    count_new += 1
             db.commit()
             return f"Clientes procesados: {count}"
         except Exception as e: logger.error(f"Sync error: {e}")
