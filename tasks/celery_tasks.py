@@ -315,34 +315,49 @@ def enrich_missing_data(self):
             if drone: drone.close_driver()
             db.close()
 
-@shared_task(bind=True)
+@shared_task(bind=True, name="tasks.celery_tasks.sync_customer_database")
 def sync_customer_database(self, limit_pages: int = None):
+    """
+    Sincroniza la base de datos de clientes.
+    """
     key = "celery_lock_sync_customers"
     with redis_lock(key, 7200) as acquired:
-        if not acquired: return
-        logger.info("👥 Sync Clientes...")
-        scraper = CustomerScraper(); db = SessionLocal()
+        if not acquired: return "Sync running"
+
+        mode_txt = f"Vigilancia ({limit_pages} págs)" if limit_pages else "FULL SYNC (Infinito)"
+        logger.info(f"👥 Iniciando Sincronización de Clientes: {mode_txt}")
+        
+        scraper = CustomerScraper()
+        db = SessionLocal()
+        
+        # --- CORRECCIÓN: Inicializar variables AQUÍ arriba ---
+        count_new = 0
+        count_updated = 0
+        # ---------------------------------------------------
+        
         try:
             users_data = scraper.scrape_customers(max_pages=limit_pages)
             scraper.close_driver()
-            count = 0
+            
             for u in users_data:
-                # 1. Intentar buscar por ID externo real primero (Más preciso)
+                # 1. Buscar por ID externo real (Prioridad)
                 customer = None
                 if u.get('id'):
                     customer = db.query(Customer).filter(Customer.external_id == u['id']).first()
                 
-                # 2. Si no, buscar por nombre (Fallback)
+                # 2. Buscar por nombre (Fallback)
                 if not customer:
                     customer = db.query(Customer).filter(Customer.name.ilike(f"{u['name']}")).first()
                 
                 if customer:
-                    # Actualizamos fecha si no la tiene o si la nueva es válida
+                    # Actualizamos fecha si el scraper trajo una válida
                     if u['joined_at']: 
                         customer.joined_at = u['joined_at']
                         count_updated += 1
+                    
                     if u['phone']: customer.phone = u['phone']
-                    # Actualizamos el ID real si no lo tenía
+                    
+                    # Guardamos el ID real si no lo tenía
                     if u.get('id') and not customer.external_id:
                         customer.external_id = u['id']
                 else:
@@ -351,14 +366,17 @@ def sync_customer_database(self, limit_pages: int = None):
                         name=u['name'], 
                         phone=u['phone'], 
                         joined_at=u['joined_at'],
-                        # Usamos el ID real de Gopharma como external_id
-                        external_id=u.get('id') or f"reg_{int(time.time())}_{count_new}" 
+                        external_id=u.get('id') or f"reg_{int(time.time())}_{count_new}"
                     )
                     db.add(new_c)
                     count_new += 1
+            
             db.commit()
-            return f"Clientes procesados: {count}"
-        except Exception as e: logger.error(f"Sync error: {e}")
+            return f"Clientes: {count_new} nuevos, {count_updated} actualizados."
+
+        except Exception as e:
+            logger.error(f"Sync error: {e}")
+            db.rollback()
         finally:
             if scraper: scraper.close_driver()
             db.close()
