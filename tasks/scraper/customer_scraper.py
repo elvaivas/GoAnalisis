@@ -30,7 +30,7 @@ class CustomerScraper:
         chrome_options.add_argument("--remote-allow-origins=*")
         chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         
-        service = ChromeService() 
+        service = ChromeService()
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
 
     def login(self) -> bool:
@@ -40,10 +40,8 @@ class CustomerScraper:
             wait = WebDriverWait(self.driver, 10)
             wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(settings.GOPHARMA_EMAIL)
             self.driver.find_element(By.NAME, "password").send_keys(settings.GOPHARMA_PASSWORD)
-            
             try: self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
             except: self.driver.find_element(By.NAME, "password").submit()
-            
             time.sleep(3)
             return "login" not in self.driver.current_url
         except: return False
@@ -73,22 +71,46 @@ class CustomerScraper:
         except: pass
         return None
 
+    def _correct_year_based_on_id(self, date_obj: datetime, cust_id: int) -> datetime:
+        """
+        Corrige el año basándose en el ID secuencial si la web reporta 2026 erróneamente.
+        Rangos aproximados basados en auditoría:
+        - ID < 50: Año 2023
+        - ID 50 - 1500: Año 2024
+        - ID 1500 - 23000: Año 2025
+        - ID > 23000: Año 2026 (Real)
+        """
+        if not date_obj: return None
+        
+        # Solo corregimos si la web dice 2026 pero el ID es sospechosamente bajo
+        if date_obj.year == 2026:
+            if cust_id < 50:
+                return date_obj.replace(year=2023)
+            elif cust_id < 1500:
+                return date_obj.replace(year=2024)
+            elif cust_id < 23000:
+                return date_obj.replace(year=2025)
+            # Si es > 23000, asumimos que sí es 2026 de verdad
+            
+        return date_obj
+
     def scrape_customers(self, max_pages: int = None) -> List[Dict]:
         if not self.driver: self.setup_driver(); self.login()
         customers = []
         
         try:
-            logger.info(f"👥 Scrapeando Clientes con Filtro de ID...")
+            logger.info(f"👥 Scrapeando Clientes (Corrección de Años Activa)...")
             self.driver.get(self.users_url)
             WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "datatable")))
 
             current_page = 1
             while True:
                 if max_pages and current_page > max_pages: break
-
-                logger.info(f"   📄 Procesando página {current_page}...")
-                rows = self.driver.find_elements(By.XPATH, "//table[@id='datatable']/tbody/tr")
                 
+                # Log discreto cada 5 páginas
+                if current_page % 5 == 0: logger.info(f"   📄 Procesando página {current_page}...")
+                
+                rows = self.driver.find_elements(By.XPATH, "//table[@id='datatable']/tbody/tr")
                 if not rows: break
 
                 for row in rows:
@@ -96,40 +118,35 @@ class CustomerScraper:
                         cols = row.find_elements(By.TAG_NAME, "td")
                         if len(cols) < 7: continue
                         
-                        # Col 0: ID REAL (El filtro anti-mentiras)
+                        # ID (Col 0)
                         id_text = cols[0].text.strip()
                         if not id_text.isdigit(): continue
                         gopharma_id = int(id_text)
 
-                        # Col 1: Nombre
+                        # Nombre (Col 1)
                         name = cols[1].text.split('\n')[0].strip()
                         
-                        # Col 3: Teléfono
+                        # Teléfono (Col 3)
                         phone = None
                         try:
                             phone_el = cols[3].find_element(By.XPATH, ".//a[contains(@href, 'tel:')]")
                             phone = phone_el.text.strip()
                         except: pass
                         
-                        # Col 6: Fecha
+                        # Fecha (Col 6)
                         date_text = cols[6].text.strip()
-                        joined_at = self._parse_spanish_date(date_text)
-
-                        # --- FILTRO DE COHERENCIA ---
-                        # Si la fecha dice 2026, pero el ID es bajo (ej: < 23000), es FALSO.
-                        # El ID 23000 es aprox Enero 2026.
-                        if joined_at and joined_at.year >= 2026:
-                            if gopharma_id < 23000:
-                                # logger.warning(f"⚠️ Fecha falsa detectada para ID {gopharma_id} ({joined_at}). Ignorando.")
-                                joined_at = None 
-                        # ----------------------------
+                        raw_date = self._parse_spanish_date(date_text)
+                        
+                        # --- CORRECCIÓN INTELIGENTE ---
+                        final_date = self._correct_year_based_on_id(raw_date, gopharma_id)
+                        # ------------------------------
 
                         if name:
                             customers.append({
-                                "id": str(gopharma_id), # Guardamos el ID real
+                                "id": str(gopharma_id),
                                 "name": name,
                                 "phone": phone,
-                                "joined_at": joined_at
+                                "joined_at": final_date
                             })
                     except: continue
 
@@ -138,7 +155,7 @@ class CustomerScraper:
                     parent = next_btn.find_element(By.XPATH, "./..")
                     if "disabled" in parent.get_attribute("class"): break
                     self.driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(2) 
+                    time.sleep(1.5) # Un poco más rápido
                     current_page += 1
                 except: break
 
