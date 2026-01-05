@@ -72,25 +72,22 @@ class CustomerScraper:
         return None
 
     def _correct_year_based_on_id(self, date_obj: datetime, cust_id: int) -> datetime:
-        """
-        Corrige el año basándose en el ID secuencial si la web reporta 2026 erróneamente.
-        Rangos aproximados basados en auditoría:
-        - ID < 50: Año 2023
-        - ID 50 - 1500: Año 2024
-        - ID 1500 - 23000: Año 2025
-        - ID > 23000: Año 2026 (Real)
-        """
         if not date_obj: return None
         
-        # Solo corregimos si la web dice 2026 pero el ID es sospechosamente bajo
+        # Corrección del Bug de Año Nuevo de Gopharma
         if date_obj.year == 2026:
-            if cust_id < 50:
+            # RANGOS HISTÓRICOS
+            if cust_id < 100:
                 return date_obj.replace(year=2023)
-            elif cust_id < 1500:
+            elif cust_id < 2000:
                 return date_obj.replace(year=2024)
-            elif cust_id < 23000:
+            
+            # PUNTO DE CORTE EXACTO: 23413
+            # Si es menor a 23413, NO puede ser 2026, lo bajamos a 2025.
+            elif cust_id < 23413: 
                 return date_obj.replace(year=2025)
-            # Si es > 23000, asumimos que sí es 2026 de verdad
+            
+            # Si es >= 23413, es un registro real de Enero 2026. Lo dejamos quieto.
             
         return date_obj
 
