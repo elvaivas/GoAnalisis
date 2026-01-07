@@ -204,7 +204,7 @@ def get_top_products(
     search_query: Optional[str] = None
 ):
     """
-    Retorna los productos más vendidos (Excluyendo insumos/regalos de < $0.02).
+    Retorna los productos más vendidos (Excluyendo insumos corporativos y regalos).
     """
     query = db.query(
         OrderItem.name,
@@ -217,7 +217,6 @@ def get_top_products(
     if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
-    # Filtro Búsqueda
     if search_query:
         query = query.join(Customer, Order.customer_id == Customer.id, isouter=True).filter(or_(
             OrderItem.name.ilike(f"%{search_query}%"),
@@ -225,13 +224,14 @@ def get_top_products(
             Order.external_id.ilike(f"%{search_query}%")
         ))
 
-    # --- FILTRO ANTI-RUIDO (NUEVO) ---
-    # Excluimos productos cuyo precio unitario sea 0.01 o 0.00
-    # Usamos > 0.015 para evitar problemas de punto flotante, o > 0.01
-    query = query.filter(OrderItem.unit_price > 0.01)
-    # ---------------------------------
+    # --- FILTROS DE LIMPIEZA INTELIGENTE ---
+    query = query.filter(
+        OrderItem.unit_price > 0.01,           # Ignora cosas de precio 0
+        ~OrderItem.name.ilike('%obsequio%'),   # Ignora cualquier regalo explícito
+        ~OrderItem.name.ilike('%bolsa%gopharma%') # Ignora SOLO la bolsa de la marca
+    )
+    # ----------------------------------------
 
-    # Agrupar y Ordenar
     results = query.group_by(OrderItem.name).order_by(desc('total_qty')).limit(10).all()
 
     return [{
