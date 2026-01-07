@@ -2,7 +2,7 @@ import logging
 import re
 import time
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 from contextlib import contextmanager
 from celery import shared_task
 import redis
@@ -277,12 +277,20 @@ def monitor_active_orders(self):
 
 @shared_task(bind=True)
 def enrich_missing_data(self):
+    """
+    Dron de Limpieza: 1. Cancelados, 2. Mapas/Finanzas, 3. Zombies (Pendientes viejos).
+    """
     key = "celery_lock_drone_enrichment"
     with redis_lock(key, 300) as acquired:
-        if not acquired: return
-        db = SessionLocal(); drone = DroneScraper(); processed = 0; BATCH_SIZE = 50 
+        if not acquired: return "Drone busy"
+        
+        db = SessionLocal()
+        drone = DroneScraper()
+        processed = 0
+        BATCH_SIZE = 50 
+        
         try:
-            # 1. Cancelados
+            # 1. Cancelados (Prioridad Alta)
             missing_reasons = db.query(Order).filter(Order.current_status == 'canceled', Order.cancellation_reason == None).limit(BATCH_SIZE).all()
             if missing_reasons:
                 if not drone.login(): return
@@ -293,24 +301,53 @@ def enrich_missing_data(self):
                     processed += 1
                 db.commit()
 
-            # 2. Faltantes (Mapa, Dinero, Productos)
+            # 2. Entregados incompletos (Mapa, Fee, Productos)
             if processed < BATCH_SIZE:
                 limit = BATCH_SIZE - processed
                 targets = db.query(Order).filter(
                     Order.current_status == 'delivered', 
                     (Order.latitude == None) | (Order.gross_delivery_fee == 0) | (Order.product_price == 0)
                 ).limit(limit).all()
+                
                 if targets:
                     if not drone.driver: drone.login()
                     for order in targets:
                         data = drone.scrape_detail(order.external_id, mode='full')
                         process_drone_data(db, data)
                         processed += 1
+                db.commit() # Commit parcial
+
+            # --- 3. ZOMBIES (Pedidos 'Pendientes' con > 6 horas) ---
+            # Esto arregla el caso del pedido 106784 automáticamente
+            if processed < BATCH_SIZE:
+                limit = BATCH_SIZE - processed
+                # Hora actual menos 6 horas
+                time_threshold = datetime.utcnow() - timedelta(hours=6)
+                
+                zombies = db.query(Order).filter(
+                    Order.current_status.in_(['pending', 'processing', 'confirmed', 'driver_assigned']),
+                    Order.created_at < time_threshold
+                ).limit(limit).all()
+                
+                if zombies:
+                    logger.info(f"🧟 Dron: Revisando {len(zombies)} pedidos zombies antiguos...")
+                    if not drone.driver: drone.login()
+                    
+                    for order in zombies:
+                        # Entramos a ver si ya cambió
+                        data = drone.scrape_detail(order.external_id, mode='full')
+                        process_drone_data(db, data)
+                        processed += 1
+                    db.commit()
+            # -------------------------------------------------------
+            
             if processed > 0:
                 enrich_missing_data.apply_async(countdown=2)
                 return f"Enriched {processed}"
             return "All Done"
-        except Exception as e: logger.error(f"Drone error: {e}")
+
+        except Exception as e:
+            logger.error(f"Drone error: {e}")
         finally:
             if drone: drone.close_driver()
             db.close()
