@@ -12,11 +12,15 @@ router = APIRouter()
 @router.get("/bottlenecks", summary="Calcular Tiempos Promedio por Estado")
 def get_bottleneck_analysis(
     db: Session = Depends(deps.get_db),
+    start_date: Optional[date] = Query(None), # <--- AGREGADO
+    end_date: Optional[date] = Query(None),   # <--- AGREGADO
     store_name: Optional[str] = Query(None, description="Filtrar por nombre de tienda"),
     search: Optional[str] = Query(None, description="Buscar por ID o Cliente")
 ):
     bottlenecks = analysis_service.calculate_bottlenecks(
         db=db, 
+        start_date=start_date, # <--- PASAMOS EL DATO
+        end_date=end_date,     # <--- PASAMOS EL DATO
         store_name=store_name,
         search_query=search
     )
