@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     let datePicker, driverLeaderboardChart, bottleneckChart, orderTypeChart, trendsChart, cancellationChartInstance;
     let mapInstance, heatLayer, ordersInterval;
+    let bottleneckPickupChart;
 
     const statusTranslations = {
         'pending': 'Pendiente', 'processing': 'Prep.', 'confirmed': 'Solicitando',
@@ -114,19 +115,66 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function updateBottleneckChart() {
-        const ctx = document.getElementById('bottleneckChart')?.getContext('2d');
-        if (!ctx) return; // Si no hay canvas, no hacemos nada
+        // Obtenemos contextos de AMBOS gráficos
+        const ctxDelivery = document.getElementById('bottleneckChart')?.getContext('2d');
+        const ctxPickup = document.getElementById('bottleneckPickupChart')?.getContext('2d');
+
+        if (!ctxDelivery || !ctxPickup) return; 
 
         const res = await authFetch(buildUrl('/api/analysis/bottlenecks'));
         if (!res) return;
         const data = await res.json();
-        const filtered = data.filter(d => d.avg_duration_seconds > 0).sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
+        
+        // --- HELPER PARA ORDENAR Y FILTRAR ---
+        const processData = (list) => {
+            return list
+                .filter(d => d.avg_duration_seconds > 0)
+                .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
+        };
 
+        const deliveryData = processData(data.delivery || []);
+        const pickupData = processData(data.pickup || []);
+
+        // --- GRÁFICO 1: DELIVERY (Naranja/Standard) ---
         if (bottleneckChart) bottleneckChart.destroy();
-        bottleneckChart = new Chart(ctx, {
+        bottleneckChart = new Chart(ctxDelivery, {
             type: 'bar', 
-            data: { labels: filtered.map(d => statusTranslations[d.status] || d.status), datasets: [{ label: 'Minutos', data: filtered.map(d => (d.avg_duration_seconds/60).toFixed(1)), backgroundColor: '#f59e0b' }] },
-            options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            data: { 
+                labels: deliveryData.map(d => statusTranslations[d.status] || d.status), 
+                datasets: [{ 
+                    label: 'Minutos', 
+                    data: deliveryData.map(d => (d.avg_duration_seconds/60).toFixed(1)), 
+                    backgroundColor: '#f97316', // Naranja
+                    borderRadius: 4
+                }] 
+            },
+            options: { 
+                indexAxis: 'y', 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: false } },
+                scales: { x: { grid: { display: false } } }
+            }
+        });
+
+        // --- GRÁFICO 2: PICKUP (Azul/Info) ---
+        if (bottleneckPickupChart) bottleneckPickupChart.destroy();
+        bottleneckPickupChart = new Chart(ctxPickup, {
+            type: 'bar', 
+            data: { 
+                labels: pickupData.map(d => statusTranslations[d.status] || d.status), 
+                datasets: [{ 
+                    label: 'Minutos', 
+                    data: pickupData.map(d => (d.avg_duration_seconds/60).toFixed(1)), 
+                    backgroundColor: '#3b82f6', // Azul
+                    borderRadius: 4
+                }] 
+            },
+            options: { 
+                indexAxis: 'y', 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: false } },
+                scales: { x: { grid: { display: false } } }
+            }
         });
     }
 
