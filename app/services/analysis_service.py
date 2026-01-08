@@ -257,8 +257,10 @@ def calculate_bottlenecks(
     }
 
 def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
+    # Filtro fecha local
     local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
     
+    # query BASE ya incluye Customer implícitamente en el select y join
     query = db.query(
         Customer.name, 
         func.count(Order.id).label("total_orders"), 
@@ -269,23 +271,31 @@ def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: 
     if end_date: query = query.filter(local_date <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
-    query = apply_search(query, search_query)
+    # FIX ERROR 500: No usar apply_search() aquí porque causa DOBLE JOIN con Customer.
+    # Aplicamos el filtro manualmente sobre la tabla Customer ya unida.
+    if search_query:
+        term = f"%{search_query}%"
+        # Filtramos por nombre de cliente directamente
+        query = query.filter(Customer.name.ilike(term))
 
     all_results = query.group_by(Customer.name).order_by(desc("total_spent")).all()
     
     final_list = []
-    search_lower = search_query.lower() if search_query else None
-
+    
+    # Procesamiento
     for index, row in enumerate(all_results):
         rank = index + 1
         name = row.name or "Cliente Desconocido"
-        if search_lower and search_lower not in name.lower(): continue
         
-        final_list.append({"rank": rank, "name": name, "count": row.total_orders, "total_amount": float(row.total_spent or 0)})
-        if search_lower and len(final_list) >= 20: break
+        final_list.append({
+            "rank": rank, 
+            "name": name, 
+            "count": row.total_orders, 
+            "total_amount": float(row.total_spent or 0)
+        })
     
-    if not search_query: return final_list[:20]
-    return final_list
+    # Paginación manual simple (Top 20)
+    return final_list[:20]
 
 def get_total_duration_for_order(db: Session, order_id: int):
     logs = db.query(OrderStatusLog).filter(OrderStatusLog.order_id == order_id).order_by(OrderStatusLog.timestamp).all()
