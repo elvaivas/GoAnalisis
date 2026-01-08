@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     let datePicker, driverLeaderboardChart, bottleneckChart, orderTypeChart, trendsChart, cancellationChartInstance;
     let mapInstance, heatLayer, ordersInterval;
-    let bottleneckPickupChart;
+    let bottleneckPickupChart = null;
 
     const statusTranslations = {
         'pending': 'Pendiente', 'processing': 'Prep.', 'confirmed': 'Solicitando',
@@ -115,58 +115,70 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function updateBottleneckChart() {
-        // Obtenemos contextos de AMBOS gráficos
+        // 1. Obtener contextos de los canvas (Delivery y Pickup)
         const ctxDelivery = document.getElementById('bottleneckChart')?.getContext('2d');
         const ctxPickup = document.getElementById('bottleneckPickupChart')?.getContext('2d');
 
+        // Si no existen los elementos en el HTML (ej. usuario con caché viejo), salimos para no romper
         if (!ctxDelivery || !ctxPickup) return; 
 
+        // 2. Petición al Backend
         const res = await authFetch(buildUrl('/api/analysis/bottlenecks'));
         if (!res) return;
-        const data = await res.json();
-        
-        // --- HELPER PARA ORDENAR Y FILTRAR ---
-        const processData = (list) => {
-            return list
-                .filter(d => d.avg_duration_seconds > 0)
-                .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
+        const data = await res.json(); 
+        // data es ahora: { "delivery": [...], "pickup": [...] }
+
+        // 3. Helper Interno para Procesar Datos (Filtrar, Ordenar, Traducir)
+        const prepareChartData = (list) => {
+            if (!Array.isArray(list)) return { labels: [], values: [] };
+
+            const sorted = list
+                .filter(d => d.avg_duration_seconds > 0) // Filtrar ceros
+                .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status)); // Ordenar por flujo
+
+            return {
+                labels: sorted.map(d => statusTranslations[d.status] || d.status.toUpperCase()),
+                values: sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)) // Convertir a minutos
+            };
         };
 
-        const deliveryData = processData(data.delivery || []);
-        const pickupData = processData(data.pickup || []);
+        const deliveryData = prepareChartData(data.delivery);
+        const pickupData = prepareChartData(data.pickup);
 
-        // --- GRÁFICO 1: DELIVERY (Naranja/Standard) ---
-        if (bottleneckChart) bottleneckChart.destroy();
+        // --- GRÁFICO 1: DELIVERY (Naranja) ---
+        if (bottleneckChart) bottleneckChart.destroy(); // Limpieza vital
         bottleneckChart = new Chart(ctxDelivery, {
             type: 'bar', 
             data: { 
-                labels: deliveryData.map(d => statusTranslations[d.status] || d.status), 
+                labels: deliveryData.labels, 
                 datasets: [{ 
                     label: 'Minutos', 
-                    data: deliveryData.map(d => (d.avg_duration_seconds/60).toFixed(1)), 
-                    backgroundColor: '#f97316', // Naranja
-                    borderRadius: 4
+                    data: deliveryData.values, 
+                    backgroundColor: '#f59e0b', // Naranja/Amarillo
+                    borderRadius: 4,
+                    barPercentage: 0.6
                 }] 
             },
             options: { 
-                indexAxis: 'y', 
+                indexAxis: 'y', // Barras horizontales
                 maintainAspectRatio: false, 
                 plugins: { legend: { display: false } },
                 scales: { x: { grid: { display: false } } }
             }
         });
 
-        // --- GRÁFICO 2: PICKUP (Azul/Info) ---
-        if (bottleneckPickupChart) bottleneckPickupChart.destroy();
+        // --- GRÁFICO 2: PICKUP (Azul) ---
+        if (bottleneckPickupChart) bottleneckPickupChart.destroy(); // Limpieza vital
         bottleneckPickupChart = new Chart(ctxPickup, {
             type: 'bar', 
             data: { 
-                labels: pickupData.map(d => statusTranslations[d.status] || d.status), 
+                labels: pickupData.labels, 
                 datasets: [{ 
                     label: 'Minutos', 
-                    data: pickupData.map(d => (d.avg_duration_seconds/60).toFixed(1)), 
+                    data: pickupData.values, 
                     backgroundColor: '#3b82f6', // Azul
-                    borderRadius: 4
+                    borderRadius: 4,
+                    barPercentage: 0.6
                 }] 
             },
             options: { 
