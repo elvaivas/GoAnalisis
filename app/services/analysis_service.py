@@ -124,16 +124,17 @@ def calculate_bottlenecks(
     search_query: Optional[str] = None
 ):
     """
-    Calcula Cuellos de Botella con:
-    1. Segregación (Delivery vs Pickup).
-    2. Outlier Filtering (Ignora Zombies > 12h en pasos intermedios).
-    3. Ciclo Total para Terminales (Created -> Delivered/Canceled).
+    Calcula Tiempos de Ciclo (Cuellos de Botella).
+    Lógica de Negocio V5.3:
+    - Delivery: Flujo logístico completo.
+    - Pickup: Solo flujo de tienda.
+    - Entregado/Cancelado: Representa el TIEMPO TOTAL (Lead Time).
     """
-    # 1. Definición de Límites para ignorar Zombies (En Segundos)
-    MAX_INTERMEDIATE_SEC = 43200   # 12 Horas
-    MAX_CYCLE_SEC = 259200         # 72 Horas
+    # Limites para filtrar "Zombies" (Errores de sistema o procesos olvidados)
+    MAX_STEP_SEC = 21600    # 6 Horas máx por paso intermedio
+    MAX_CYCLE_SEC = 172800  # 48 Horas máx para cerrar un pedido
 
-    # 2. Query Base
+    # 1. Query Optimizado
     query = db.query(
         OrderStatusLog.order_id, 
         OrderStatusLog.status, 
@@ -143,7 +144,7 @@ def calculate_bottlenecks(
         Order.current_status
     ).join(Order, OrderStatusLog.order_id == Order.id)
 
-    # 3. Filtros
+    # 2. Filtros
     local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
     local_date = func.date(local_created_at)
 
@@ -157,9 +158,13 @@ def calculate_bottlenecks(
     if not logs: 
         return {"delivery": [], "pickup": []}
 
-    # 4. Buckets
-    stats = {'Delivery': {}, 'Pickup': {}}
+    # 3. Estructuras de Acumulación
+    stats = {
+        'Delivery': {}, 
+        'Pickup': {}
+    }
 
+    # Agrupación por pedido
     orders_data = {}
     for log in logs:
         if log.order_id not in orders_data:
@@ -171,47 +176,54 @@ def calculate_bottlenecks(
             }
         orders_data[log.order_id]['logs'].append(log)
 
-    # 5. Procesamiento Lógico
+    # 4. Procesamiento
     for oid, data in orders_data.items():
         o_created = data['created_at']
-        o_type = data['type']
+        o_type = data['type'] 
+        o_status = data['current_status']
         o_logs = data['logs']
 
         if o_type not in stats: continue
         target_bucket = stats[o_type]
 
-        valid_states = set()
+        # REGLA A: Definir flujos válidos (Whitelists)
+        valid_intermediate = set()
         if o_type == 'Delivery':
-            valid_states = {'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way'}
+            # Flujo largo
+            valid_intermediate = {'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way'}
         else:
-            valid_states = {'pending', 'processing'}
+            # Flujo corto (Pickup) - Ignoramos pasos de motorizado si aparecen por error
+            valid_intermediate = {'pending', 'processing'}
 
-        # A. ESTADOS INTERMEDIOS
+        # REGLA B: Calcular tiempos INTERMEDIOS
         for i in range(len(o_logs) - 1):
             current = o_logs[i]
             next_l = o_logs[i+1]
-            status = current.status
             
-            if status in valid_states and status not in ['delivered', 'canceled']:
+            # Solo medimos si el estado actual es válido para este tipo de orden
+            if current.status in valid_intermediate:
                 delta = (next_l.timestamp - current.timestamp).total_seconds()
-                if 10 < delta < MAX_INTERMEDIATE_SEC:
-                    if status not in target_bucket: target_bucket[status] = []
-                    target_bucket[status].append(delta)
-
-        # B. ESTADOS TERMINALES (Ciclo Total + Canceled Integration)
-        # IMPORTANTE: Buscamos el log final REAL
-        if o_logs:
-            last_log = o_logs[-1]
-            # Si el último log coincide con el estado terminal que queremos medir
-            if last_log.status in ['delivered', 'canceled']:
-                lead_time = (last_log.timestamp - o_created).total_seconds()
                 
-                # Filtro Zombie
-                if 60 < lead_time < MAX_CYCLE_SEC:
-                    if last_log.status not in target_bucket: target_bucket[last_log.status] = []
-                    target_bucket[last_log.status].append(lead_time)
+                # Filtro Zombie (6h)
+                if 10 < delta < MAX_STEP_SEC:
+                    if current.status not in target_bucket: target_bucket[current.status] = []
+                    target_bucket[current.status].append(delta)
 
-    # 6. Promedios
+        # REGLA C: Calcular tiempos TERMINALES (Total Cycle Time)
+        # Si el pedido terminó en Delivered o Canceled, calculamos desde Created_At
+        if o_status in ['delivered', 'canceled']:
+            # Buscamos el log exacto que cerró el ciclo
+            final_log = next((l for l in reversed(o_logs) if l.status == o_status), None)
+            
+            if final_log:
+                total_time = (final_log.timestamp - o_created).total_seconds()
+                
+                # Filtro Zombie (48h)
+                if 60 < total_time < MAX_CYCLE_SEC:
+                    if o_status not in target_bucket: target_bucket[o_status] = []
+                    target_bucket[o_status].append(total_time)
+
+    # 5. Promediar
     def compute_averages(bucket):
         res = []
         for status, times in bucket.items():

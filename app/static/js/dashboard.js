@@ -157,67 +157,87 @@ document.addEventListener('DOMContentLoaded', function () {
 
     async function updateBottleneckChart() {
         try {
-            // Obtenemos contextos
             const ctxDelivery = document.getElementById('bottleneckChart')?.getContext('2d');
             const ctxPickup = document.getElementById('bottleneckPickupChart')?.getContext('2d');
 
-            // Si no hay gráficos en el HTML, no hacemos nada
             if (!ctxDelivery && !ctxPickup) return; 
 
             const res = await authFetch(buildUrl('/api/analysis/bottlenecks'));
             if (!res) return;
             const data = await res.json();
             
-            // Constantes locales para asegurar orden y traducción
+            // 1. CONFIGURACIÓN VISUAL (Orden Lógico del Proceso)
+            // Nota: Ponemos 'delivered' y 'canceled' al final
             const localStatusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
+            
+            // TRADUCCIONES EXACTAS A TU NEGOCIO
             const localTranslations = {
-                'pending': 'Pendiente', 'processing': 'Prep.', 'confirmed': 'Solicitando',
-                'driver_assigned': 'Asignado', 'on_the_way': 'En Camino', 'delivered': 'Entregado', 'canceled': 'Cancelado'
+                'pending': 'Pendiente', 
+                'processing': 'Facturando',    // <--- Cambio solicitado
+                'confirmed': 'Solicitando',    // <--- Cambio solicitado
+                'driver_assigned': 'Asignado', 
+                'on_the_way': 'En Camino', 
+                'delivered': 'Entregado (Total)', 
+                'canceled': 'Cancelado (Total)'
             };
 
-            // Helper simplificado (Solo procesa datos, no colores)
             const processData = (list) => {
-                if (!Array.isArray(list)) return { labels: [], values: [] };
+                if (!Array.isArray(list)) return { labels: [], values: [], colors: [] };
                 
                 const sorted = list
                     .filter(d => d.avg_duration_seconds > 0)
                     .sort((a, b) => localStatusOrder.indexOf(a.status) - localStatusOrder.indexOf(b.status));
 
-                return {
-                    labels: sorted.map(d => localTranslations[d.status] || d.status),
-                    values: sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)) // Minutos
-                };
+                const labels = sorted.map(d => localTranslations[d.status] || d.status);
+                const values = sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)); // A Minutos
+                
+                // Colores Semánticos
+                const colors = sorted.map(d => {
+                    if (d.status === 'canceled') return '#ef4444'; // Rojo
+                    if (d.status === 'delivered') return '#10b981'; // Verde Éxito
+                    return ctxPickup ? '#3b82f6' : '#f59e0b'; // Azul (Pickup) o Naranja (Delivery)
+                });
+
+                return { labels, values, colors };
             };
 
-            // 1. RENDERIZADO DELIVERY (Naranja #f59e0b)
+            // 2. RENDER DELIVERY
             if (ctxDelivery) {
                 const dData = processData(data.delivery);
-                // Calculamos color aquí: Si la etiqueta es "Cancelado" -> Rojo, si no -> Naranja
-                const dColors = dData.labels.map(l => l === 'Cancelado' ? '#ef4444' : '#f59e0b');
+                // Ajuste de colores específico para Delivery (base naranja)
+                const dColors = dData.labels.map((l, i) => {
+                     if (l.includes('Cancelado')) return '#ef4444';
+                     if (l.includes('Entregado')) return '#10b981'; // Verde para el total
+                     return '#f59e0b'; // Naranja pasos intermedios
+                });
 
                 if (bottleneckChart) bottleneckChart.destroy();
                 bottleneckChart = new Chart(ctxDelivery, {
                     type: 'bar', 
                     data: { 
                         labels: dData.labels, 
-                        datasets: [{ label: 'Min', data: dData.values, backgroundColor: dColors, borderRadius: 4 }] 
+                        datasets: [{ label: 'Minutos', data: dData.values, backgroundColor: dColors, borderRadius: 4 }] 
                     },
                     options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
                 });
             }
 
-            // 2. RENDERIZADO PICKUP (Azul #3b82f6)
+            // 3. RENDER PICKUP
             if (ctxPickup) {
                 const pData = processData(data.pickup);
-                // Calculamos color aquí: Si la etiqueta es "Cancelado" -> Rojo, si no -> Azul
-                const pColors = pData.labels.map(l => l === 'Cancelado' ? '#ef4444' : '#3b82f6');
+                // Ajuste de colores específico para Pickup (base azul)
+                const pColors = pData.labels.map((l, i) => {
+                     if (l.includes('Cancelado')) return '#ef4444';
+                     if (l.includes('Entregado')) return '#10b981';
+                     return '#3b82f6'; // Azul pasos intermedios
+                });
 
                 if (bottleneckPickupChart) bottleneckPickupChart.destroy();
                 bottleneckPickupChart = new Chart(ctxPickup, {
                     type: 'bar', 
                     data: { 
                         labels: pData.labels, 
-                        datasets: [{ label: 'Min', data: pData.values, backgroundColor: pColors, borderRadius: 4 }] 
+                        datasets: [{ label: 'Minutos', data: pData.values, backgroundColor: pColors, borderRadius: 4 }] 
                     },
                     options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
                 });
