@@ -98,23 +98,68 @@ def get_driver_leaderboard(db: Session, start_date: Optional[date] = None, end_d
     return data
 
 def get_top_stores(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
+    # Subquery para saber cuándo fue el primer pedido de la tienda
     start_date_subquery = db.query(Order.store_id, func.min(Order.created_at).label('first_order_date')).group_by(Order.store_id).subquery()
     
+    # FIX: Usamos JOIN estricto (no outerjoin) para ignorar pedidos huérfanos sin tienda
     query = db.query(
         Store.name, 
         func.count(Order.id).label('total_orders'), 
         start_date_subquery.c.first_order_date
-    ).join(Order, Order.store_id == Store.id).outerjoin(start_date_subquery, Store.id == start_date_subquery.c.store_id)
+    ).join(Order, Order.store_id == Store.id).join(start_date_subquery, Store.id == start_date_subquery.c.store_id)
     
+    # Filtro fecha local
     local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
     if start_date: query = query.filter(local_date >= start_date)
     if end_date: query = query.filter(local_date <= end_date)
+    
+    # FIX: Aseguramos que el nombre no sea Nulo
+    query = query.filter(Store.name != None)
     
     if store_name: query = query.filter(Store.name == store_name)
     query = apply_search(query, search_query)
 
     results = query.group_by(Store.name, start_date_subquery.c.first_order_date).order_by(desc('total_orders')).all()
-    return [{"name": row.name or "Tienda Desconocida", "orders": row.total_orders, "first_seen": row.first_order_date.strftime('%d/%m/%Y') if row.first_order_date else "N/A"} for row in results]
+    
+    # Retorno limpio, sin "Tienda Desconocida"
+    return [{
+        "name": row.name, 
+        "orders": row.total_orders, 
+        "first_seen": row.first_order_date.strftime('%d/%m/%Y') if row.first_order_date else "N/A"
+    } for row in results]
+
+def get_heatmap_data(
+    db: Session, 
+    start_date: Optional[date] = None, 
+    end_date: Optional[date] = None, 
+    store_name: Optional[str] = None
+):
+    """
+    Obtiene coordenadas para el mapa de calor.
+    FIX: 
+    1. Solo pedidos 'delivered' (Venta real).
+    2. Ignora coordenadas 0.0 (Null Island).
+    """
+    query = db.query(Order.latitude, Order.longitude)\
+        .filter(Order.current_status == 'delivered')\
+        .filter(Order.latitude != None)\
+        .filter(Order.latitude != 0)\
+        .filter(Order.latitude != 0.0)
+
+    # Filtros de Fecha (Zona Horaria Vzla)
+    local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
+    local_date = func.date(local_created_at)
+
+    if start_date: query = query.filter(local_date >= start_date)
+    if end_date: query = query.filter(local_date <= end_date)
+    
+    if store_name: 
+        query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+    
+    results = query.all()
+    
+    # Intensidad 0.6 para que se vea bien el calor
+    return [[float(r.latitude), float(r.longitude), 0.6] for r in results]
 
 def calculate_bottlenecks(
     db: Session, 
