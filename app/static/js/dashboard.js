@@ -114,6 +114,28 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }, 1000);
     }
+    
+    function updateOrderTypeChart(d, p) {
+        const ctx = document.getElementById('orderTypeChart')?.getContext('2d');
+        if(!ctx) return;
+        if (orderTypeChart) orderTypeChart.destroy();
+        orderTypeChart = new Chart(ctx, {
+            type: 'doughnut', 
+            data: { 
+                labels: ['Delivery', 'Retiro'], 
+                datasets: [{ 
+                    data: [d, p], 
+                    backgroundColor: ['#3b82f6', '#f59e0b'], 
+                    borderWidth: 0 
+                }] 
+            },
+            options: { 
+                cutout: '70%', 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: false } } // Oculto leyenda por espacio
+            }
+        });
+    }
 
     async function updateBottleneckChart() {
         // 1. Obtener contextos de los canvas (Delivery y Pickup)
