@@ -98,22 +98,22 @@ def get_driver_leaderboard(db: Session, start_date: Optional[date] = None, end_d
     return data
 
 def get_top_stores(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
-    # Subquery para saber cuándo fue el primer pedido de la tienda
+    # Subquery para fecha inicio
     start_date_subquery = db.query(Order.store_id, func.min(Order.created_at).label('first_order_date')).group_by(Order.store_id).subquery()
     
-    # FIX: Usamos JOIN estricto (no outerjoin) para ignorar pedidos huérfanos sin tienda
+    # FIX: Join estricto + Filtro de nombre no nulo
     query = db.query(
         Store.name, 
         func.count(Order.id).label('total_orders'), 
         start_date_subquery.c.first_order_date
     ).join(Order, Order.store_id == Store.id).join(start_date_subquery, Store.id == start_date_subquery.c.store_id)
     
-    # Filtro fecha local
+    # Filtros
     local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
     if start_date: query = query.filter(local_date >= start_date)
     if end_date: query = query.filter(local_date <= end_date)
     
-    # FIX: Aseguramos que el nombre no sea Nulo
+    # QUIRÚRGICO: Eliminar tiendas sin nombre
     query = query.filter(Store.name != None)
     
     if store_name: query = query.filter(Store.name == store_name)
@@ -121,75 +121,32 @@ def get_top_stores(db: Session, start_date: Optional[date] = None, end_date: Opt
 
     results = query.group_by(Store.name, start_date_subquery.c.first_order_date).order_by(desc('total_orders')).all()
     
-    # Retorno limpio, sin "Tienda Desconocida"
-    return [{
-        "name": row.name, 
-        "orders": row.total_orders, 
-        "first_seen": row.first_order_date.strftime('%d/%m/%Y') if row.first_order_date else "N/A"
-    } for row in results]
+    return [{"name": row.name, "orders": row.total_orders, "first_seen": row.first_order_date.strftime('%d/%m/%Y') if row.first_order_date else "N/A"} for row in results]
 
-def get_heatmap_data(
-    db: Session, 
-    start_date: Optional[date] = None, 
-    end_date: Optional[date] = None, 
-    store_name: Optional[str] = None
-):
-    """
-    Obtiene coordenadas para el mapa de calor.
-    FIX: 
-    1. Solo pedidos 'delivered' (Venta real).
-    2. Ignora coordenadas 0.0 (Null Island).
-    """
+def get_heatmap_data(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None):
+    # FIX: Solo 'delivered' y coordenadas válidas
     query = db.query(Order.latitude, Order.longitude)\
         .filter(Order.current_status == 'delivered')\
         .filter(Order.latitude != None)\
         .filter(Order.latitude != 0)\
         .filter(Order.latitude != 0.0)
 
-    # Filtros de Fecha (Zona Horaria Vzla)
     local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
     local_date = func.date(local_created_at)
 
     if start_date: query = query.filter(local_date >= start_date)
     if end_date: query = query.filter(local_date <= end_date)
-    
-    if store_name: 
-        query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+    if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
     results = query.all()
-    
-    # Intensidad 0.6 para que se vea bien el calor
     return [[float(r.latitude), float(r.longitude), 0.6] for r in results]
 
-def calculate_bottlenecks(
-    db: Session, 
-    start_date: Optional[date] = None, 
-    end_date: Optional[date] = None,
-    store_name: Optional[str] = None, 
-    search_query: Optional[str] = None
-):
-    """
-    Calcula Cuellos de Botella (Lógica V5.4 - Suma de Promedios).
-    - Delivery Total = Suma(Avg Pendiente + Avg Prep + Avg Asignado + Avg Camino).
-    - Pickup Total = Suma(Avg Pendiente + Avg Prep).
-    - Cancelado = Promedio del tiempo de vida de los pedidos cancelados.
-    """
-    # 1. Definición de Límites (Anti-Zombie)
-    MAX_STEP_SEC = 21600 # 6 Horas máx por paso (si es más, es error de data)
+def calculate_bottlenecks(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
+    # Limites Anti-Zombie
+    MAX_STEP_SEC = 21600 
 
-    # 2. Query
-    query = db.query(
-        OrderStatusLog.order_id, 
-        OrderStatusLog.status, 
-        OrderStatusLog.timestamp,
-        Order.created_at,
-        Order.order_type,
-        Order.current_status
-    ).join(Order, OrderStatusLog.order_id == Order.id)
-
-    # 3. Filtros
-    local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
-    local_date = func.date(local_created_at)
+    query = db.query(OrderStatusLog.order_id, OrderStatusLog.status, OrderStatusLog.timestamp, Order.created_at, Order.order_type, Order.current_status).join(Order, OrderStatusLog.order_id == Order.id)
+    local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
 
     if start_date: query = query.filter(local_date >= start_date)
     if end_date: query = query.filter(local_date <= end_date)
@@ -197,115 +154,66 @@ def calculate_bottlenecks(
     query = apply_search(query, search_query)
 
     logs = query.order_by(OrderStatusLog.order_id, OrderStatusLog.timestamp).all()
+    if not logs: return {"delivery": [], "pickup": []}
 
-    if not logs: 
-        return {"delivery": [], "pickup": []}
-
-    # 4. Buckets para acumular [listas de segundos]
-    # Usamos listas separadas para cada paso específico
     metrics = {
-        'Delivery': {
-            'pending': [], 'processing': [], 'confirmed': [], 'driver_assigned': [], 'on_the_way': [], 
-            'canceled_life_time': [] # Tiempo de vida de los cancelados
-        },
-        'Pickup': {
-            'pending': [], 'processing': [], 
-            'canceled_life_time': []
-        }
+        'Delivery': {'pending':[], 'processing':[], 'confirmed':[], 'driver_assigned':[], 'on_the_way':[], 'canceled_life_time':[]},
+        'Pickup': {'pending':[], 'processing':[], 'canceled_life_time':[]}
     }
 
     orders_data = {}
     for log in logs:
-        if log.order_id not in orders_data:
-            orders_data[log.order_id] = {
-                'created_at': log.created_at,
-                'type': log.order_type,
-                'current_status': log.current_status,
-                'logs': []
-            }
+        if log.order_id not in orders_data: orders_data[log.order_id] = {'created_at': log.created_at, 'type': log.order_type, 'current_status': log.current_status, 'logs': []}
         orders_data[log.order_id]['logs'].append(log)
 
-    # 5. Procesamiento Lógico
     for oid, data in orders_data.items():
-        o_created = data['created_at']
-        o_type = data['type'] 
-        o_status = data['current_status']
-        o_logs = data['logs']
-
+        o_created, o_type, o_status, o_logs = data['created_at'], data['type'], data['current_status'], data['logs']
         if o_type not in metrics: continue
-        target_metrics = metrics[o_type]
+        target = metrics[o_type]
 
-        # CASO A: Pedido Cancelado (Calculamos cuánto tiempo se perdió)
+        # FIX: Cancelados se acumulan aparte
         if o_status == 'canceled':
-            # Buscamos cuándo ocurrió la cancelación
             cancel_log = next((l for l in reversed(o_logs) if l.status == 'canceled'), None)
             if cancel_log:
-                life_time = (cancel_log.timestamp - o_created).total_seconds()
-                # Filtro: Ignorar cancelaciones de más de 2 días (zombies)
-                if 0 < life_time < 172800:
-                    target_metrics['canceled_life_time'].append(life_time)
-            # Nota: Los cancelados NO suman a los promedios de pasos exitosos para no ensuciarlos
-            continue 
+                life = (cancel_log.timestamp - o_created).total_seconds()
+                if 0 < life < 172800: target['canceled_life_time'].append(life)
+            continue
 
-        # CASO B: Pedidos Exitosos o En Curso (Calculamos pasos intermedios)
         for i in range(len(o_logs) - 1):
-            current = o_logs[i]
-            next_l = o_logs[i+1]
-            status = current.status
+            curr, nxt = o_logs[i], o_logs[i+1]
+            if curr.status in target:
+                delta = (nxt.timestamp - curr.timestamp).total_seconds()
+                if 10 < delta < MAX_STEP_SEC: target[curr.status].append(delta)
 
-            # Solo guardamos si el paso existe en nuestra estructura (Whitelist)
-            if status in target_metrics:
-                delta = (next_l.timestamp - current.timestamp).total_seconds()
-                # Filtro Zombie (6h)
-                if 10 < delta < MAX_STEP_SEC:
-                    target_metrics[status].append(delta)
-
-    # 6. Construcción de Resultados (SUMA DE PROMEDIOS)
-    
-    def build_flow_result(metric_dict):
-        result_list = []
-        total_process_time = 0.0
-
-        # Pasos secuenciales (El orden importa para la suma)
-        # Definimos el orden lógico de visualización
-        steps_order = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way']
-        
-        for step in steps_order:
+    # FIX: Sumar promedios para el Total Entregado
+    def build_flow(metric_dict):
+        res = []
+        total = 0.0
+        steps = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way']
+        for step in steps:
             if step in metric_dict and metric_dict[step]:
-                # Calculamos promedio de este paso
                 avg = sum(metric_dict[step]) / len(metric_dict[step])
-                result_list.append({"status": step, "avg_duration_seconds": avg})
-                
-                # Sumamos al total acumulado
-                total_process_time += avg
+                res.append({"status": step, "avg_duration_seconds": avg})
+                total += avg
         
-        # Agregamos la barra de "Entregado" que es la SUMA de los anteriores
-        if total_process_time > 0:
-            result_list.append({
-                "status": "delivered", 
-                "avg_duration_seconds": total_process_time
-            })
-
-        # Agregamos la barra de "Cancelado" (Promedio independiente)
+        # Barra Total
+        if total > 0: res.append({"status": "delivered", "avg_duration_seconds": total})
+        
+        # Barra Cancelado (Promedio)
         if metric_dict.get('canceled_life_time'):
-            avg_cancel = sum(metric_dict['canceled_life_time']) / len(metric_dict['canceled_life_time'])
-            result_list.append({
-                "status": "canceled",
-                "avg_duration_seconds": avg_cancel
-            })
-            
-        return result_list
+            avg_can = sum(metric_dict['canceled_life_time']) / len(metric_dict['canceled_life_time'])
+            res.append({"status": "canceled", "avg_duration_seconds": avg_can})
+        return res
 
     return {
-        "delivery": build_flow_result(metrics['Delivery']),
-        "pickup": build_flow_result(metrics['Pickup'])
+        "delivery": build_flow(metrics['Delivery']),
+        "pickup": build_flow(metrics['Pickup'])
     }
 
 def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
-    # Filtro fecha local
     local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
     
-    # query BASE ya incluye Customer implícitamente en el select y join
+    # FIX: Evitamos apply_search() para no duplicar el JOIN con Customer
     query = db.query(
         Customer.name, 
         func.count(Order.id).label("total_orders"), 
@@ -316,30 +224,20 @@ def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: 
     if end_date: query = query.filter(local_date <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     
-    # FIX ERROR 500: No usar apply_search() aquí porque causa DOBLE JOIN con Customer.
-    # Aplicamos el filtro manualmente sobre la tabla Customer ya unida.
+    # Filtro manual
     if search_query:
-        term = f"%{search_query}%"
-        # Filtramos por nombre de cliente directamente
-        query = query.filter(Customer.name.ilike(term))
+        query = query.filter(Customer.name.ilike(f"%{search_query}%"))
 
     all_results = query.group_by(Customer.name).order_by(desc("total_spent")).all()
     
     final_list = []
-    
-    # Procesamiento
     for index, row in enumerate(all_results):
-        rank = index + 1
-        name = row.name or "Cliente Desconocido"
-        
         final_list.append({
-            "rank": rank, 
-            "name": name, 
+            "rank": index + 1, 
+            "name": row.name or "Cliente Desconocido", 
             "count": row.total_orders, 
             "total_amount": float(row.total_spent or 0)
         })
-    
-    # Paginación manual simple (Top 20)
     return final_list[:20]
 
 def get_total_duration_for_order(db: Session, order_id: int):
