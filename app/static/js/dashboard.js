@@ -76,6 +76,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const cancelEl = document.getElementById('kpi-canceled');
         if (cancelEl) cancelEl.innerHTML = `${data.total_canceled} <span class="text-danger opacity-75 small" style="font-size:0.7em;">(-$${(data.lost_revenue||0).toFixed(2)})</span>`;
         setVal('kpi-avg-time', `${data.avg_delivery_minutes || 0} min`);
+        updateOrderTypeChart(data.total_deliveries, data.total_pickups);
     }
 
     async function updateRecentOrdersTable() {

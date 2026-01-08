@@ -135,35 +135,60 @@
         <!-- ANÁLISIS OPERATIVO (4 COLUMNAS) -->
         <div class="row g-3 mb-4 admin-only">
             
-            <!-- 1. Distribución (Donut) - Col 2 -->
-            <div class="col-md-6 col-lg-2">
+            <!-- 1. TIPO DE ORDEN (Dona) -->
+            <div class="col-12 col-sm-6 col-lg-2">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-2"><span class="fw-bold small text-muted">TIPO ORDEN</span></div>
-                    <div class="card-body p-2"><div style="height: 150px;"><canvas id="orderTypeChart"></canvas></div></div>
+                    <div class="card-header bg-white border-0 py-2">
+                        <span class="fw-bold small text-muted">TIPO ORDEN</span>
+                    </div>
+                    <div class="card-body p-2 d-flex align-items-center justify-content-center">
+                        <!-- ALTURA DEFINIDA CRÍTICA PARA CHART.JS -->
+                        <div style="height: 150px; width: 100%; position: relative;">
+                            <canvas id="orderTypeChart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 2. Motivos Cancelación (Pie) - Col 4 -->
-            <div class="col-md-6 col-lg-4">
+            <!-- 2. MOTIVOS CANCELACIÓN (Pie) -->
+            <div class="col-12 col-sm-6 col-lg-4">
                  <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-2"><span class="fw-bold small text-danger"><i class="fa-solid fa-ban me-1"></i> MOTIVOS CANCELACIÓN</span></div>
-                    <div class="card-body p-2"><div style="height: 150px;"><canvas id="cancellationChart"></canvas></div></div>
+                    <div class="card-header bg-white border-0 py-2">
+                        <span class="fw-bold small text-danger"><i class="fa-solid fa-ban me-1"></i> MOTIVOS</span>
+                    </div>
+                    <div class="card-body p-2">
+                        <div style="height: 150px; width: 100%;">
+                            <canvas id="cancellationChart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 3. Tiempos Delivery (Bar) - Col 3 -->
-            <div class="col-md-6 col-lg-3">
+            <!-- 3. TIEMPOS DELIVERY (Barra Naranja) -->
+            <div class="col-12 col-sm-6 col-lg-3">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-2"><span class="fw-bold small text-primary"><i class="fa-solid fa-motorcycle me-1"></i> TIEMPOS DELIVERY</span></div>
-                    <div class="card-body p-2"><div style="height: 150px;"><canvas id="bottleneckChart"></canvas></div></div>
+                    <div class="card-header bg-white border-0 py-2">
+                        <span class="fw-bold small text-primary"><i class="fa-solid fa-motorcycle me-1"></i> DELIVERY (Min)</span>
+                    </div>
+                    <div class="card-body p-2">
+                        <div style="height: 150px; width: 100%;">
+                            <canvas id="bottleneckChart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 4. Tiempos Pickup (Bar) - Col 3 -->
-            <div class="col-md-6 col-lg-3">
+            <!-- 4. TIEMPOS PICKUP (Barra Azul) -->
+            <div class="col-12 col-sm-6 col-lg-3">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-2"><span class="fw-bold small text-warning"><i class="fa-solid fa-person-walking-luggage me-1"></i> TIEMPOS PICKUP</span></div>
-                    <div class="card-body p-2"><div style="height: 150px;"><canvas id="bottleneckPickupChart"></canvas></div></div>
+                    <div class="card-header bg-white border-0 py-2">
+                        <span class="fw-bold small text-warning"><i class="fa-solid fa-person-walking-luggage me-1"></i> PICKUP (Min)</span>
+                    </div>
+                    <div class="card-body p-2">
+                        <div style="height: 150px; width: 100%;">
+                            <canvas id="bottleneckPickupChart"></canvas>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -221,6 +246,6 @@
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-    <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/dashboard.js?v=5.2"></script>
 </body>
 </html>
