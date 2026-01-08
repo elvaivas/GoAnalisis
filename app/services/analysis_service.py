@@ -31,7 +31,6 @@ def _parse_duration_string(duration_str: str) -> int:
 
 def get_daily_trends(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None) -> Dict[str, List]:
     # Usamos timezone para agrupar por el día CORRECTO en Venezuela
-    # Convertimos UTC -> America/Caracas y luego extraemos la fecha
     date_col = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
     
     query = db.query(
@@ -48,7 +47,6 @@ def get_daily_trends(db: Session, start_date: Optional[date] = None, end_date: O
         )).label('avg_time')
     )
 
-    # Filtros con Timezone
     if start_date: query = query.filter(date_col >= start_date)
     if end_date: query = query.filter(date_col <= end_date)
     
@@ -65,7 +63,6 @@ def get_daily_trends(db: Session, start_date: Optional[date] = None, end_date: O
     }
 
 def get_driver_leaderboard(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
-    # Usamos la misma lógica de fecha local para filtros
     local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
 
     query = db.query(
@@ -81,7 +78,6 @@ def get_driver_leaderboard(db: Session, start_date: Optional[date] = None, end_d
     
     query = apply_search(query, search_query)
 
-    # Límite aumentado a 50
     results = query.group_by(Driver.name).order_by(desc('total_orders'), Driver.name).limit(50).all()
     
     data = []
@@ -102,7 +98,6 @@ def get_driver_leaderboard(db: Session, start_date: Optional[date] = None, end_d
     return data
 
 def get_top_stores(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
-    # Subquery para fecha de inicio
     start_date_subquery = db.query(Order.store_id, func.min(Order.created_at).label('first_order_date')).group_by(Order.store_id).subquery()
     
     query = db.query(
@@ -111,7 +106,6 @@ def get_top_stores(db: Session, start_date: Optional[date] = None, end_date: Opt
         start_date_subquery.c.first_order_date
     ).join(Order, Order.store_id == Store.id).outerjoin(start_date_subquery, Store.id == start_date_subquery.c.store_id)
     
-    # Filtro fecha local
     local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
     if start_date: query = query.filter(local_date >= start_date)
     if end_date: query = query.filter(local_date <= end_date)
@@ -119,7 +113,6 @@ def get_top_stores(db: Session, start_date: Optional[date] = None, end_date: Opt
     if store_name: query = query.filter(Store.name == store_name)
     query = apply_search(query, search_query)
 
-    # SIN LIMIT
     results = query.group_by(Store.name, start_date_subquery.c.first_order_date).order_by(desc('total_orders')).all()
     return [{"name": row.name or "Tienda Desconocida", "orders": row.total_orders, "first_seen": row.first_order_date.strftime('%d/%m/%Y') if row.first_order_date else "N/A"} for row in results]
 
@@ -131,12 +124,17 @@ def calculate_bottlenecks(
     search_query: Optional[str] = None
 ):
     """
-    Calcula el tiempo promedio (AVG) entre estados.
-    REFACTORIZADO: Usa lógica en memoria para limpiar 'outliers' y permite filtros de fecha.
+    Calcula Cuellos de Botella con Lógica Híbrida:
+    - Estados Intermedios: Tiempo EN el estado (delta vs siguiente log).
+    - Estados Finales (Delivered/Canceled): Tiempo TOTAL de Ciclo (Lead Time vs CreatedAt).
     """
-    # 1. Query Base: Logs + Order (para fecha y tienda)
-    query = db.query(OrderStatusLog.order_id, OrderStatusLog.status, OrderStatusLog.timestamp)\
-        .join(Order, OrderStatusLog.order_id == Order.id)
+    # 1. Query Base: Logs + Order (Necesitamos created_at para el Lead Time)
+    query = db.query(
+        OrderStatusLog.order_id, 
+        OrderStatusLog.status, 
+        OrderStatusLog.timestamp,
+        Order.created_at # <--- CRUCIAL PARA LA NUEVA LÓGICA
+    ).join(Order, OrderStatusLog.order_id == Order.id)
 
     # 2. Filtros de Fecha (Zona Horaria Vzla)
     local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
@@ -155,29 +153,50 @@ def calculate_bottlenecks(
 
     if not logs: return []
 
-    # 4. Cálculo de Deltas en Python (Más seguro contra errores de datos)
+    # 4. Cálculo Híbrido en Memoria
     durations_map: Dict[str, List[float]] = {}
-    orders_logs = {}
     
-    # Agrupamos por pedido
+    # Agrupamos por pedido: { order_id: {'created': dt, 'logs': [list]} }
+    orders_data = {}
+    
     for log in logs:
-        if log.order_id not in orders_logs: orders_logs[log.order_id] = []
-        orders_logs[log.order_id].append(log)
+        if log.order_id not in orders_data: 
+            orders_data[log.order_id] = {'created_at': log.created_at, 'logs': []}
+        orders_data[log.order_id]['logs'].append(log)
 
-    for oid, o_logs in orders_logs.items():
-        # Ya vienen ordenados por timestamp desde SQL
+    for oid, data in orders_data.items():
+        order_created = data['created_at']
+        o_logs = data['logs']
+        
+        # A. ESTADOS INTERMEDIOS (Iteramos pares)
         for i in range(len(o_logs) - 1):
             current = o_logs[i]
             next_l = o_logs[i+1]
+            status = current.status
             
+            # Si el estado actual es terminal, NO calculamos diferencial intermedio aquí
+            # (Se calcula en el bloque B para usar created_at)
+            if status in ['delivered', 'canceled']:
+                continue
+
             delta = (next_l.timestamp - current.timestamp).total_seconds()
             
-            # --- LIMPIEZA DE DATOS ---
-            # Ignoramos tiempos negativos o mayores a 48 horas (172800 seg)
-            # Esto corrige el bug de "4899 minutos"
+            # Sanity Check (Max 48h para intermedios)
             if delta > 0 and delta < 172800:
-                if current.status not in durations_map: durations_map[current.status] = []
-                durations_map[current.status].append(delta)
+                if status not in durations_map: durations_map[status] = []
+                durations_map[status].append(delta)
+
+        # B. ESTADOS TERMINALES (Lead Time Total)
+        # Buscamos si el pedido tocó un estado final
+        for log in o_logs:
+            if log.status in ['delivered', 'canceled']:
+                # Fórmula: Timestamp del Log Final - Fecha Creación del Pedido
+                lead_time = (log.timestamp - order_created).total_seconds()
+                
+                # Sanity Check (Max 7 días para Lead Time completo)
+                if lead_time > 0 and lead_time < 604800: 
+                    if log.status not in durations_map: durations_map[log.status] = []
+                    durations_map[log.status].append(lead_time)
 
     # 5. Promedios Finales
     results = []
@@ -188,7 +207,6 @@ def calculate_bottlenecks(
     return results
 
 def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
-    # Filtro fecha local
     local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
     
     query = db.query(
@@ -249,16 +267,12 @@ def get_top_products(
     store_name: Optional[str] = None, 
     search_query: Optional[str] = None
 ):
-    """
-    Retorna los productos más vendidos (Excluyendo insumos corporativos y regalos).
-    """
     query = db.query(
         OrderItem.name,
         func.sum(OrderItem.quantity).label('total_qty'),
         func.sum(OrderItem.total_price).label('total_revenue')
     ).join(Order, OrderItem.order_id == Order.id)
 
-    # Filtros Generales
     if start_date: query = query.filter(cast(Order.created_at, Date) >= start_date)
     if end_date: query = query.filter(cast(Order.created_at, Date) <= end_date)
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
@@ -270,13 +284,11 @@ def get_top_products(
             Order.external_id.ilike(f"%{search_query}%")
         ))
 
-    # --- FILTROS DE LIMPIEZA INTELIGENTE ---
     query = query.filter(
-        OrderItem.unit_price > 0.01,           # Ignora cosas de precio 0
-        ~OrderItem.name.ilike('%obsequio%'),   # Ignora cualquier regalo explícito
-        ~OrderItem.name.ilike('%bolsa%gopharma%') # Ignora SOLO la bolsa de la marca
+        OrderItem.unit_price > 0.01,
+        ~OrderItem.name.ilike('%obsequio%'),
+        ~OrderItem.name.ilike('%bolsa%gopharma%')
     )
-    # ----------------------------------------
 
     results = query.group_by(OrderItem.name).order_by(desc('total_qty')).limit(10).all()
 
