@@ -124,25 +124,20 @@ def calculate_bottlenecks(
     search_query: Optional[str] = None
 ):
     """
-    Calcula Cuellos de Botella con Lógica Estricta de Negocio.
+    Calcula Cuellos de Botella con Segregación Estricta (Regla A, B, C).
+    Retorna: { 'delivery': [], 'pickup': [], 'canceled': [] }
     """
-    # 1. Definición de Flujos Válidos (Whitelists)
-    # Pickup: No debe tener tiempos de motorizado.
-    PICKUP_STATES = {'pending', 'processing', 'delivered', 'canceled'}
-    
-    # Delivery: Flujo completo.
-    DELIVERY_STATES = {'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'}
-
-    # 2. Query Base
+    # 1. Query Base
     query = db.query(
         OrderStatusLog.order_id, 
         OrderStatusLog.status, 
         OrderStatusLog.timestamp,
         Order.created_at,
-        Order.order_type
+        Order.order_type,
+        Order.current_status
     ).join(Order, OrderStatusLog.order_id == Order.id)
 
-    # 3. Filtros
+    # 2. Filtros (Zona Horaria Vzla)
     local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
     local_date = func.date(local_created_at)
 
@@ -151,94 +146,102 @@ def calculate_bottlenecks(
     if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     query = apply_search(query, search_query)
 
-    # 4. Traemos datos
+    # 3. Datos
     logs = query.order_by(OrderStatusLog.order_id, OrderStatusLog.timestamp).all()
 
     if not logs: 
-        return {"delivery": [], "pickup": []}
+        return {"delivery": [], "pickup": [], "canceled": []}
 
-    # 5. Acumuladores [Suma_Segundos, Cantidad_Muestras]
-    # Usamos diccionarios para hacer el promedio manual (SUM / COUNT) al final
-    delivery_stats = {} # Ej: {'pending': [500, 600, 450], ...}
-    pickup_stats = {}
+    # 4. Buckets para acumular [segundos]
+    stats = {
+        'delivery': {},
+        'pickup': {},
+        'canceled': {} # Nueva categoría (Regla C)
+    }
 
-    # Agrupamos por pedido
+    # Agrupamos logs por pedido
     orders_data = {}
     for log in logs:
-        if log.order_id not in orders_data: 
+        if log.order_id not in orders_data:
             orders_data[log.order_id] = {
-                'created_at': log.created_at, 
+                'created_at': log.created_at,
                 'type': log.order_type,
+                'current_status': log.current_status,
                 'logs': []
             }
         orders_data[log.order_id]['logs'].append(log)
 
-    # 6. Procesamiento Lógico
+    # 5. Procesamiento Lógico
     for oid, data in orders_data.items():
-        order_type = data['type']
-        order_created = data['created_at']
+        o_created = data['created_at']
+        o_type = data['type']
+        o_status = data['current_status']
         o_logs = data['logs']
-        
-        # Seleccionamos el diccionario destino y la whitelist
-        target_stats = None
-        whitelist = None
 
-        if order_type == 'Delivery':
-            target_stats = delivery_stats
-            whitelist = DELIVERY_STATES
-        elif order_type == 'Pickup':
-            target_stats = pickup_stats
-            whitelist = PICKUP_STATES
+        # REGLA C: Si está cancelado, va directo a la cubeta 'canceled' (Lead Time Total)
+        if o_status == 'canceled':
+            # Buscamos el log donde se canceló
+            cancel_log = next((l for l in reversed(o_logs) if l.status == 'canceled'), None)
+            if cancel_log:
+                lead_time = (cancel_log.timestamp - o_created).total_seconds()
+                if 0 < lead_time < 604800: # Max 7 días
+                    # Usamos una clave genérica o el motivo si lo tuviéramos, aquí usaremos "Tiempo Perdido"
+                    if "loss_time" not in stats['canceled']: stats['canceled']["loss_time"] = []
+                    stats['canceled']["loss_time"].append(lead_time)
+            continue # Saltamos al siguiente pedido, no mezclamos con delivery/pickup
+
+        # REGLA A: Segregación Delivery vs Pickup
+        target_bucket = None
+        valid_states = set()
+
+        if o_type == 'Delivery':
+            target_bucket = stats['delivery']
+            valid_states = {'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered'}
+        elif o_type == 'Pickup':
+            target_bucket = stats['pickup']
+            valid_states = {'pending', 'processing', 'delivered'}
         else:
             continue
 
-        # A. ESTADOS INTERMEDIOS (Delta T)
+        # REGLA B: Cálculo Híbrido (Intermedio vs Terminal)
         for i in range(len(o_logs) - 1):
             current = o_logs[i]
             next_l = o_logs[i+1]
-            status = current.status
             
-            # Solo procesamos si el estado pertenece al flujo del tipo de orden
-            if status not in whitelist: continue
-            
-            # Si es terminal, saltamos (se calcula abajo)
-            if status in ['delivered', 'canceled']: continue
+            if current.status not in valid_states: continue
+            if current.status == 'delivered': continue # Se calcula abajo
 
+            # Cálculo Intermedio (Duración en estado)
             delta = (next_l.timestamp - current.timestamp).total_seconds()
-            
-            # Filtro de ruido: 30 seg < delta < 48 horas
-            if delta > 30 and delta < 172800:
-                if status not in target_stats: target_stats[status] = []
-                target_stats[status].append(delta)
+            if 30 < delta < 172800: # Filtro ruido
+                if current.status not in target_bucket: target_bucket[current.status] = []
+                target_bucket[current.status].append(delta)
 
-        # B. ESTADOS TERMINALES (Ciclo Total)
-        # Buscamos el ÚLTIMO log válido
-        # Si un pedido se cancela, queremos saber cuánto tardó desde que se creó hasta que murió.
-        last_log = o_logs[-1]
-        if last_log.status in ['delivered', 'canceled']:
-            lead_time = (last_log.timestamp - order_created).total_seconds()
-            
-            # Filtro de ruido: Lead time < 7 días
-            if lead_time > 0 and lead_time < 604800:
-                if last_log.status not in target_stats: target_stats[last_log.status] = []
-                target_stats[last_log.status].append(lead_time)
+        # Cálculo Terminal (Entregado = Lead Time Total)
+        if o_status == 'delivered':
+            # Buscamos el log de entrega
+            del_log = next((l for l in reversed(o_logs) if l.status == 'delivered'), None)
+            if del_log:
+                lead_time = (del_log.timestamp - o_created).total_seconds()
+                if 0 < lead_time < 604800:
+                    if 'delivered' not in target_bucket: target_bucket['delivered'] = []
+                    target_bucket['delivered'].append(lead_time)
 
-    # 7. Cálculo de Promedios (AVG)
-    def compute_averages(stats_dict):
-        result = []
-        for status, times in stats_dict.items():
-            if not times: continue
-            avg_seconds = sum(times) / len(times) # AQUÍ ESTÁ EL PROMEDIO REAL
-            result.append({
-                "status": status, 
-                "avg_duration_seconds": avg_seconds,
-                "count": len(times) # Útil para debug
-            })
-        return result
+    # 6. Promedios (AVG)
+    def compute_avgs(bucket):
+        res = []
+        for status, times in bucket.items():
+            if times:
+                res.append({
+                    "status": status,
+                    "avg_duration_seconds": sum(times) / len(times)
+                })
+        return res
 
     return {
-        "delivery": compute_averages(delivery_stats),
-        "pickup": compute_averages(pickup_stats)
+        "delivery": compute_avgs(stats['delivery']),
+        "pickup": compute_avgs(stats['pickup']),
+        "canceled": compute_avgs(stats['canceled'])
     }
 
 def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):

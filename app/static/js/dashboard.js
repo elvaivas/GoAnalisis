@@ -35,6 +35,24 @@ document.addEventListener('DOMContentLoaded', function () {
         'driver_assigned': 'Asignado', 'on_the_way': 'En Camino', 'delivered': 'Entregado', 'canceled': 'Cancelado'
     };
     const statusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
+    
+    // --- REPARACIÓN BOTÓN REPORTE ---
+    const btnReport = document.getElementById('btn-open-report');
+    if (btnReport) {
+        // Eliminamos listeners anteriores (clonando) para evitar duplicados si se recarga
+        const newBtn = btnReport.cloneNode(true);
+        btnReport.parentNode.replaceChild(newBtn, btnReport);
+        
+        newBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            // Construimos la URL base sin parámetros primero
+            let url = '/report';
+            // Obtenemos los parámetros actuales del filtro usando la función helper
+            const params = buildUrl('').search; 
+            // Abrimos en nueva pestaña
+            window.open(url + params, '_blank');
+        });
+    }
 
     async function authFetch(url) {
         try {
@@ -138,79 +156,62 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function updateBottleneckChart() {
-        // 1. Obtener contextos de los canvas (Delivery y Pickup)
+        // Obtenemos contextos (si no existen en el HTML, salimos suavemente)
         const ctxDelivery = document.getElementById('bottleneckChart')?.getContext('2d');
         const ctxPickup = document.getElementById('bottleneckPickupChart')?.getContext('2d');
 
-        // Si no existen los elementos en el HTML (ej. usuario con caché viejo), salimos para no romper
-        if (!ctxDelivery || !ctxPickup) return; 
+        // Si el Backend falla o el usuario tiene HTML viejo, esto evita que se rompa todo el Dashboard
+        if (!ctxDelivery && !ctxPickup) return; 
 
-        // 2. Petición al Backend
         const res = await authFetch(buildUrl('/api/analysis/bottlenecks'));
         if (!res) return;
-        const data = await res.json(); 
-        // data es ahora: { "delivery": [...], "pickup": [...] }
-
-        // 3. Helper Interno para Procesar Datos (Filtrar, Ordenar, Traducir)
-        const prepareChartData = (list) => {
+        const data = await res.json();
+        
+        // Helper seguro: si la lista viene vacía o undefined, devuelve array vacío
+        const processData = (list) => {
             if (!Array.isArray(list)) return { labels: [], values: [] };
-
+            
             const sorted = list
-                .filter(d => d.avg_duration_seconds > 0) // Filtrar ceros
-                .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status)); // Ordenar por flujo
+                .filter(d => d.avg_duration_seconds > 0)
+                .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
 
             return {
                 labels: sorted.map(d => statusTranslations[d.status] || d.status.toUpperCase()),
-                values: sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)) // Convertir a minutos
+                values: sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1))
             };
         };
 
-        const deliveryData = prepareChartData(data.delivery);
-        const pickupData = prepareChartData(data.pickup);
+        // Procesamos con seguridad (usando ?. por si el backend no manda la key)
+        const deliveryData = processData(data.delivery);
+        const pickupData = processData(data.pickup);
 
-        // --- GRÁFICO 1: DELIVERY (Naranja) ---
-        if (bottleneckChart) bottleneckChart.destroy(); // Limpieza vital
-        bottleneckChart = new Chart(ctxDelivery, {
-            type: 'bar', 
-            data: { 
-                labels: deliveryData.labels, 
-                datasets: [{ 
-                    label: 'Minutos', 
-                    data: deliveryData.values, 
-                    backgroundColor: '#f59e0b', // Naranja/Amarillo
-                    borderRadius: 4,
-                    barPercentage: 0.6
-                }] 
-            },
-            options: { 
-                indexAxis: 'y', // Barras horizontales
-                maintainAspectRatio: false, 
-                plugins: { legend: { display: false } },
-                scales: { x: { grid: { display: false } } }
-            }
-        });
+        // Renderizado Delivery
+        if (ctxDelivery) {
+            if (bottleneckChart) bottleneckChart.destroy();
+            bottleneckChart = new Chart(ctxDelivery, {
+                type: 'bar', 
+                data: { 
+                    labels: deliveryData.labels, 
+                    datasets: [{ label: 'Min', data: deliveryData.values, backgroundColor: '#f59e0b', borderRadius: 4 }] 
+                },
+                options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
+            });
+        }
 
-        // --- GRÁFICO 2: PICKUP (Azul) ---
-        if (bottleneckPickupChart) bottleneckPickupChart.destroy(); // Limpieza vital
-        bottleneckPickupChart = new Chart(ctxPickup, {
-            type: 'bar', 
-            data: { 
-                labels: pickupData.labels, 
-                datasets: [{ 
-                    label: 'Minutos', 
-                    data: pickupData.values, 
-                    backgroundColor: '#3b82f6', // Azul
-                    borderRadius: 4,
-                    barPercentage: 0.6
-                }] 
-            },
-            options: { 
-                indexAxis: 'y', 
-                maintainAspectRatio: false, 
-                plugins: { legend: { display: false } },
-                scales: { x: { grid: { display: false } } }
-            }
-        });
+        // Renderizado Pickup
+        if (ctxPickup) {
+            if (bottleneckPickupChart) bottleneckPickupChart.destroy();
+            bottleneckPickupChart = new Chart(ctxPickup, {
+                type: 'bar', 
+                data: { 
+                    labels: pickupData.labels, 
+                    datasets: [{ label: 'Min', data: pickupData.values, backgroundColor: '#3b82f6', borderRadius: 4 }] 
+                },
+                options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
+            });
+        }
+        
+        // NOTA: La data 'canceled' (data.canceled) la podrías usar para un KPI de texto si quisieras.
     }
 
     async function updateCancellationChart() {
