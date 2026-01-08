@@ -111,19 +111,15 @@ def get_main_kpis(
     # Promedios de Tiempo
     avg_time = sum(durations_minutes) / len(durations_minutes) if durations_minutes else 0.0
 
-    # Promedios Financieros (HOTFIX: Excluir cancelados del denominador)
+     # --- HOTFIX: AVG TICKET CORREGIDO ---
     valid_orders_count = len(orders) - count_canceled
     avg_ticket = (total_revenue / valid_orders_count) if valid_orders_count > 0 else 0.0
     
-    # Ticket Promedio solo de Delivery
     avg_delivery_ticket = (delivery_revenue_only / count_deliveries) if count_deliveries > 0 else 0.0
-    
-    # Tarifa de Servicio Promedio
     avg_service_fee = (total_service_fee_accum / valid_orders_count) if valid_orders_count > 0 else 0.0
 
-    # --- MÉTRICAS DE USUARIOS ---
+    # Métricas de Usuarios
     total_users_historic = db.query(Customer).count()
-    
     unique_customers = {o.customer_id for o in orders if o.customer_id}
     
     local_joined_at = func.date(func.timezone('America/Caracas', func.timezone('UTC', Customer.joined_at)))
@@ -136,23 +132,16 @@ def get_main_kpis(
         "total_revenue": round(total_revenue, 2),
         "total_fees": round(total_fees_gross, 2),
         "total_coupons": round(total_coupons, 2),
-        
         "driver_payout": round(driver_payout, 2),
         "company_profit": round(real_net_profit, 2),
-        
         "total_deliveries": count_deliveries,
         "total_pickups": count_pickups,
         "total_canceled": count_canceled,
         "lost_revenue": round(lost_revenue, 2),
-        
         "avg_delivery_minutes": round(avg_time, 1),
-        
-        # PROMEDIOS CORREGIDOS
         "avg_ticket": round(avg_ticket, 2),
         "avg_delivery_ticket": round(avg_delivery_ticket, 2),
         "avg_service_fee": round(avg_service_fee, 2),
-        
-        # USUARIOS
         "total_users_historic": total_users_historic,
         "active_users_period": len(unique_customers),
         "new_users_registered": new_users_q.count()
