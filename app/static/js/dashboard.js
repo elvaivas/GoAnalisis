@@ -156,62 +156,75 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function updateBottleneckChart() {
-        // Obtenemos contextos (si no existen en el HTML, salimos suavemente)
-        const ctxDelivery = document.getElementById('bottleneckChart')?.getContext('2d');
-        const ctxPickup = document.getElementById('bottleneckPickupChart')?.getContext('2d');
+        try {
+            // Obtenemos contextos
+            const ctxDelivery = document.getElementById('bottleneckChart')?.getContext('2d');
+            const ctxPickup = document.getElementById('bottleneckPickupChart')?.getContext('2d');
 
-        // Si el Backend falla o el usuario tiene HTML viejo, esto evita que se rompa todo el Dashboard
-        if (!ctxDelivery && !ctxPickup) return; 
+            // Si no hay gráficos en el HTML, no hacemos nada
+            if (!ctxDelivery && !ctxPickup) return; 
 
-        const res = await authFetch(buildUrl('/api/analysis/bottlenecks'));
-        if (!res) return;
-        const data = await res.json();
-        
-        // Helper seguro: si la lista viene vacía o undefined, devuelve array vacío
-        const processData = (list) => {
-            if (!Array.isArray(list)) return { labels: [], values: [] };
+            const res = await authFetch(buildUrl('/api/analysis/bottlenecks'));
+            if (!res) return;
+            const data = await res.json();
             
-            const sorted = list
-                .filter(d => d.avg_duration_seconds > 0)
-                .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
-
-            return {
-                labels: sorted.map(d => statusTranslations[d.status] || d.status.toUpperCase()),
-                values: sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1))
+            // Constantes locales para asegurar orden y traducción
+            const localStatusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
+            const localTranslations = {
+                'pending': 'Pendiente', 'processing': 'Prep.', 'confirmed': 'Solicitando',
+                'driver_assigned': 'Asignado', 'on_the_way': 'En Camino', 'delivered': 'Entregado', 'canceled': 'Cancelado'
             };
-        };
 
-        // Procesamos con seguridad (usando ?. por si el backend no manda la key)
-        const deliveryData = processData(data.delivery);
-        const pickupData = processData(data.pickup);
+            // Helper simplificado (Solo procesa datos, no colores)
+            const processData = (list) => {
+                if (!Array.isArray(list)) return { labels: [], values: [] };
+                
+                const sorted = list
+                    .filter(d => d.avg_duration_seconds > 0)
+                    .sort((a, b) => localStatusOrder.indexOf(a.status) - localStatusOrder.indexOf(b.status));
 
-        // Renderizado Delivery
-        if (ctxDelivery) {
-            if (bottleneckChart) bottleneckChart.destroy();
-            bottleneckChart = new Chart(ctxDelivery, {
-                type: 'bar', 
-                data: { 
-                    labels: deliveryData.labels, 
-                    datasets: [{ label: 'Min', data: deliveryData.values, backgroundColor: '#f59e0b', borderRadius: 4 }] 
-                },
-                options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
-            });
+                return {
+                    labels: sorted.map(d => localTranslations[d.status] || d.status),
+                    values: sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)) // Minutos
+                };
+            };
+
+            // 1. RENDERIZADO DELIVERY (Naranja #f59e0b)
+            if (ctxDelivery) {
+                const dData = processData(data.delivery);
+                // Calculamos color aquí: Si la etiqueta es "Cancelado" -> Rojo, si no -> Naranja
+                const dColors = dData.labels.map(l => l === 'Cancelado' ? '#ef4444' : '#f59e0b');
+
+                if (bottleneckChart) bottleneckChart.destroy();
+                bottleneckChart = new Chart(ctxDelivery, {
+                    type: 'bar', 
+                    data: { 
+                        labels: dData.labels, 
+                        datasets: [{ label: 'Min', data: dData.values, backgroundColor: dColors, borderRadius: 4 }] 
+                    },
+                    options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
+                });
+            }
+
+            // 2. RENDERIZADO PICKUP (Azul #3b82f6)
+            if (ctxPickup) {
+                const pData = processData(data.pickup);
+                // Calculamos color aquí: Si la etiqueta es "Cancelado" -> Rojo, si no -> Azul
+                const pColors = pData.labels.map(l => l === 'Cancelado' ? '#ef4444' : '#3b82f6');
+
+                if (bottleneckPickupChart) bottleneckPickupChart.destroy();
+                bottleneckPickupChart = new Chart(ctxPickup, {
+                    type: 'bar', 
+                    data: { 
+                        labels: pData.labels, 
+                        datasets: [{ label: 'Min', data: pData.values, backgroundColor: pColors, borderRadius: 4 }] 
+                    },
+                    options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
+                });
+            }
+        } catch (error) {
+            console.error("⚠️ Error renderizando gráficos de tiempos:", error);
         }
-
-        // Renderizado Pickup
-        if (ctxPickup) {
-            if (bottleneckPickupChart) bottleneckPickupChart.destroy();
-            bottleneckPickupChart = new Chart(ctxPickup, {
-                type: 'bar', 
-                data: { 
-                    labels: pickupData.labels, 
-                    datasets: [{ label: 'Min', data: pickupData.values, backgroundColor: '#3b82f6', borderRadius: 4 }] 
-                },
-                options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
-            });
-        }
-        
-        // NOTA: La data 'canceled' (data.canceled) la podrías usar para un KPI de texto si quisieras.
     }
 
     async function updateCancellationChart() {
@@ -268,16 +281,28 @@ document.addEventListener('DOMContentLoaded', function () {
     async function updateHeatmap() { /* código existente */ }
     function loadStoreFilterOptions() { /* código existente */ }
 
-    function fetchAllData(isSearch = false) {
+    async function fetchAllData(isSearch = false) {
+        // Actualizamos hora
         const now = new Date();
-        document.getElementById('last-updated').textContent = now.toLocaleTimeString();
-        updateKpis();
-        updateRecentOrdersTable();
-        updateBottleneckChart();     // Ahora funciona porque el HTML existe
-        updateCancellationChart();   // Ahora funciona porque el HTML existe
-        loadTopCustomers();          // Ahora funciona porque el HTML existe
-        updateTopProducts();
-        // Llamadas restantes
+        const timeString = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        document.getElementById('last-updated').textContent = timeString;
+
+        // Usamos await para garantizar que los datos críticos carguen primero
+        await updateKpis(); 
+        await updateRecentOrdersTable();
+        
+        // Ejecutamos en paralelo los secundarios para velocidad
+        updateBottleneckChart();     
+        updateCancellationChart();   
+        
+        // Llamada a las funciones restantes (asegúrate de que estas existan en tu archivo real)
+        // Como pusiste "dummy code" en el prompt, asumo que las tienes definidas abajo.
+        if (typeof loadTopCustomers === 'function') loadTopCustomers();
+        if (typeof updateTopProducts === 'function') updateTopProducts();
+        if (typeof updateDriverLeaderboard === 'function') updateDriverLeaderboard();
+        if (typeof updateTopStoresList === 'function') updateTopStoresList();
+        if (typeof updateHeatmap === 'function') updateHeatmap();
+        if (typeof updateTrendsChart === 'function') updateTrendsChart();
     }
 
     datePicker = flatpickr("#date-range-picker", { mode: "range", dateFormat: "Y-m-d", defaultDate: [new Date(), new Date()], onClose: fetchAllData });
