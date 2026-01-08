@@ -15,7 +15,6 @@ def get_main_kpis(
     base_query = db.query(Order)
 
     # --- CORRECCIÓN DE ZONA HORARIA (VENEZUELA) ---
-    # Convertimos la fecha guardada (UTC) a America/Caracas antes de extraer el día
     local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
     local_date = func.date(local_created_at)
 
@@ -39,7 +38,7 @@ def get_main_kpis(
     total_revenue = 0.0
     total_fees_gross = 0.0
     total_coupons = 0.0
-    total_service_fee_accum = 0.0 # Para promedio
+    total_service_fee_accum = 0.0 
     
     driver_payout = 0.0
     profit_delivery = 0.0
@@ -67,7 +66,6 @@ def get_main_kpis(
         # 2. Tipos y Contadores
         if o.order_type == 'Delivery': 
             count_deliveries += 1
-            # Sumamos al acumulador exclusivo de delivery
             delivery_revenue_only += (o.total_amount or 0.0)
         elif o.order_type == 'Pickup': 
             count_pickups += 1
@@ -78,7 +76,6 @@ def get_main_kpis(
 
         # 4. Valores Base (Sanitizados)
         total_amt = float(o.total_amount or 0.0)
-        # Usamos gross_delivery_fee (real) si existe, si no, delivery_fee
         delivery_real = float(o.gross_delivery_fee if o.gross_delivery_fee and o.gross_delivery_fee > 0 else (o.delivery_fee or 0.0))
         coupon = float(o.coupon_discount or 0.0)
         prod_price = float(o.product_price or 0.0)
@@ -91,13 +88,11 @@ def get_main_kpis(
         total_service_fee_accum += svc_fee
 
         # --- FÓRMULAS FINANCIERAS ---
-
         # A. GANANCIA DELIVERY
         driver_payout += (delivery_real * 0.80)
         profit_delivery += (delivery_real * 0.20) / 1.16
         
         # B. GANANCIA SERVICIO
-        # Base = Producto + IVA(16%) + Delivery + Fee
         iva_prod = prod_price * 0.16
         base_service = prod_price + iva_prod + delivery_real + svc_fee
         profit_service += (base_service * 0.05) / 1.16
@@ -116,22 +111,21 @@ def get_main_kpis(
     # Promedios de Tiempo
     avg_time = sum(durations_minutes) / len(durations_minutes) if durations_minutes else 0.0
 
-    # Promedios Financieros (NUEVOS)
-    avg_ticket = (total_revenue / len(orders)) if orders else 0.0
+    # Promedios Financieros (HOTFIX: Excluir cancelados del denominador)
+    valid_orders_count = len(orders) - count_canceled
+    avg_ticket = (total_revenue / valid_orders_count) if valid_orders_count > 0 else 0.0
     
     # Ticket Promedio solo de Delivery
     avg_delivery_ticket = (delivery_revenue_only / count_deliveries) if count_deliveries > 0 else 0.0
     
     # Tarifa de Servicio Promedio
-    avg_service_fee = (total_service_fee_accum / len(orders)) if orders else 0.0
+    avg_service_fee = (total_service_fee_accum / valid_orders_count) if valid_orders_count > 0 else 0.0
 
     # --- MÉTRICAS DE USUARIOS ---
     total_users_historic = db.query(Customer).count()
     
-    # Usuarios Únicos Activos (Compraron en el periodo)
     unique_customers = {o.customer_id for o in orders if o.customer_id}
     
-    # Nuevos Usuarios (Registrados en el periodo)
     local_joined_at = func.date(func.timezone('America/Caracas', func.timezone('UTC', Customer.joined_at)))
     new_users_q = db.query(Customer)
     if start_date: new_users_q = new_users_q.filter(local_joined_at >= start_date)
@@ -153,7 +147,7 @@ def get_main_kpis(
         
         "avg_delivery_minutes": round(avg_time, 1),
         
-        # PROMEDIOS SOLICITADOS
+        # PROMEDIOS CORREGIDOS
         "avg_ticket": round(avg_ticket, 2),
         "avg_delivery_ticket": round(avg_delivery_ticket, 2),
         "avg_service_fee": round(avg_service_fee, 2),
