@@ -166,36 +166,39 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!res) return;
             const data = await res.json();
             
-            // 1. CONFIGURACIÓN VISUAL (Orden Lógico del Proceso)
-            // Nota: Ponemos 'delivered' y 'canceled' al final
-            const localStatusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
+            // 1. CONFIGURACIÓN VISUAL
+            // Definimos el orden estricto en que queremos ver las barras
+            const localStatusOrder = [
+                'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 
+                'delivered', 'canceled'
+            ];
             
-            // TRADUCCIONES EXACTAS A TU NEGOCIO
             const localTranslations = {
                 'pending': 'Pendiente', 
-                'processing': 'Facturando',    // <--- Cambio solicitado
-                'confirmed': 'Solicitando',    // <--- Cambio solicitado
+                'processing': 'Facturando', 
+                'confirmed': 'Solicitando',
                 'driver_assigned': 'Asignado', 
                 'on_the_way': 'En Camino', 
                 'delivered': 'Entregado (Total)', 
-                'canceled': 'Cancelado (Total)'
+                'canceled': 'Cancelado (Promedio)'
             };
 
             const processData = (list) => {
                 if (!Array.isArray(list)) return { labels: [], values: [], colors: [] };
                 
+                // Ordenamos según la lista maestra
                 const sorted = list
                     .filter(d => d.avg_duration_seconds > 0)
                     .sort((a, b) => localStatusOrder.indexOf(a.status) - localStatusOrder.indexOf(b.status));
 
                 const labels = sorted.map(d => localTranslations[d.status] || d.status);
-                const values = sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)); // A Minutos
+                const values = sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)); // Minutos
                 
                 // Colores Semánticos
                 const colors = sorted.map(d => {
-                    if (d.status === 'canceled') return '#ef4444'; // Rojo
-                    if (d.status === 'delivered') return '#10b981'; // Verde Éxito
-                    return ctxPickup ? '#3b82f6' : '#f59e0b'; // Azul (Pickup) o Naranja (Delivery)
+                    if (d.status === 'canceled') return '#ef4444'; // Rojo Cancelado
+                    if (d.status === 'delivered') return '#10b981'; // Verde Total
+                    return ctxPickup ? '#3b82f6' : '#f59e0b'; // Azul o Naranja para pasos
                 });
 
                 return { labels, values, colors };
@@ -204,11 +207,10 @@ document.addEventListener('DOMContentLoaded', function () {
             // 2. RENDER DELIVERY
             if (ctxDelivery) {
                 const dData = processData(data.delivery);
-                // Ajuste de colores específico para Delivery (base naranja)
                 const dColors = dData.labels.map((l, i) => {
                      if (l.includes('Cancelado')) return '#ef4444';
-                     if (l.includes('Entregado')) return '#10b981'; // Verde para el total
-                     return '#f59e0b'; // Naranja pasos intermedios
+                     if (l.includes('Entregado')) return '#10b981';
+                     return '#f59e0b'; 
                 });
 
                 if (bottleneckChart) bottleneckChart.destroy();
@@ -225,11 +227,10 @@ document.addEventListener('DOMContentLoaded', function () {
             // 3. RENDER PICKUP
             if (ctxPickup) {
                 const pData = processData(data.pickup);
-                // Ajuste de colores específico para Pickup (base azul)
                 const pColors = pData.labels.map((l, i) => {
                      if (l.includes('Cancelado')) return '#ef4444';
                      if (l.includes('Entregado')) return '#10b981';
-                     return '#3b82f6'; // Azul pasos intermedios
+                     return '#3b82f6'; 
                 });
 
                 if (bottleneckPickupChart) bottleneckPickupChart.destroy();

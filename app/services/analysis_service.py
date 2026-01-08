@@ -124,17 +124,15 @@ def calculate_bottlenecks(
     search_query: Optional[str] = None
 ):
     """
-    Calcula Tiempos de Ciclo (Cuellos de Botella).
-    Lógica de Negocio V5.3:
-    - Delivery: Flujo logístico completo.
-    - Pickup: Solo flujo de tienda.
-    - Entregado/Cancelado: Representa el TIEMPO TOTAL (Lead Time).
+    Calcula Cuellos de Botella (Lógica V5.4 - Suma de Promedios).
+    - Delivery Total = Suma(Avg Pendiente + Avg Prep + Avg Asignado + Avg Camino).
+    - Pickup Total = Suma(Avg Pendiente + Avg Prep).
+    - Cancelado = Promedio del tiempo de vida de los pedidos cancelados.
     """
-    # Limites para filtrar "Zombies" (Errores de sistema o procesos olvidados)
-    MAX_STEP_SEC = 21600    # 6 Horas máx por paso intermedio
-    MAX_CYCLE_SEC = 172800  # 48 Horas máx para cerrar un pedido
+    # 1. Definición de Límites (Anti-Zombie)
+    MAX_STEP_SEC = 21600 # 6 Horas máx por paso (si es más, es error de data)
 
-    # 1. Query Optimizado
+    # 2. Query
     query = db.query(
         OrderStatusLog.order_id, 
         OrderStatusLog.status, 
@@ -144,7 +142,7 @@ def calculate_bottlenecks(
         Order.current_status
     ).join(Order, OrderStatusLog.order_id == Order.id)
 
-    # 2. Filtros
+    # 3. Filtros
     local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
     local_date = func.date(local_created_at)
 
@@ -158,13 +156,19 @@ def calculate_bottlenecks(
     if not logs: 
         return {"delivery": [], "pickup": []}
 
-    # 3. Estructuras de Acumulación
-    stats = {
-        'Delivery': {}, 
-        'Pickup': {}
+    # 4. Buckets para acumular [listas de segundos]
+    # Usamos listas separadas para cada paso específico
+    metrics = {
+        'Delivery': {
+            'pending': [], 'processing': [], 'confirmed': [], 'driver_assigned': [], 'on_the_way': [], 
+            'canceled_life_time': [] # Tiempo de vida de los cancelados
+        },
+        'Pickup': {
+            'pending': [], 'processing': [], 
+            'canceled_life_time': []
+        }
     }
 
-    # Agrupación por pedido
     orders_data = {}
     for log in logs:
         if log.order_id not in orders_data:
@@ -176,65 +180,80 @@ def calculate_bottlenecks(
             }
         orders_data[log.order_id]['logs'].append(log)
 
-    # 4. Procesamiento
+    # 5. Procesamiento Lógico
     for oid, data in orders_data.items():
         o_created = data['created_at']
         o_type = data['type'] 
         o_status = data['current_status']
         o_logs = data['logs']
 
-        if o_type not in stats: continue
-        target_bucket = stats[o_type]
+        if o_type not in metrics: continue
+        target_metrics = metrics[o_type]
 
-        # REGLA A: Definir flujos válidos (Whitelists)
-        valid_intermediate = set()
-        if o_type == 'Delivery':
-            # Flujo largo
-            valid_intermediate = {'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way'}
-        else:
-            # Flujo corto (Pickup) - Ignoramos pasos de motorizado si aparecen por error
-            valid_intermediate = {'pending', 'processing'}
+        # CASO A: Pedido Cancelado (Calculamos cuánto tiempo se perdió)
+        if o_status == 'canceled':
+            # Buscamos cuándo ocurrió la cancelación
+            cancel_log = next((l for l in reversed(o_logs) if l.status == 'canceled'), None)
+            if cancel_log:
+                life_time = (cancel_log.timestamp - o_created).total_seconds()
+                # Filtro: Ignorar cancelaciones de más de 2 días (zombies)
+                if 0 < life_time < 172800:
+                    target_metrics['canceled_life_time'].append(life_time)
+            # Nota: Los cancelados NO suman a los promedios de pasos exitosos para no ensuciarlos
+            continue 
 
-        # REGLA B: Calcular tiempos INTERMEDIOS
+        # CASO B: Pedidos Exitosos o En Curso (Calculamos pasos intermedios)
         for i in range(len(o_logs) - 1):
             current = o_logs[i]
             next_l = o_logs[i+1]
-            
-            # Solo medimos si el estado actual es válido para este tipo de orden
-            if current.status in valid_intermediate:
+            status = current.status
+
+            # Solo guardamos si el paso existe en nuestra estructura (Whitelist)
+            if status in target_metrics:
                 delta = (next_l.timestamp - current.timestamp).total_seconds()
-                
                 # Filtro Zombie (6h)
                 if 10 < delta < MAX_STEP_SEC:
-                    if current.status not in target_bucket: target_bucket[current.status] = []
-                    target_bucket[current.status].append(delta)
+                    target_metrics[status].append(delta)
 
-        # REGLA C: Calcular tiempos TERMINALES (Total Cycle Time)
-        # Si el pedido terminó en Delivered o Canceled, calculamos desde Created_At
-        if o_status in ['delivered', 'canceled']:
-            # Buscamos el log exacto que cerró el ciclo
-            final_log = next((l for l in reversed(o_logs) if l.status == o_status), None)
-            
-            if final_log:
-                total_time = (final_log.timestamp - o_created).total_seconds()
+    # 6. Construcción de Resultados (SUMA DE PROMEDIOS)
+    
+    def build_flow_result(metric_dict):
+        result_list = []
+        total_process_time = 0.0
+
+        # Pasos secuenciales (El orden importa para la suma)
+        # Definimos el orden lógico de visualización
+        steps_order = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way']
+        
+        for step in steps_order:
+            if step in metric_dict and metric_dict[step]:
+                # Calculamos promedio de este paso
+                avg = sum(metric_dict[step]) / len(metric_dict[step])
+                result_list.append({"status": step, "avg_duration_seconds": avg})
                 
-                # Filtro Zombie (48h)
-                if 60 < total_time < MAX_CYCLE_SEC:
-                    if o_status not in target_bucket: target_bucket[o_status] = []
-                    target_bucket[o_status].append(total_time)
+                # Sumamos al total acumulado
+                total_process_time += avg
+        
+        # Agregamos la barra de "Entregado" que es la SUMA de los anteriores
+        if total_process_time > 0:
+            result_list.append({
+                "status": "delivered", 
+                "avg_duration_seconds": total_process_time
+            })
 
-    # 5. Promediar
-    def compute_averages(bucket):
-        res = []
-        for status, times in bucket.items():
-            if not times: continue
-            avg = sum(times) / len(times)
-            res.append({"status": status, "avg_duration_seconds": avg})
-        return res
+        # Agregamos la barra de "Cancelado" (Promedio independiente)
+        if metric_dict.get('canceled_life_time'):
+            avg_cancel = sum(metric_dict['canceled_life_time']) / len(metric_dict['canceled_life_time'])
+            result_list.append({
+                "status": "canceled",
+                "avg_duration_seconds": avg_cancel
+            })
+            
+        return result_list
 
     return {
-        "delivery": compute_averages(stats['Delivery']),
-        "pickup": compute_averages(stats['Pickup'])
+        "delivery": build_flow_result(metrics['Delivery']),
+        "pickup": build_flow_result(metrics['Pickup'])
     }
 
 def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
