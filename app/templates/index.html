@@ -132,18 +132,38 @@
             </div>
         </div>
 
-        <!-- [RESTAURADO] ANÁLISIS OPERATIVO (CUELLOS DE BOTELLA & CANCELACIONES) -->
-        <div class="row g-4 mb-4 admin-only">
-            <div class="col-md-6">
+        <!-- ANÁLISIS OPERATIVO (4 COLUMNAS) -->
+        <div class="row g-3 mb-4 admin-only">
+            
+            <!-- 1. Distribución (Donut) - Col 2 -->
+            <div class="col-md-6 col-lg-2">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-warning"><i class="fa-solid fa-stopwatch me-2"></i> Cuellos de Botella (Tiempos)</span></div>
-                    <div class="card-body"><div style="height: 250px;"><canvas id="bottleneckChart"></canvas></div></div>
+                    <div class="card-header bg-white border-0 py-2"><span class="fw-bold small text-muted">TIPO ORDEN</span></div>
+                    <div class="card-body p-2"><div style="height: 150px;"><canvas id="orderTypeChart"></canvas></div></div>
                 </div>
             </div>
-            <div class="col-md-6">
+
+            <!-- 2. Motivos Cancelación (Pie) - Col 4 -->
+            <div class="col-md-6 col-lg-4">
                  <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-muted"><i class="fa-solid fa-ban me-2"></i> Motivos Cancelación</span></div>
-                    <div class="card-body"><div style="height: 250px;"><canvas id="cancellationChart"></canvas></div></div>
+                    <div class="card-header bg-white border-0 py-2"><span class="fw-bold small text-danger"><i class="fa-solid fa-ban me-1"></i> MOTIVOS CANCELACIÓN</span></div>
+                    <div class="card-body p-2"><div style="height: 150px;"><canvas id="cancellationChart"></canvas></div></div>
+                </div>
+            </div>
+
+            <!-- 3. Tiempos Delivery (Bar) - Col 3 -->
+            <div class="col-md-6 col-lg-3">
+                <div class="card h-100">
+                    <div class="card-header bg-white border-0 py-2"><span class="fw-bold small text-primary"><i class="fa-solid fa-motorcycle me-1"></i> TIEMPOS DELIVERY</span></div>
+                    <div class="card-body p-2"><div style="height: 150px;"><canvas id="bottleneckChart"></canvas></div></div>
+                </div>
+            </div>
+
+            <!-- 4. Tiempos Pickup (Bar) - Col 3 -->
+            <div class="col-md-6 col-lg-3">
+                <div class="card h-100">
+                    <div class="card-header bg-white border-0 py-2"><span class="fw-bold small text-warning"><i class="fa-solid fa-person-walking-luggage me-1"></i> TIEMPOS PICKUP</span></div>
+                    <div class="card-body p-2"><div style="height: 150px;"><canvas id="bottleneckPickupChart"></canvas></div></div>
                 </div>
             </div>
         </div>

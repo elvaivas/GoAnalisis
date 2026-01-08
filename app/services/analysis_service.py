@@ -124,16 +124,18 @@ def calculate_bottlenecks(
     search_query: Optional[str] = None
 ):
     """
-    Calcula Cuellos de Botella con Lógica Híbrida:
-    - Estados Intermedios: Tiempo EN el estado (delta vs siguiente log).
-    - Estados Finales (Delivered/Canceled): Tiempo TOTAL de Ciclo (Lead Time vs CreatedAt).
+    Calcula Cuellos de Botella Segregados (Delivery vs Pickup).
+    Lógica Híbrida:
+    - Intermedios: Tiempo EN el estado.
+    - Terminales: Lead Time Total (Ciclo).
     """
-    # 1. Query Base: Logs + Order (Necesitamos created_at para el Lead Time)
+    # 1. Query Base: Logs + Order (Necesitamos created_at y order_type)
     query = db.query(
         OrderStatusLog.order_id, 
         OrderStatusLog.status, 
         OrderStatusLog.timestamp,
-        Order.created_at # <--- CRUCIAL PARA LA NUEVA LÓGICA
+        Order.created_at,
+        Order.order_type  # <--- CRUCIAL PARA LA SEGREGACIÓN
     ).join(Order, OrderStatusLog.order_id == Order.id)
 
     # 2. Filtros de Fecha (Zona Horaria Vzla)
@@ -151,31 +153,48 @@ def calculate_bottlenecks(
     # 3. Traemos logs ordenados
     logs = query.order_by(OrderStatusLog.order_id, OrderStatusLog.timestamp).all()
 
-    if not logs: return []
+    if not logs: 
+        return {"delivery": [], "pickup": []}
 
-    # 4. Cálculo Híbrido en Memoria
-    durations_map: Dict[str, List[float]] = {}
-    
-    # Agrupamos por pedido: { order_id: {'created': dt, 'logs': [list]} }
+    # 4. Agrupación y Cálculo en Memoria
+    # Estructuras para acumular tiempos
+    delivery_map: Dict[str, List[float]] = {}
+    pickup_map: Dict[str, List[float]] = {}
+
+    # Agrupamos por pedido primero para tener contexto completo
     orders_data = {}
     
     for log in logs:
         if log.order_id not in orders_data: 
-            orders_data[log.order_id] = {'created_at': log.created_at, 'logs': []}
+            orders_data[log.order_id] = {
+                'created_at': log.created_at, 
+                'type': log.order_type, # Puede ser 'Delivery', 'Pickup' o None
+                'logs': []
+            }
         orders_data[log.order_id]['logs'].append(log)
 
+    # Procesamos pedido por pedido
     for oid, data in orders_data.items():
+        order_type = data['type']
         order_created = data['created_at']
         o_logs = data['logs']
         
-        # A. ESTADOS INTERMEDIOS (Iteramos pares)
+        # Seleccionamos el mapa destino según el tipo
+        target_map = None
+        if order_type == 'Delivery':
+            target_map = delivery_map
+        elif order_type == 'Pickup':
+            target_map = pickup_map
+        else:
+            continue # Ignoramos si no tiene tipo definido
+
+        # A. ESTADOS INTERMEDIOS
         for i in range(len(o_logs) - 1):
             current = o_logs[i]
             next_l = o_logs[i+1]
             status = current.status
             
-            # Si el estado actual es terminal, NO calculamos diferencial intermedio aquí
-            # (Se calcula en el bloque B para usar created_at)
+            # Si es terminal, no calculamos intermedio aquí (se hace en bloque B)
             if status in ['delivered', 'canceled']:
                 continue
 
@@ -183,28 +202,33 @@ def calculate_bottlenecks(
             
             # Sanity Check (Max 48h para intermedios)
             if delta > 0 and delta < 172800:
-                if status not in durations_map: durations_map[status] = []
-                durations_map[status].append(delta)
+                if status not in target_map: target_map[status] = []
+                target_map[status].append(delta)
 
         # B. ESTADOS TERMINALES (Lead Time Total)
-        # Buscamos si el pedido tocó un estado final
         for log in o_logs:
             if log.status in ['delivered', 'canceled']:
-                # Fórmula: Timestamp del Log Final - Fecha Creación del Pedido
+                # Fórmula: Log Final - Fecha Creación
                 lead_time = (log.timestamp - order_created).total_seconds()
                 
-                # Sanity Check (Max 7 días para Lead Time completo)
+                # Sanity Check (Max 7 días)
                 if lead_time > 0 and lead_time < 604800: 
-                    if log.status not in durations_map: durations_map[log.status] = []
-                    durations_map[log.status].append(lead_time)
+                    if log.status not in target_map: target_map[log.status] = []
+                    target_map[log.status].append(lead_time)
 
-    # 5. Promedios Finales
-    results = []
-    for status, times in durations_map.items():
-        avg_seconds = sum(times) / len(times)
-        results.append({"status": status, "avg_duration_seconds": avg_seconds})
+    # 5. Función auxiliar para promediar y formatear
+    def calculate_averages(duration_dict):
+        res = []
+        for status, times in duration_dict.items():
+            avg = sum(times) / len(times)
+            res.append({"status": status, "avg_duration_seconds": avg})
+        # Ordenamos un poco para consistencia visual (opcional)
+        return res
 
-    return results
+    return {
+        "delivery": calculate_averages(delivery_map),
+        "pickup": calculate_averages(pickup_map)
+    }
 
 def get_top_customers(db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None, store_name: Optional[str] = None, search_query: Optional[str] = None):
     local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
