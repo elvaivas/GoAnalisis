@@ -273,13 +273,231 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // ... (Resto de funciones: Mapa, Tendencias, etc. se mantienen igual) ...
-    // Funciones dummy para completar el bloque
-    async function updateTrendsChart() { /* código existente */ }
-    async function updateDriverLeaderboard() { /* código existente */ }
-    async function updateTopStoresList() { /* código existente */ }
-    async function updateHeatmap() { /* código existente */ }
-    function loadStoreFilterOptions() { /* código existente */ }
+    // --- 4. TENDENCIAS (Gráfico Mixto: $ + Pedidos + Tiempo) ---
+    async function updateTrendsChart() {
+        const ctx = document.getElementById('trendsChart')?.getContext('2d');
+        if(!ctx) return;
+
+        const res = await authFetch(buildUrl('/api/data/trends'));
+        if (!res) return;
+        const data = await res.json();
+
+        if (trendsChart) trendsChart.destroy();
+        
+        trendsChart = new Chart(ctx, {
+            type: 'bar',
+            data: { 
+                labels: data.labels, 
+                datasets: [
+                    { 
+                        type: 'line',
+                        label: 'Ingresos ($)', 
+                        data: data.revenue, 
+                        borderColor: '#10b981', // Verde
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)', 
+                        yAxisID: 'y', 
+                        fill: true,
+                        tension: 0.3,
+                        order: 1
+                    }, 
+                    { 
+                        type: 'bar',
+                        label: 'Pedidos', 
+                        data: data.orders, 
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)', // Azul
+                        borderColor: '#3b82f6', 
+                        borderWidth: 1, 
+                        yAxisID: 'y1', 
+                        order: 2 
+                    }, 
+                    { 
+                        type: 'line',
+                        label: 'Tiempo (min)', 
+                        data: data.avg_times, 
+                        borderColor: '#ef4444', // Rojo
+                        backgroundColor: 'transparent', 
+                        yAxisID: 'y1', 
+                        borderDash: [5,5], 
+                        pointRadius: 0,
+                        order: 0 
+                    }
+                ] 
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                interaction: { mode: 'index', intersect: false }, 
+                scales: { 
+                    y: { 
+                        display: true, position: 'left', grid: { color: '#e5e7eb' },
+                        title: { display: true, text: 'Facturación ($)' }
+                    }, 
+                    y1: { 
+                        display: true, position: 'right', grid: { display: false },
+                        title: { display: true, text: 'Pedidos / Minutos' }
+                    } 
+                }, 
+                plugins: { legend: { labels: { usePointStyle: true } } } 
+            }
+        });
+    }
+
+    // --- 5. TOP REPARTIDORES (Leaderboard) ---
+    async function updateDriverLeaderboard() {
+        const ctx = document.getElementById('driverLeaderboardChart')?.getContext('2d');
+        if(!ctx) return;
+
+        const res = await authFetch(buildUrl('/api/data/driver-leaderboard'));
+        if (!res) return;
+        const data = await res.json();
+
+        if (driverLeaderboardChart) driverLeaderboardChart.destroy();
+        
+        // Lógica de colores según estado
+        const bgColors = data.map(d => {
+            if (d.status === 'new') return '#3b82f6';    // Azul (Nuevo)
+            if (d.status === 'active') return '#10b981'; // Verde (Activo)
+            if (d.status === 'warning') return '#f59e0b';// Amarillo (Alerta)
+            return '#ef4444';                            // Rojo (Inactivo)
+        });
+
+        const labels = data.map(d => {
+            let timeMsg = d.days_inactive === 0 ? "Hoy" : `${d.days_inactive}d`;
+            if (d.days_inactive === -1) timeMsg = "Nuevo";
+            return `${d.name} (${timeMsg})`;
+        });
+
+        driverLeaderboardChart = new Chart(ctx, {
+            type: 'bar', 
+            data: { 
+                labels: labels, 
+                datasets: [{ 
+                    label: 'Entregas', 
+                    data: data.map(d => d.orders), 
+                    backgroundColor: bgColors,
+                    borderRadius: 4
+                }] 
+            },
+            options: { 
+                indexAxis: 'y', 
+                maintainAspectRatio: false, 
+                scales: { x: { grid: { color: '#e5e7eb' } } }, 
+                plugins: { legend: { display: false } } 
+            }
+        });
+    }
+
+    // --- 6. TOP TIENDAS (Lista HTML) ---
+    async function updateTopStoresList() {
+        const list = document.getElementById('top-stores-list');
+        if(!list) return;
+
+        const res = await authFetch(buildUrl('/api/data/top-stores'));
+        if (!res) return;
+        const data = await res.json();
+        
+        list.innerHTML = '';
+        data.slice(0, 10).forEach(s => { 
+            list.innerHTML += `
+                <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
+                    <div class="d-flex flex-column">
+                        <span class="text-dark fw-bold small">
+                            <i class="fa-solid fa-store me-2 text-muted"></i>${s.name}
+                        </span>
+                        <small class="text-muted ms-4" style="font-size: 0.65rem;">
+                            Desde: ${s.first_seen}
+                        </small>
+                    </div>
+                    <span class="badge bg-success bg-opacity-10 text-success rounded-pill border border-success border-opacity-25">
+                        ${s.orders}
+                    </span>
+                </li>`; 
+        });
+    }
+
+    // --- 7. MAPA DE CALOR (Leaflet) ---
+    async function updateHeatmap() {
+        // Inicialización única
+        if (!mapInstance) {
+            const mapDiv = document.getElementById('heatmapContainer');
+            if (!mapDiv) return;
+            mapInstance = L.map('heatmapContainer').setView([10.4806, -66.9036], 12);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
+        }
+
+        // Forzar repintado por si estaba oculto en el acordeón
+        setTimeout(() => { mapInstance.invalidateSize(); }, 200);
+
+        const res = await authFetch(buildUrl('/api/data/heatmap'));
+        if (!res) return;
+        const data = await res.json();
+
+        if (heatLayer) {
+            mapInstance.removeLayer(heatLayer);
+            heatLayer = null;
+        }
+
+        if (data && data.length > 0) {
+            try {
+                heatLayer = L.heatLayer(data, { 
+                    radius: 20, 
+                    blur: 15, 
+                    maxZoom: 14, 
+                    minOpacity: 0.4,
+                    gradient: {0.4: 'cyan', 0.65: 'lime', 1: 'red'} 
+                }).addTo(mapInstance);
+                
+                // Centrar mapa si hay datos
+                if (data.length > 1) {
+                    const bounds = data.map(p => [p[0], p[1]]);
+                    mapInstance.fitBounds(bounds, { padding: [20, 20] });
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        // Cargar Tiendas
+        try {
+            const resStores = await authFetch('/api/data/stores-locations');
+            if(resStores) {
+                const stores = await resStores.json();
+                stores.forEach(s => {
+                    L.circleMarker([s.lat, s.lng], { 
+                        radius: 5, fillColor: "#fff", color: "#3b82f6", weight: 2, fillOpacity: 1 
+                    }).bindPopup(`<b>${s.name}</b>`).addTo(mapInstance);
+                });
+            }
+        } catch(e) {}
+    }
+
+    // --- 8. FILTRO DE TIENDAS (Dropdown) ---
+    async function loadStoreFilterOptions() {
+        const sel = document.getElementById('store-filter');
+        if(!sel) return;
+
+        const res = await authFetch('/api/all-stores-names');
+        if (!res) return;
+        const data = await res.json();
+        
+        sel.innerHTML = '<option value="">Todas las Tiendas</option>';
+        data.forEach(name => {
+            const opt = document.createElement('option'); 
+            opt.value = name; 
+            opt.textContent = name; 
+            sel.appendChild(opt);
+        });
+        
+        // Recargar dashboard al cambiar selección
+        sel.onchange = function() { fetchAllData(true); };
+    }
+
+    // --- FIX MAPA COLAPSABLE ---
+    const mapCollapse = document.getElementById('collapseMap');
+    if (mapCollapse) {
+        mapCollapse.addEventListener('shown.bs.collapse', function () {
+            if (!mapInstance) updateHeatmap();
+            else setTimeout(() => { mapInstance.invalidateSize(); }, 200);
+        });
+    }
 
     async function fetchAllData(isSearch = false) {
         // Actualizamos hora
