@@ -172,3 +172,17 @@ def get_all_stores_names(
 ):
     stores = db.query(Store.name).order_by(Store.name.asc()).all()
     return [s.name for s in stores if s.name]
+
+@router.get("/all-stores-names", summary="Lista de Nombres de Tiendas")
+def get_all_stores_names(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Retorna lista simple de nombres de tiendas para el dropdown.
+    """
+    # Ordenamos alfabéticamente para que el dropdown se vea ordenado
+    stores = db.query(Store.name).order_by(Store.name.asc()).all()
+    
+    # Extraemos el string de la tupla (store.name) y filtramos nulos
+    return [s.name for s in stores if s.name]

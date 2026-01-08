@@ -507,11 +507,23 @@ document.addEventListener('DOMContentLoaded', function () {
         const sel = document.getElementById('store-filter');
         if(!sel) return;
 
-        const res = await authFetch('/api/all-stores-names');
-        if (!res) return;
-        const data = await res.json();
+        console.log("🏪 Cargando lista de tiendas...");
+
+        // FIX: La ruta correcta debe incluir /data/
+        const res = await authFetch('/api/data/all-stores-names');
         
+        if (!res || !res.ok) {
+            console.error("❌ Error cargando tiendas. Ruta no encontrada o error servidor.");
+            sel.innerHTML = '<option value="">Error al cargar</option>';
+            return;
+        }
+
+        const data = await res.json();
+        console.log(`✅ ${data.length} tiendas encontradas.`);
+        
+        // Limpiamos y ponemos la opción default
         sel.innerHTML = '<option value="">Todas las Tiendas</option>';
+        
         data.forEach(name => {
             const opt = document.createElement('option'); 
             opt.value = name; 
@@ -520,7 +532,10 @@ document.addEventListener('DOMContentLoaded', function () {
         });
         
         // Recargar dashboard al cambiar selección
-        sel.onchange = function() { fetchAllData(true); };
+        sel.onchange = function() { 
+            console.log("Filtro tienda cambiado a:", sel.value);
+            fetchAllData(true); 
+        };
     }
 
     // --- FIX MAPA COLAPSABLE ---
@@ -559,6 +574,7 @@ document.addEventListener('DOMContentLoaded', function () {
     datePicker = flatpickr("#date-range-picker", { mode: "range", dateFormat: "Y-m-d", defaultDate: [new Date(), new Date()], onClose: fetchAllData });
     document.getElementById('btn-update')?.addEventListener('click', () => fetchAllData(true));
     document.getElementById('btn-all-history')?.addEventListener('click', () => { datePicker.setDate(["2024-01-01", new Date()]); fetchAllData(); });
+    loadStoreFilterOptions();
     
     fetchAllData();
     setInterval(fetchAllData, 60000);
