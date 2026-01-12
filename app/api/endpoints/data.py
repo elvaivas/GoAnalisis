@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 import io
 from tasks.scraper.order_scraper import OrderScraper 
 from app.api import deps
-from app.db.base import Order, OrderStatusLog, Store, Customer, User, Driver
+from app.db.base import Order, OrderStatusLog, Store, Customer, User, Driver, OrderItem
 from app.services import analysis_service
 
 router = APIRouter()
@@ -24,7 +24,7 @@ def apply_filters(query, start_date, end_date, store_name, search):
         else: query = query.join(Customer, Order.customer_id == Customer.id, isouter=True).filter(Customer.name.ilike(f"%{term}%"))
     return query
 
-@router.get("/orders", summary="Lista de pedidos enriquecida (Super Tabla)")
+@router.get("/orders", summary="Lista de pedidos con Items (Drill-Down)")
 def get_recent_orders(
     db: Session = Depends(deps.get_db),
     start_date: Optional[date] = Query(None),
@@ -36,7 +36,7 @@ def get_recent_orders(
     query = db.query(Order)
     query = apply_filters(query, start_date, end_date, store_name, search)
     
-    # Traemos los 50 más recientes (Optimizamos límite para velocidad)
+    # Límite de 50 para velocidad
     orders = query.order_by(Order.created_at.desc()).limit(50).all()
     
     data_response = []
@@ -45,17 +45,25 @@ def get_recent_orders(
         last_log = db.query(OrderStatusLog).filter(OrderStatusLog.order_id == o.id).order_by(OrderStatusLog.timestamp.desc()).first()
         state_start = last_log.timestamp if last_log else o.created_at
         
-        # 2. Lealtad del Cliente (CRM)
+        # 2. Lealtad
         order_count = 0
         if o.customer_id:
             order_count = db.query(func.count(Order.id)).filter(Order.customer_id == o.customer_id).scalar()
 
-        # 3. Datos Motorizado
+        # 3. Driver
         driver_info = {"name": "No Asignado", "phone": None}
         if o.driver:
             driver_info["name"] = o.driver.name
-            # Si tu modelo Driver tiene teléfono, úsalo aquí. Si no, placeholder.
-            driver_info["phone"] = getattr(o.driver, 'phone', None) 
+            driver_info["phone"] = getattr(o.driver, 'phone', None)
+
+        # 4. ITEMS (ESTO ES LO QUE FALTABA PARA VER LA LISTA)
+        db_items = db.query(OrderItem).filter(OrderItem.order_id == o.id).all()
+        items_list = [{
+            "name": i.name,
+            "quantity": i.quantity,
+            "unit_price": i.unit_price,
+            "total_price": i.total_price
+        } for i in db_items]
 
         data_response.append({
             "id": o.id,
@@ -64,18 +72,17 @@ def get_recent_orders(
             "order_type": o.order_type,
             "total_amount": o.total_amount,
             
-            # Contexto Rico
             "store_name": o.store.name if o.store else "Sin Tienda",
             "customer_name": o.customer.name if o.customer else "Anónimo",
             "customer_phone": o.customer.phone if o.customer else None,
-            "customer_orders_count": order_count, # Para el Badge VIP
+            "customer_orders_count": order_count,
             "driver": driver_info,
             
-            # Tiempos
             "created_at": o.created_at,
             "state_start_at": state_start,
-            "duration_text": o.duration, # Texto crudo por si acaso
-            "final_duration_seconds": None # Calcularemos esto en JS si es entregado
+            "duration_text": o.duration,
+            
+            "items": items_list # <--- AQUÍ SE ENVÍA LA DATA AL FRONT
         })
     return data_response
 

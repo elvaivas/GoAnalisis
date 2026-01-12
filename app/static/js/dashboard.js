@@ -40,6 +40,45 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     const statusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
 
+    // Función para descargar Excel Oficial SIN recargar y CON Token
+window.downloadOfficialExcel = async function(btn, orderId) {
+    // 1. Feedback Visual (Loading)
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Generando...';
+    btn.disabled = true;
+
+    try {
+        // 2. Petición Segura (Usa authFetch para incluir el Token)
+        const res = await authFetch(`/api/data/download-legacy-excel/${orderId}`);
+        
+        if (res && res.ok) {
+            // 3. Convertir respuesta a archivo descargable (Blob)
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            
+            // 4. Crear enlace fantasma y clicarlo
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Orden_Oficial_${orderId}.xlsx`; // Nombre del archivo
+            document.body.appendChild(a);
+            a.click();
+            
+            // 5. Limpieza
+            window.URL.revokeObjectURL(url);
+            a.remove();
+        } else {
+            alert("⚠️ No se pudo descargar el archivo. Verifique que el pedido exista en el sistema Legacy.");
+        }
+    } catch (e) {
+        console.error("Error descarga:", e);
+        alert("Error de conexión al intentar descargar.");
+    } finally {
+        // 6. Restaurar botón
+        btn.innerHTML = originalContent;
+        btn.disabled = false;
+    }
+};
+
     // Función para abrir/cerrar el acordeón
 window.toggleOrderDetails = function(rowId) {
     const detailRow = document.getElementById(`detail-${rowId}`);
@@ -260,7 +299,7 @@ window.toggleOrderDetails = function(rowId) {
                                 </div>
                                 <div class="col-md-5 d-flex flex-column justify-content-center align-items-start ps-4">
                                     <h6 class="fw-bold small text-muted mb-3 text-uppercase">⚡ Acciones Operativas</h6>
-                                    <button onclick="event.stopPropagation(); window.location.href='/api/data/download-legacy-excel/${o.external_id}'" 
+                                    <button onclick="event.stopPropagation(); downloadOfficialExcel(this, '${o.external_id}')" 
                                             class="btn btn-success btn-sm w-100 mb-2 text-start shadow-sm">
                                         <i class="fa-solid fa-file-excel me-2"></i>Descargar Excel (Oficial)
                                     </button>
