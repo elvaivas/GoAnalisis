@@ -3,6 +3,8 @@ import time
 import re
 import os
 import glob
+import requests
+from bs4 import BeautifulSoup
 from typing import List, Dict, Any, Optional
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -19,53 +21,69 @@ logger = logging.getLogger(__name__)
 
 class OrderScraper:
     def __init__(self):
-        self.base_url = "https://ecosistema.gopharma.com.ve/login/admin"
-        self.orders_url = "https://ecosistema.gopharma.com.ve/admin/order/list/all"
+        self.BASE_URL = "https://ecosistema.gopharma.com.ve"
+        self.LOGIN_URL = f"{self.BASE_URL}/login/admin"
         self.driver = None
+        self.session = requests.Session()
 
     def setup_driver(self):
-        if self.driver: return
-        logger.info("[Scraper] Iniciando Driver (Nativo)...")
         chrome_options = Options()
-        chrome_options.add_argument("--headless=new")
+        # Opciones vitales para Docker
+        chrome_options.add_argument("--headless=new") 
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--remote-allow-origins=*")
-        chrome_options.add_argument("user-agent=Mozilla/5.0 ...") # (Tu user agent)
+        chrome_options.add_argument("--window-size=1920,1080")
         
-        # --- CORRECCIÓN: USAR SERVICE VACÍO ---
-        service = ChromeService() 
-        # --------------------------------------
-
-        # CARPETA DE DESCARGAS
-        download_dir = "/tmp/downloads"
-        if not os.path.exists(download_dir):
-            os.makedirs(download_dir)
+        # --- CONFIGURACIÓN DE DESCARGAS (FIX CRÍTICO) ---
+        self.download_dir = "/tmp/downloads"
+        if not os.path.exists(self.download_dir):
+            os.makedirs(self.download_dir)
 
         prefs = {
-            "download.default_directory": download_dir,
+            "download.default_directory": self.download_dir,
             "download.prompt_for_download": False,
             "download.directory_upgrade": True,
-            "safebrowsing.enabled": True
+            "safebrowsing.enabled": True,
+            "profile.default_content_settings.popups": 0
         }
         chrome_options.add_experimental_option("prefs", prefs)
         
+        service = Service() # Usa el driver instalado en el sistema
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        # --- COMANDO MÁGICO PARA DOCKER HEADLESS ---
+        # Esto obliga a Chrome a permitir descargas aunque no tenga pantalla
+        params = {'behavior': 'allow', 'downloadPath': self.download_dir}
+        self.driver.execute_cdp_cmd('Page.setDownloadBehavior', params)
 
-    def login(self) -> bool:
-        if not self.driver: self.setup_driver()
-        if "login" not in self.driver.current_url and "admin" in self.driver.current_url: return True
+    def login(self):
+        """Login híbrido: Requests (rápido) + Selenium (si es necesario)"""
+        # (Mantenemos tu lógica de login actual o la básica)
+        # Para descarga de Excel NECESITAMOS Selenium logueado
+        if self.driver: return True
+        
         try:
-            self.driver.get(self.base_url)
-            wait = WebDriverWait(self.driver, 15)
-            wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(settings.GOPHARMA_EMAIL)
-            self.driver.find_element(By.NAME, "password").send_keys(settings.GOPHARMA_PASSWORD)
-            try: self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
-            except: self.driver.find_element(By.NAME, "password").submit()
-            time.sleep(5)
-            return "login" not in self.driver.current_url
-        except: return False
+            self.setup_driver()
+            self.driver.get(self.LOGIN_URL)
+            
+            # Verificar si ya estamos dentro (cookies)
+            if "dashboard" in self.driver.current_url: return True
+
+            email_input = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.NAME, "email")))
+            email_input.send_keys(settings.GOPHARMA_EMAIL)
+            
+            pass_input = self.driver.find_element(By.NAME, "password")
+            pass_input.send_keys(settings.GOPHARMA_PASSWORD)
+            pass_input.send_keys(Keys.RETURN)
+            
+            # Esperar redirección
+            WebDriverWait(self.driver, 15).until(EC.url_contains("dashboard"))
+            return True
+        except Exception as e:
+            logger.error(f"Error Login Selenium: {e}")
+            self.close_driver()
+            return False
 
     def close_driver(self):
         if self.driver:
@@ -80,77 +98,71 @@ class OrderScraper:
         if not self.login():
             return None, None
 
-        logger.info(f"🤖 Iniciando robot de descarga para pedido #{order_id}...")
-        
-        # URL de la lista de pedidos
+        logger.info(f"🤖 Robot: Iniciando descarga para pedido #{order_id}...")
         list_url = f"{self.BASE_URL}/admin/order/list/all"
         
         try:
             self.driver.get(list_url)
             
-            # 1. BUSCAR PEDIDO (Filtrar)
-            # Esperamos que el input de búsqueda sea visible
+            # 1. BUSCAR PEDIDO
             search_input = WebDriverWait(self.driver, 10).until(
                 EC.visibility_of_element_located((By.ID, "datatableSearch_"))
             )
             search_input.clear()
             search_input.send_keys(order_id)
-            search_input.send_keys(Keys.RETURN) # Presionar Enter
+            search_input.send_keys(Keys.RETURN)
             
-            # Esperamos un poco para que la tabla se actualice (loading spinner o similar)
-            time.sleep(2) 
+            # Espera técnica para que la tabla filtre (Importante)
+            time.sleep(3)
 
             # 2. ABRIR MENÚ EXPORTAR
-            # Buscamos el botón "Exportar" por su clase o texto
-            # Nota: El HTML dice que tiene clase 'js-hs-unfold-invoker' y texto 'Exportar'
-            export_menu_btn = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'Exportar')]"))
-            )
-            export_menu_btn.click()
-            time.sleep(0.5) # Pequeña pausa para animación del menú
+            # Usamos JS para clicar porque a veces los elementos flotantes tapan el botón
+            export_btn = self.driver.find_element(By.CSS_SELECTOR, ".js-hs-unfold-invoker i.tio-download-to")
+            self.driver.execute_script("arguments[0].click();", export_btn.find_element(By.XPATH, ".."))
+            
+            time.sleep(1)
 
             # 3. CLIC EN EXCEL
-            excel_btn = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.ID, "export-excel"))
-            )
+            excel_link = self.driver.find_element(By.ID, "export-excel")
+            # Forzamos el click con JS para evitar errores de "Elemento no interactuable"
+            self.driver.execute_script("arguments[0].click();", excel_link)
             
-            # --- TRUCO CRÍTICO: Configurar descarga en carpeta temporal ---
-            # Esto se debió configurar al iniciar el driver, pero asumimos descarga a /tmp o Downloads
-            # Si usas Docker headless, los archivos van a una carpeta interna.
-            # Vamos a intentar hacer click y buscar el archivo más reciente.
+            logger.info("⏳ Esperando descarga...")
             
-            excel_btn.click()
-            
-            # Esperar a que se descargue (Timeout 15s)
-            # Buscamos en la carpeta de descargas del contenedor
-            download_dir = "/tmp/downloads" # Asegúrate de configurar esto en setup_driver
-            
-            # Esperamos hasta que aparezca un archivo nuevo
+            # 4. BUSCAR EL ARCHIVO
             file_path = None
-            for _ in range(30): # 15 segundos max
-                files = glob.glob(os.path.join(download_dir, "*.xlsx"))
+            # Esperamos hasta 20 segundos
+            for _ in range(20):
+                # Buscamos archivos .xlsx recientes
+                files = glob.glob(os.path.join(self.download_dir, "*.xlsx"))
+                # Filtramos archivos temporales de descarga (.crdownload)
+                files = [f for f in files if not f.endswith('.crdownload')]
+                
                 if files:
-                    # Buscamos el más reciente
                     file_path = max(files, key=os.path.getctime)
-                    break
-                time.sleep(0.5)
+                    # Verificar que tenga tamaño > 0
+                    if os.path.getsize(file_path) > 0:
+                        break
+                time.sleep(1)
             
             if file_path and os.path.exists(file_path):
+                logger.info(f"✅ Archivo encontrado: {file_path}")
                 with open(file_path, "rb") as f:
                     content = f.read()
                 
-                # Limpieza: Borrar archivo del contenedor para no llenar disco
+                # Limpieza
                 os.remove(file_path)
-                
-                filename = f"Orden_Oficial_{order_id}.xlsx"
-                return content, filename
+                return content, f"Orden_Oficial_{order_id}.xlsx"
             else:
-                logger.error("⏳ Timeout esperando descarga del archivo.")
+                logger.error("❌ Timeout: El archivo no apareció en la carpeta.")
                 return None, None
 
         except Exception as e:
-            logger.error(f"❌ Error en robot de descarga: {e}")
+            logger.error(f"❌ Error crítico en robot descarga: {e}")
             return None, None
+        finally:
+            # Cerramos para liberar memoria
+            self.close_driver()
 
     def _parse_duration(self, row_element) -> str:
         """Extrae el texto de duración de la fila."""
