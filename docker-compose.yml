@@ -27,7 +27,6 @@ services:
   api:
     build: .
     container_name: goanalisis_api
-    # --- CAMBIO CRÍTICO: Forzamos variables de entorno ---
     environment:
       - REDIS_URL=redis://redis:6379/0
       - POSTGRES_SERVER=db
@@ -46,11 +45,10 @@ services:
       - redis
     restart: unless-stopped
 
-  # 4. Worker (Celery + Selenium)
-  celery_worker:
+  # 4. Worker (Celery + Selenium) - RENOMBRADO PARA CORREGIR ERROR
+  celery_node:
     build: .
-    container_name: goanalisis_celery_worker
-    # --- CAMBIO CRÍTICO: Variables y Memoria para Chrome ---
+    container_name: goanalisis_celery_node
     environment:
       - REDIS_URL=redis://redis:6379/0
       - POSTGRES_SERVER=db
