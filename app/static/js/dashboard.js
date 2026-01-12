@@ -128,29 +128,66 @@ window.toggleOrderDetails = function(rowId) {
         const tableBody = document.getElementById('recent-orders-table-body');
         if (!tableBody) return;
         
-        // --- HELPER: Limpieza de Tiempo Regex (Para Entregados/Cancelados) ---
+        // Helper para limpiar texto de tiempo
         const cleanFinalTime = (text) => {
-            if (!text) return "0m";
+            if (!text) return "--";
             try {
-                // Buscamos patrones: "X Horas Y Minutos"
-                const hMatch = text.match(/(\d+)\s*Horas?/i);
-                const mMatch = text.match(/(\d+)\s*Minutos?/i);
-                const sMatch = text.match(/(\d+)\s*segundos?/i);
-                
-                let h = hMatch ? parseInt(hMatch[1]) : 0;
-                let m = mMatch ? parseInt(mMatch[1]) : 0;
-                
-                let out = "";
-                if (h > 0) out += `${h}h `;
-                out += `${m}m`;
-                return out;
+                const h = text.match(/(\d+)\s*Horas?/i)?.[1] || 0;
+                const m = text.match(/(\d+)\s*Minutos?/i)?.[1] || 0;
+                if (h > 0) return `${h}h ${m}m`;
+                return `${m}m`;
             } catch (e) { return text; }
         };
 
         let html = '';
         
         data.forEach(o => {
-            // --- NUEVO: PREPARAR TABLA DE PRODUCTOS ---
+            // 1. ESTADO & COLOR
+            let statusBadge = '';
+            let isFinal = false;
+            
+            if (o.current_status === 'delivered') {
+                statusBadge = '<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">ENTREGADO</span>';
+                isFinal = true;
+            } else if (o.current_status === 'canceled') {
+                statusBadge = '<span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">CANCELADO</span>';
+                isFinal = true;
+            } else if (o.current_status === 'on_the_way') {
+                statusBadge = '<span class="badge bg-info text-white animate-pulse">EN CAMINO</span>';
+            } else {
+                const trans = statusTranslations[o.current_status] || o.current_status.toUpperCase();
+                statusBadge = `<span class="badge bg-secondary bg-opacity-25 text-dark">${trans}</span>`;
+            }
+
+            // 2. LEALTAD CLIENTE (CRM) - ¡AQUÍ ESTABA EL ERROR, FALTABA ESTO!
+            let tierBadge = '<span class="badge rounded-pill bg-light text-muted border" style="font-size:0.6rem">Nuevo</span>';
+            const count = o.customer_orders_count || 1;
+            if (count > 10) tierBadge = '<span class="badge rounded-pill bg-warning text-dark border border-warning" style="font-size:0.6rem">VIP</span>';
+            else if (count > 1) tierBadge = '<span class="badge rounded-pill bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">Frecuente</span>';
+
+            // 3. TIEMPO (Cronómetro vs Estático)
+            let timeHtml = '';
+            if (isFinal) {
+                const finalTime = cleanFinalTime(o.duration_text);
+                timeHtml = `<div class="fw-bold text-dark fs-6">${finalTime}</div><small class="text-muted" style="font-size:0.7rem">Tiempo Total</small>`;
+            } else {
+                timeHtml = `
+                    <div class="live-timer-container" data-created="${o.created_at}" data-state-start="${o.state_start_at}">
+                        <div class="fw-bold text-dark fs-5 timer-total font-monospace">--:--</div>
+                        <small class="text-muted" style="font-size:0.65rem">En fase: <span class="timer-state text-primary fw-bold">--:--</span></small>
+                    </div>`;
+            }
+
+            // 4. DATOS LOGÍSTICOS
+            const typeBadge = o.order_type === 'Delivery' 
+                ? '<span class="badge bg-primary bg-opacity-10 text-primary mb-1"><i class="fa-solid fa-motorcycle me-1"></i>Delivery</span>'
+                : '<span class="badge bg-warning bg-opacity-10 text-warning mb-1"><i class="fa-solid fa-person-walking me-1"></i>Pickup</span>';
+            
+            const driverHtml = o.driver && o.driver.name !== 'No Asignado' 
+                ? `<div class="d-flex align-items-center small text-dark"><i class="fa-solid fa-helmet-safety me-2 text-muted"></i>${o.driver.name}</div>`
+                : `<div class="small text-muted fst-italic">--</div>`;
+
+            // 5. TABLA DE DETALLE (ITEMS)
             let itemsTable = '<div class="text-muted small fst-italic p-3">Sin productos registrados</div>';
             if (o.items && o.items.length > 0) {
                 itemsTable = `
@@ -170,10 +207,10 @@ window.toggleOrderDetails = function(rowId) {
                 `;
             }
 
-            // --- RENDER FILA 1: PRINCIPAL (Clicable) ---
+            // --- RENDER FILA 1: PRINCIPAL ---
             html += `
                 <tr id="row-${o.id}" style="cursor: pointer; transition: background 0.2s;" onclick="toggleOrderDetails('${o.id}')">
-                    <!-- COL 1: ID & TIENDA (Con Flechita) -->
+                    <!-- ID & TIENDA -->
                     <td class="ps-4">
                         <div class="d-flex align-items-center">
                             <i id="icon-${o.id}" class="fa-solid fa-chevron-right text-muted me-2 small" style="width: 15px; transition: transform 0.2s;"></i>
@@ -183,8 +220,7 @@ window.toggleOrderDetails = function(rowId) {
                             </div>
                         </div>
                     </td>
-                    
-                    <!-- COL 2: CLIENTE -->
+                    <!-- CLIENTE -->
                     <td>
                         <div class="fw-bold text-dark" style="font-size: 0.95rem;">${o.customer_name}</div>
                         <div class="d-flex align-items-center mt-1 gap-2">
@@ -192,51 +228,43 @@ window.toggleOrderDetails = function(rowId) {
                             ${o.customer_phone ? `<a href="https://wa.me/${o.customer_phone.replace(/\D/g,'')}" target="_blank" onclick="event.stopPropagation()" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
                         </div>
                     </td>
-
-                    <!-- COL 3: LOGÍSTICA -->
+                    <!-- LOGÍSTICA -->
                     <td>
                         ${typeBadge}
                         ${driverHtml}
                     </td>
-
-                    <!-- COL 4: ESTADO & TIEMPO -->
+                    <!-- ESTADO -->
                     <td>
                         <div class="d-flex justify-content-between align-items-center">
                             <div class="me-3">${statusBadge}</div>
                             <div class="text-end">${timeHtml}</div>
                         </div>
                     </td>
-
-                    <!-- COL 5: TOTAL -->
+                    <!-- TOTAL -->
                     <td class="text-end pe-4">
                         <div class="fw-bold text-dark fs-6">$${(o.total_amount||0).toFixed(2)}</div>
                     </td>
                 </tr>
             `;
 
-            // --- RENDER FILA 2: DETALLE (Oculta) ---
+            // --- RENDER FILA 2: DETALLE ---
             html += `
                 <tr id="detail-${o.id}" class="d-none bg-light shadow-inner">
                     <td colspan="5" class="p-0">
                         <div class="p-3 border-start border-4 border-primary">
                             <div class="row">
-                                <!-- LADO IZQUIERDO: MEDICAMENTOS -->
+                                <!-- MEDICAMENTOS -->
                                 <div class="col-md-7 border-end">
                                     <h6 class="fw-bold small text-muted mb-2 text-uppercase"><i class="fa-solid fa-pills me-2"></i>Detalle del Pedido</h6>
                                     ${itemsTable}
                                 </div>
-                                
-                                <!-- LADO DERECHO: BOTONES ACCIÓN -->
+                                <!-- BOTONES -->
                                 <div class="col-md-5 d-flex flex-column justify-content-center align-items-start ps-4">
                                     <h6 class="fw-bold small text-muted mb-3 text-uppercase">⚡ Acciones Operativas</h6>
-                                    
-                                    <!-- BOTÓN EXCEL OFICIAL (TÚNEL) -->
                                     <button onclick="event.stopPropagation(); window.location.href='/api/data/download-legacy-excel/${o.external_id}'" 
                                             class="btn btn-success btn-sm w-100 mb-2 text-start shadow-sm">
                                         <i class="fa-solid fa-file-excel me-2"></i>Descargar Excel (Oficial)
                                     </button>
-                                    
-                                    <!-- BOTÓN LEGACY -->
                                     <a href="https://ecosistema.gopharma.com.ve/admin/order/list/all?search=${o.external_id}" target="_blank" 
                                        onclick="event.stopPropagation()"
                                        class="btn btn-white border btn-sm w-100 text-start">
@@ -251,7 +279,7 @@ window.toggleOrderDetails = function(rowId) {
         });
         
         tableBody.innerHTML = html;
-        startLiveTimers(); // Reactivar cronómetros para los vivos
+        startLiveTimers();
     }
 
     function startLiveTimers() {
