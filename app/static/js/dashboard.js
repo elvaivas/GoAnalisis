@@ -142,10 +142,11 @@ window.toggleOrderDetails = function(rowId) {
         let html = '';
         
         data.forEach(o => {
-            // 1. ESTADO & COLOR
+            // --- 1. DEFINICIÓN DE VARIABLES (CRÍTICO: DEBEN IR PRIMERO) ---
+            
+            // A. Estado y Color
             let statusBadge = '';
             let isFinal = false;
-            
             if (o.current_status === 'delivered') {
                 statusBadge = '<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">ENTREGADO</span>';
                 isFinal = true;
@@ -159,13 +160,13 @@ window.toggleOrderDetails = function(rowId) {
                 statusBadge = `<span class="badge bg-secondary bg-opacity-25 text-dark">${trans}</span>`;
             }
 
-            // 2. LEALTAD CLIENTE (CRM) - ¡AQUÍ ESTABA EL ERROR, FALTABA ESTO!
+            // B. Lealtad (AQUÍ ESTABA EL ERROR)
             let tierBadge = '<span class="badge rounded-pill bg-light text-muted border" style="font-size:0.6rem">Nuevo</span>';
             const count = o.customer_orders_count || 1;
             if (count > 10) tierBadge = '<span class="badge rounded-pill bg-warning text-dark border border-warning" style="font-size:0.6rem">VIP</span>';
             else if (count > 1) tierBadge = '<span class="badge rounded-pill bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">Frecuente</span>';
 
-            // 3. TIEMPO (Cronómetro vs Estático)
+            // C. Tiempo
             let timeHtml = '';
             if (isFinal) {
                 const finalTime = cleanFinalTime(o.duration_text);
@@ -178,7 +179,7 @@ window.toggleOrderDetails = function(rowId) {
                     </div>`;
             }
 
-            // 4. DATOS LOGÍSTICOS
+            // D. Datos Logísticos (Driver)
             const typeBadge = o.order_type === 'Delivery' 
                 ? '<span class="badge bg-primary bg-opacity-10 text-primary mb-1"><i class="fa-solid fa-motorcycle me-1"></i>Delivery</span>'
                 : '<span class="badge bg-warning bg-opacity-10 text-warning mb-1"><i class="fa-solid fa-person-walking me-1"></i>Pickup</span>';
@@ -187,7 +188,7 @@ window.toggleOrderDetails = function(rowId) {
                 ? `<div class="d-flex align-items-center small text-dark"><i class="fa-solid fa-helmet-safety me-2 text-muted"></i>${o.driver.name}</div>`
                 : `<div class="small text-muted fst-italic">--</div>`;
 
-            // 5. TABLA DE DETALLE (ITEMS)
+            // E. Tabla de Productos (Items)
             let itemsTable = '<div class="text-muted small fst-italic p-3">Sin productos registrados</div>';
             if (o.items && o.items.length > 0) {
                 itemsTable = `
@@ -206,46 +207,6 @@ window.toggleOrderDetails = function(rowId) {
                     </table>
                 `;
             }
-
-            // --- RENDER FILA 1: PRINCIPAL ---
-            html += `
-                <tr id="row-${o.id}" style="cursor: pointer; transition: background 0.2s;" onclick="toggleOrderDetails('${o.id}')">
-                    <!-- ID & TIENDA -->
-                    <td class="ps-4">
-                        <div class="d-flex align-items-center">
-                            <i id="icon-${o.id}" class="fa-solid fa-chevron-right text-muted me-2 small" style="width: 15px; transition: transform 0.2s;"></i>
-                            <div>
-                                <div class="fw-bold text-dark mb-1">#${o.external_id}</div>
-                                <span class="badge bg-light text-secondary border fw-normal" style="font-size:0.7rem">${o.store_name}</span>
-                            </div>
-                        </div>
-                    </td>
-                    <!-- CLIENTE -->
-                    <td>
-                        <div class="fw-bold text-dark" style="font-size: 0.95rem;">${o.customer_name}</div>
-                        <div class="d-flex align-items-center mt-1 gap-2">
-                            ${tierBadge}
-                            ${o.customer_phone ? `<a href="https://wa.me/${o.customer_phone.replace(/\D/g,'')}" target="_blank" onclick="event.stopPropagation()" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
-                        </div>
-                    </td>
-                    <!-- LOGÍSTICA -->
-                    <td>
-                        ${typeBadge}
-                        ${driverHtml}
-                    </td>
-                    <!-- ESTADO -->
-                    <td>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div class="me-3">${statusBadge}</div>
-                            <div class="text-end">${timeHtml}</div>
-                        </div>
-                    </td>
-                    <!-- TOTAL -->
-                    <td class="text-end pe-4">
-                        <div class="fw-bold text-dark fs-6">$${(o.total_amount||0).toFixed(2)}</div>
-                    </td>
-                </tr>
-            `;
 
             // --- RENDER FILA 2: DETALLE ---
             html += `
