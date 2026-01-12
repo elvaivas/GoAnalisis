@@ -1,12 +1,15 @@
 import logging
 import time
 import re
+import os
+import glob
 from typing import List, Dict, Any, Optional
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.chrome.service import Service as ChromeService
 from app.core.config import settings
@@ -34,6 +37,19 @@ class OrderScraper:
         # --- CORRECCIÓN: USAR SERVICE VACÍO ---
         service = ChromeService() 
         # --------------------------------------
+
+        # CARPETA DE DESCARGAS
+        download_dir = "/tmp/downloads"
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir)
+
+        prefs = {
+            "download.default_directory": download_dir,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True
+        }
+        chrome_options.add_experimental_option("prefs", prefs)
         
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
 
@@ -56,6 +72,85 @@ class OrderScraper:
             try: self.driver.quit()
             except: pass
             self.driver = None
+
+    def download_official_excel(self, order_id: str):
+        """
+        Robot que entra, filtra por ID y descarga el Excel oficial.
+        """
+        if not self.login():
+            return None, None
+
+        logger.info(f"🤖 Iniciando robot de descarga para pedido #{order_id}...")
+        
+        # URL de la lista de pedidos
+        list_url = f"{self.BASE_URL}/admin/order/list/all"
+        
+        try:
+            self.driver.get(list_url)
+            
+            # 1. BUSCAR PEDIDO (Filtrar)
+            # Esperamos que el input de búsqueda sea visible
+            search_input = WebDriverWait(self.driver, 10).until(
+                EC.visibility_of_element_located((By.ID, "datatableSearch_"))
+            )
+            search_input.clear()
+            search_input.send_keys(order_id)
+            search_input.send_keys(Keys.RETURN) # Presionar Enter
+            
+            # Esperamos un poco para que la tabla se actualice (loading spinner o similar)
+            time.sleep(2) 
+
+            # 2. ABRIR MENÚ EXPORTAR
+            # Buscamos el botón "Exportar" por su clase o texto
+            # Nota: El HTML dice que tiene clase 'js-hs-unfold-invoker' y texto 'Exportar'
+            export_menu_btn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'Exportar')]"))
+            )
+            export_menu_btn.click()
+            time.sleep(0.5) # Pequeña pausa para animación del menú
+
+            # 3. CLIC EN EXCEL
+            excel_btn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.ID, "export-excel"))
+            )
+            
+            # --- TRUCO CRÍTICO: Configurar descarga en carpeta temporal ---
+            # Esto se debió configurar al iniciar el driver, pero asumimos descarga a /tmp o Downloads
+            # Si usas Docker headless, los archivos van a una carpeta interna.
+            # Vamos a intentar hacer click y buscar el archivo más reciente.
+            
+            excel_btn.click()
+            
+            # Esperar a que se descargue (Timeout 15s)
+            # Buscamos en la carpeta de descargas del contenedor
+            download_dir = "/tmp/downloads" # Asegúrate de configurar esto en setup_driver
+            
+            # Esperamos hasta que aparezca un archivo nuevo
+            file_path = None
+            for _ in range(30): # 15 segundos max
+                files = glob.glob(os.path.join(download_dir, "*.xlsx"))
+                if files:
+                    # Buscamos el más reciente
+                    file_path = max(files, key=os.path.getctime)
+                    break
+                time.sleep(0.5)
+            
+            if file_path and os.path.exists(file_path):
+                with open(file_path, "rb") as f:
+                    content = f.read()
+                
+                # Limpieza: Borrar archivo del contenedor para no llenar disco
+                os.remove(file_path)
+                
+                filename = f"Orden_Oficial_{order_id}.xlsx"
+                return content, filename
+            else:
+                logger.error("⏳ Timeout esperando descarga del archivo.")
+                return None, None
+
+        except Exception as e:
+            logger.error(f"❌ Error en robot de descarga: {e}")
+            return None, None
 
     def _parse_duration(self, row_element) -> str:
         """Extrae el texto de duración de la fila."""

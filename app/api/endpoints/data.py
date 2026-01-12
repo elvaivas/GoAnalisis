@@ -3,7 +3,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
 from datetime import date
-
+from fastapi.responses import StreamingResponse
+import io
+from tasks.scraper.order_scraper import OrderScraper 
 from app.api import deps
 from app.db.base import Order, OrderStatusLog, Store, Customer, User, Driver
 from app.services import analysis_service
@@ -112,3 +114,32 @@ def get_stores_locations(db: Session = Depends(deps.get_db)):
 def get_all_stores_names(db: Session = Depends(deps.get_db)):
     stores = db.query(Store.name).order_by(Store.name.asc()).all()
     return [s.name for s in stores if s.name]
+
+@router.get("/download-legacy-excel/{order_id}", summary="Descargar Excel Oficial (Proxy)")
+def download_legacy_excel(
+    order_id: str,
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Actúa como proxy: Se loguea en GoPharma, descarga el Excel real y lo entrega al usuario.
+    """
+    scraper = OrderScraper()
+    
+    # Ejecutamos la descarga (Esto puede tardar unos 3-5 segundos)
+    file_content, filename = scraper.download_official_excel(order_id)
+    
+    # Cerramos sesión del scraper para no dejar conexiones colgadas
+    scraper.session.close()
+
+    if not file_content:
+        # Si falla, podrías devolver un error 404 o un JSON
+        return {"error": "No se pudo descargar el archivo del sistema legado."}
+
+    # Convertimos bytes a un stream para FastAPI
+    stream = io.BytesIO(file_content)
+
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

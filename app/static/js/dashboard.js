@@ -39,6 +39,25 @@ document.addEventListener('DOMContentLoaded', function () {
         'driver_assigned': 'Asignado', 'on_the_way': 'En Camino', 'delivered': 'Entregado', 'canceled': 'Cancelado'
     };
     const statusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
+
+    // Función para abrir/cerrar el acordeón
+window.toggleOrderDetails = function(rowId) {
+    const detailRow = document.getElementById(`detail-${rowId}`);
+    const icon = document.getElementById(`icon-${rowId}`);
+    const mainRow = document.getElementById(`row-${rowId}`);
+    
+    if (detailRow.classList.contains('d-none')) {
+        detailRow.classList.remove('d-none');
+        icon.classList.remove('fa-chevron-right');
+        icon.classList.add('fa-chevron-down');
+        mainRow.classList.add('table-active'); 
+    } else {
+        detailRow.classList.add('d-none');
+        icon.classList.remove('fa-chevron-down');
+        icon.classList.add('fa-chevron-right');
+        mainRow.classList.remove('table-active');
+    }
+};
     
     // --- REPARACIÓN BOTÓN REPORTE ---
     const btnReport = document.getElementById('btn-open-report');
@@ -131,60 +150,38 @@ document.addEventListener('DOMContentLoaded', function () {
         let html = '';
         
         data.forEach(o => {
-            // 1. ESTADO & COLOR
-            let statusBadge = '';
-            let isFinal = false;
-            
-            if (o.current_status === 'delivered') {
-                statusBadge = '<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">ENTREGADO</span>';
-                isFinal = true;
-            } else if (o.current_status === 'canceled') {
-                statusBadge = '<span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">CANCELADO</span>';
-                isFinal = true;
-            } else if (o.current_status === 'on_the_way') {
-                statusBadge = '<span class="badge bg-info text-white animate-pulse">EN CAMINO</span>';
-            } else {
-                const trans = statusTranslations[o.current_status] || o.current_status.toUpperCase();
-                statusBadge = `<span class="badge bg-secondary bg-opacity-25 text-dark">${trans}</span>`;
+            // --- NUEVO: PREPARAR TABLA DE PRODUCTOS ---
+            let itemsTable = '<div class="text-muted small fst-italic p-3">Sin productos registrados</div>';
+            if (o.items && o.items.length > 0) {
+                itemsTable = `
+                    <table class="table table-sm table-borderless mb-0 small" style="background: transparent;">
+                        <thead class="text-muted border-bottom"><tr><th>Producto</th><th class="text-center">Cant.</th><th class="text-end">Precio</th><th class="text-end">Total</th></tr></thead>
+                        <tbody>
+                            ${o.items.map(i => `
+                                <tr>
+                                    <td class="text-truncate" style="max-width: 250px;" title="${i.name}">${i.name}</td>
+                                    <td class="text-center">${i.quantity}</td>
+                                    <td class="text-end">$${i.unit_price.toFixed(2)}</td>
+                                    <td class="text-end fw-bold">$${i.total_price.toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
             }
 
-            // 2. LEALTAD CLIENTE (CRM)
-            let tierBadge = '<span class="badge rounded-pill bg-light text-muted border">Nuevo</span>';
-            const count = o.customer_orders_count || 1;
-            if (count > 10) tierBadge = '<span class="badge rounded-pill bg-warning text-dark border border-warning"><i class="fa-solid fa-crown me-1"></i>VIP</span>';
-            else if (count > 1) tierBadge = '<span class="badge rounded-pill bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">Frecuente</span>';
-
-            // 3. TIEMPO (Cronómetro vs Estático)
-            let timeHtml = '';
-            if (isFinal) {
-                // TIEMPO FINAL LIMPIO
-                const finalTime = cleanFinalTime(o.duration_text);
-                timeHtml = `<div class="fw-bold text-dark fs-6">${finalTime}</div><small class="text-muted" style="font-size:0.7rem">Tiempo Total</small>`;
-            } else {
-                // CRONÓMETRO VIVO
-                timeHtml = `
-                    <div class="live-timer-container" data-created="${o.created_at}" data-state-start="${o.state_start_at}">
-                        <div class="fw-bold text-dark fs-5 timer-total font-monospace">--:--</div>
-                        <small class="text-muted" style="font-size:0.65rem">En fase: <span class="timer-state text-primary fw-bold">--:--</span></small>
-                    </div>`;
-            }
-
-            // 4. DATOS LOGÍSTICOS
-            const typeBadge = o.order_type === 'Delivery' 
-                ? '<span class="badge bg-primary bg-opacity-10 text-primary mb-1"><i class="fa-solid fa-motorcycle me-1"></i>Delivery</span>'
-                : '<span class="badge bg-warning bg-opacity-10 text-warning mb-1"><i class="fa-solid fa-person-walking me-1"></i>Pickup</span>';
-            
-            const driverHtml = o.driver && o.driver.name !== 'No Asignado' 
-                ? `<div class="d-flex align-items-center small text-dark"><i class="fa-solid fa-helmet-safety me-2 text-muted"></i>${o.driver.name}</div>`
-                : `<div class="small text-muted fst-italic">--</div>`;
-
-            // RENDER FILA
+            // --- RENDER FILA 1: PRINCIPAL (Clicable) ---
             html += `
-                <tr style="border-bottom: 1px solid #f3f4f6;">
-                    <!-- COL 1: ID & TIENDA -->
+                <tr id="row-${o.id}" style="cursor: pointer; transition: background 0.2s;" onclick="toggleOrderDetails('${o.id}')">
+                    <!-- COL 1: ID & TIENDA (Con Flechita) -->
                     <td class="ps-4">
-                        <div class="fw-bold text-dark mb-1">#${o.external_id}</div>
-                        <span class="badge bg-light text-secondary border fw-normal" style="font-size:0.7rem">${o.store_name}</span>
+                        <div class="d-flex align-items-center">
+                            <i id="icon-${o.id}" class="fa-solid fa-chevron-right text-muted me-2 small" style="width: 15px; transition: transform 0.2s;"></i>
+                            <div>
+                                <div class="fw-bold text-dark mb-1">#${o.external_id}</div>
+                                <span class="badge bg-light text-secondary border fw-normal" style="font-size:0.7rem">${o.store_name}</span>
+                            </div>
+                        </div>
                     </td>
                     
                     <!-- COL 2: CLIENTE -->
@@ -192,7 +189,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         <div class="fw-bold text-dark" style="font-size: 0.95rem;">${o.customer_name}</div>
                         <div class="d-flex align-items-center mt-1 gap-2">
                             ${tierBadge}
-                            ${o.customer_phone ? `<a href="https://wa.me/${o.customer_phone.replace(/\D/g,'')}" target="_blank" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
+                            ${o.customer_phone ? `<a href="https://wa.me/${o.customer_phone.replace(/\D/g,'')}" target="_blank" onclick="event.stopPropagation()" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
                         </div>
                     </td>
 
@@ -213,6 +210,41 @@ document.addEventListener('DOMContentLoaded', function () {
                     <!-- COL 5: TOTAL -->
                     <td class="text-end pe-4">
                         <div class="fw-bold text-dark fs-6">$${(o.total_amount||0).toFixed(2)}</div>
+                    </td>
+                </tr>
+            `;
+
+            // --- RENDER FILA 2: DETALLE (Oculta) ---
+            html += `
+                <tr id="detail-${o.id}" class="d-none bg-light shadow-inner">
+                    <td colspan="5" class="p-0">
+                        <div class="p-3 border-start border-4 border-primary">
+                            <div class="row">
+                                <!-- LADO IZQUIERDO: MEDICAMENTOS -->
+                                <div class="col-md-7 border-end">
+                                    <h6 class="fw-bold small text-muted mb-2 text-uppercase"><i class="fa-solid fa-pills me-2"></i>Detalle del Pedido</h6>
+                                    ${itemsTable}
+                                </div>
+                                
+                                <!-- LADO DERECHO: BOTONES ACCIÓN -->
+                                <div class="col-md-5 d-flex flex-column justify-content-center align-items-start ps-4">
+                                    <h6 class="fw-bold small text-muted mb-3 text-uppercase">⚡ Acciones Operativas</h6>
+                                    
+                                    <!-- BOTÓN EXCEL OFICIAL (TÚNEL) -->
+                                    <button onclick="event.stopPropagation(); window.location.href='/api/data/download-legacy-excel/${o.external_id}'" 
+                                            class="btn btn-success btn-sm w-100 mb-2 text-start shadow-sm">
+                                        <i class="fa-solid fa-file-excel me-2"></i>Descargar Excel (Oficial)
+                                    </button>
+                                    
+                                    <!-- BOTÓN LEGACY -->
+                                    <a href="https://ecosistema.gopharma.com.ve/admin/order/list/all?search=${o.external_id}" target="_blank" 
+                                       onclick="event.stopPropagation()"
+                                       class="btn btn-white border btn-sm w-100 text-start">
+                                        <i class="fa-solid fa-external-link-alt me-2 text-muted"></i>Ver en Panel Legacy
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     </td>
                 </tr>
             `;
