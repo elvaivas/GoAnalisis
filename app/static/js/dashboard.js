@@ -8,10 +8,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (role !== 'admin') {
         document.body.classList.add('role-viewer');
+        console.log("🔒 Modo Visualizador (Datos financieros ocultos)");
+        
         const style = document.createElement('style');
+        // AÑADÍ .admin-only AQUÍ ABAJO PARA GARANTIZAR QUE SE OCULTE
         style.innerHTML = `
             #kpi-total-revenue, #kpi-total-fees, #kpi-total-coupons, 
-            #kpi-driver-payout, #kpi-company-profit, #trendsChart, #heatmapContainer
+            #kpi-driver-payout, #kpi-company-profit, #trendsChart, #heatmapContainer,
+            .admin-only 
             { display: none !important; }
             .col-money { visibility: hidden; } 
         `;
