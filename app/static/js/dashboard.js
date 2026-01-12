@@ -101,24 +101,121 @@ document.addEventListener('DOMContentLoaded', function () {
         const res = await authFetch(buildUrl('/api/data/orders'));
         if (!res) return;
         const data = await res.json();
+        
         const tableBody = document.getElementById('recent-orders-table-body');
         if (!tableBody) return;
         
-        let html = '';
-        data.forEach(order => {
-            let badgeClass = 'bg-secondary';
-            if (order.current_status === 'delivered') badgeClass = 'bg-success';
-            else if (order.current_status === 'canceled') badgeClass = 'bg-danger';
-            else if (order.current_status === 'on_the_way') badgeClass = 'bg-info text-dark animate-pulse';
-            
-            const statusEs = statusTranslations[order.current_status] || order.current_status;
-            let timeHtml = order.current_status === 'delivered' ? `<span class="fw-bold">${order.duration_text || '--'}</span>` : 
-                `<div class="live-timer-container" data-created="${order.created_at}" data-state-start="${order.state_start_at}"><span class="timer-total fw-bold font-monospace">--:--</span></div>`;
+        // --- HELPER: Limpieza de Tiempo Regex (Para Entregados/Cancelados) ---
+        const cleanFinalTime = (text) => {
+            if (!text) return "0m";
+            try {
+                // Buscamos patrones: "X Horas Y Minutos"
+                const hMatch = text.match(/(\d+)\s*Horas?/i);
+                const mMatch = text.match(/(\d+)\s*Minutos?/i);
+                const sMatch = text.match(/(\d+)\s*segundos?/i);
+                
+                let h = hMatch ? parseInt(hMatch[1]) : 0;
+                let m = mMatch ? parseInt(mMatch[1]) : 0;
+                
+                let out = "";
+                if (h > 0) out += `${h}h `;
+                out += `${m}m`;
+                return out;
+            } catch (e) { return text; }
+        };
 
-            html += `<tr><td class="ps-4 fw-bold">#${order.external_id}</td><td>${order.customer_name}</td><td><span class="badge ${badgeClass}">${statusEs.toUpperCase()}</span></td><td>${order.distance_km ? order.distance_km.toFixed(1)+'km' : '--'}</td><td class="fw-bold">$${(order.total_amount||0).toFixed(2)}</td><td class="text-primary">$${(order.gross_delivery_fee||order.delivery_fee||0).toFixed(2)}</td><td class="text-end pe-4">${timeHtml}</td></tr>`;
+        let html = '';
+        
+        data.forEach(o => {
+            // 1. ESTADO & COLOR
+            let statusBadge = '';
+            let isFinal = false;
+            
+            if (o.current_status === 'delivered') {
+                statusBadge = '<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">ENTREGADO</span>';
+                isFinal = true;
+            } else if (o.current_status === 'canceled') {
+                statusBadge = '<span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">CANCELADO</span>';
+                isFinal = true;
+            } else if (o.current_status === 'on_the_way') {
+                statusBadge = '<span class="badge bg-info text-white animate-pulse">EN CAMINO</span>';
+            } else {
+                const trans = statusTranslations[o.current_status] || o.current_status.toUpperCase();
+                statusBadge = `<span class="badge bg-secondary bg-opacity-25 text-dark">${trans}</span>`;
+            }
+
+            // 2. LEALTAD CLIENTE (CRM)
+            let tierBadge = '<span class="badge rounded-pill bg-light text-muted border">Nuevo</span>';
+            const count = o.customer_orders_count || 1;
+            if (count > 10) tierBadge = '<span class="badge rounded-pill bg-warning text-dark border border-warning"><i class="fa-solid fa-crown me-1"></i>VIP</span>';
+            else if (count > 1) tierBadge = '<span class="badge rounded-pill bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">Frecuente</span>';
+
+            // 3. TIEMPO (Cronómetro vs Estático)
+            let timeHtml = '';
+            if (isFinal) {
+                // TIEMPO FINAL LIMPIO
+                const finalTime = cleanFinalTime(o.duration_text);
+                timeHtml = `<div class="fw-bold text-dark fs-6">${finalTime}</div><small class="text-muted" style="font-size:0.7rem">Tiempo Total</small>`;
+            } else {
+                // CRONÓMETRO VIVO
+                timeHtml = `
+                    <div class="live-timer-container" data-created="${o.created_at}" data-state-start="${o.state_start_at}">
+                        <div class="fw-bold text-dark fs-5 timer-total font-monospace">--:--</div>
+                        <small class="text-muted" style="font-size:0.65rem">En fase: <span class="timer-state text-primary fw-bold">--:--</span></small>
+                    </div>`;
+            }
+
+            // 4. DATOS LOGÍSTICOS
+            const typeBadge = o.order_type === 'Delivery' 
+                ? '<span class="badge bg-primary bg-opacity-10 text-primary mb-1"><i class="fa-solid fa-motorcycle me-1"></i>Delivery</span>'
+                : '<span class="badge bg-warning bg-opacity-10 text-warning mb-1"><i class="fa-solid fa-person-walking me-1"></i>Pickup</span>';
+            
+            const driverHtml = o.driver && o.driver.name !== 'No Asignado' 
+                ? `<div class="d-flex align-items-center small text-dark"><i class="fa-solid fa-helmet-safety me-2 text-muted"></i>${o.driver.name}</div>`
+                : `<div class="small text-muted fst-italic">--</div>`;
+
+            // RENDER FILA
+            html += `
+                <tr style="border-bottom: 1px solid #f3f4f6;">
+                    <!-- COL 1: ID & TIENDA -->
+                    <td class="ps-4">
+                        <div class="fw-bold text-dark mb-1">#${o.external_id}</div>
+                        <span class="badge bg-light text-secondary border fw-normal" style="font-size:0.7rem">${o.store_name}</span>
+                    </td>
+                    
+                    <!-- COL 2: CLIENTE -->
+                    <td>
+                        <div class="fw-bold text-dark" style="font-size: 0.95rem;">${o.customer_name}</div>
+                        <div class="d-flex align-items-center mt-1 gap-2">
+                            ${tierBadge}
+                            ${o.customer_phone ? `<a href="https://wa.me/${o.customer_phone.replace(/\D/g,'')}" target="_blank" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
+                        </div>
+                    </td>
+
+                    <!-- COL 3: LOGÍSTICA -->
+                    <td>
+                        ${typeBadge}
+                        ${driverHtml}
+                    </td>
+
+                    <!-- COL 4: ESTADO & TIEMPO -->
+                    <td>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="me-3">${statusBadge}</div>
+                            <div class="text-end">${timeHtml}</div>
+                        </div>
+                    </td>
+
+                    <!-- COL 5: TOTAL -->
+                    <td class="text-end pe-4">
+                        <div class="fw-bold text-dark fs-6">$${(o.total_amount||0).toFixed(2)}</div>
+                    </td>
+                </tr>
+            `;
         });
+        
         tableBody.innerHTML = html;
-        startLiveTimers();
+        startLiveTimers(); // Reactivar cronómetros para los vivos
     }
 
     function startLiveTimers() {

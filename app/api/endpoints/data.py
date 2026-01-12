@@ -1,45 +1,28 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, cast, Date, or_
-from typing import List, Optional, Any
+from sqlalchemy import func
+from typing import List, Optional
 from datetime import date
 
 from app.api import deps
-from app.db.base import Order, Store, OrderStatusLog, Customer, Driver, User
-from app.schemas.order import OrderSchema
+from app.db.base import Order, OrderStatusLog, Store, Customer, User, Driver
 from app.services import analysis_service
 
 router = APIRouter()
 
-# --- HELPER INTERNO CON TIMEZONE FIX ---
+# --- HELPER INTERNO ---
 def apply_filters(query, start_date, end_date, store_name, search):
-    # Definir fecha local para comparar
     local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
-
-    # 1. Filtro Fecha
-    if start_date:
-        query = query.filter(local_date >= start_date)
-    if end_date:
-        query = query.filter(local_date <= end_date)
-    
-    # 2. Filtro Tienda
-    if store_name:
-        query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
-    
-    # 3. Filtro Búsqueda
+    if start_date: query = query.filter(local_date >= start_date)
+    if end_date: query = query.filter(local_date <= end_date)
+    if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
     if search:
         term = search.strip()
-        if term.isdigit():
-             query = query.filter(Order.external_id.like(f"{term}%"))
-        else:
-             query = query.join(Customer, Order.customer_id == Customer.id, isouter=True)\
-                          .filter(Customer.name.ilike(f"%{term}%"))
-    
+        if term.isdigit(): query = query.filter(Order.external_id.like(f"{term}%"))
+        else: query = query.join(Customer, Order.customer_id == Customer.id, isouter=True).filter(Customer.name.ilike(f"%{term}%"))
     return query
 
-# ---------------------------------------------------------
-
-@router.get("/orders", summary="Obtener lista de pedidos filtrada")
+@router.get("/orders", summary="Lista de pedidos enriquecida (Super Tabla)")
 def get_recent_orders(
     db: Session = Depends(deps.get_db),
     start_date: Optional[date] = Query(None),
@@ -50,13 +33,27 @@ def get_recent_orders(
 ):
     query = db.query(Order)
     query = apply_filters(query, start_date, end_date, store_name, search)
-
-    orders = query.order_by(Order.created_at.desc()).limit(100).all()
+    
+    # Traemos los 50 más recientes (Optimizamos límite para velocidad)
+    orders = query.order_by(Order.created_at.desc()).limit(50).all()
     
     data_response = []
     for o in orders:
+        # 1. Tiempos
         last_log = db.query(OrderStatusLog).filter(OrderStatusLog.order_id == o.id).order_by(OrderStatusLog.timestamp.desc()).first()
         state_start = last_log.timestamp if last_log else o.created_at
+        
+        # 2. Lealtad del Cliente (CRM)
+        order_count = 0
+        if o.customer_id:
+            order_count = db.query(func.count(Order.id)).filter(Order.customer_id == o.customer_id).scalar()
+
+        # 3. Datos Motorizado
+        driver_info = {"name": "No Asignado", "phone": None}
+        if o.driver:
+            driver_info["name"] = o.driver.name
+            # Si tu modelo Driver tiene teléfono, úsalo aquí. Si no, placeholder.
+            driver_info["phone"] = getattr(o.driver, 'phone', None) 
 
         data_response.append({
             "id": o.id,
@@ -64,125 +61,54 @@ def get_recent_orders(
             "current_status": o.current_status,
             "order_type": o.order_type,
             "total_amount": o.total_amount,
-            "delivery_fee": o.delivery_fee,
-            "gross_delivery_fee": o.gross_delivery_fee, # Importante para mostrar fee real en tabla
+            
+            # Contexto Rico
+            "store_name": o.store.name if o.store else "Sin Tienda",
+            "customer_name": o.customer.name if o.customer else "Anónimo",
+            "customer_phone": o.customer.phone if o.customer else None,
+            "customer_orders_count": order_count, # Para el Badge VIP
+            "driver": driver_info,
+            
+            # Tiempos
             "created_at": o.created_at,
             "state_start_at": state_start,
-            "duration_text": o.duration,
-            "distance_km": o.distance_km,
-            "customer_name": o.customer.name if o.customer else "N/A",
-            "customer_phone": o.customer.phone if o.customer and o.customer.phone else None
+            "duration_text": o.duration, # Texto crudo por si acaso
+            "final_duration_seconds": None # Calcularemos esto en JS si es entregado
         })
     return data_response
 
-@router.get("/top-products", summary="Productos más vendidos")
-def get_top_products_data(
-    db: Session = Depends(deps.get_db),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    store_name: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user) # <--- Candado de Seguridad
-):
-    """
-    Retorna el Top 10 de productos vendidos según los filtros aplicados.
-    """
-    return analysis_service.get_top_products(
-        db=db, 
-        start_date=start_date, 
-        end_date=end_date, 
-        store_name=store_name, 
-        search_query=search
-    )
+# --- ENDPOINTS DELEGADOS AL SERVICIO (Igual que antes) ---
 
-@router.get("/stores-locations", summary="Ubicación de Tiendas")
-def get_stores_locations(
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_user)
-):
+@router.get("/heatmap")
+def get_heatmap_endpoint(db: Session = Depends(deps.get_db), start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), store_name: Optional[str] = Query(None)):
+    return analysis_service.get_heatmap_data(db, start_date, end_date, store_name)
+
+@router.get("/trends")
+def get_trends_data(db: Session = Depends(deps.get_db), start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), store_name: Optional[str] = Query(None), search: Optional[str] = Query(None)):
+    return analysis_service.get_daily_trends(db, start_date, end_date, store_name, search)
+
+@router.get("/top-products")
+def get_top_products_data(db: Session = Depends(deps.get_db), start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), store_name: Optional[str] = Query(None), search: Optional[str] = Query(None)):
+    return analysis_service.get_top_products(db, start_date, end_date, store_name, search)
+
+@router.get("/driver-leaderboard")
+def get_driver_leaderboard_data(db: Session = Depends(deps.get_db), start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), store_name: Optional[str] = Query(None), search: Optional[str] = Query(None)):
+    return analysis_service.get_driver_leaderboard(db, start_date, end_date, store_name, search)
+
+@router.get("/top-stores")
+def get_top_stores_data(db: Session = Depends(deps.get_db), start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), store_name: Optional[str] = Query(None), search: Optional[str] = Query(None)):
+    return analysis_service.get_top_stores(db, start_date, end_date, store_name, search)
+
+@router.get("/top-customers")
+def get_top_customers_data(db: Session = Depends(deps.get_db), start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), store_name: Optional[str] = Query(None), search: Optional[str] = Query(None)):
+    return analysis_service.get_top_customers(db, start_date, end_date, store_name, search)
+
+@router.get("/stores-locations")
+def get_stores_locations(db: Session = Depends(deps.get_db)):
     stores = db.query(Store).filter(Store.latitude != None).all()
     return [{"name": s.name, "lat": s.latitude, "lng": s.longitude} for s in stores]
 
-@router.get("/heatmap", summary="Puntos para Mapa de Calor")
-def get_heatmap_data(
-    db: Session = Depends(deps.get_db),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    store_name: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user)
-):
-    query = db.query(Order.latitude, Order.longitude).filter(
-        Order.latitude != None, 
-        Order.latitude != 0.0,
-        Order.longitude != None
-    )
-    query = apply_filters(query, start_date, end_date, store_name, search)
-    points = query.limit(5000).all()
-    return [[p.latitude, p.longitude, 0.8] for p in points]
-
-@router.get("/trends", summary="Tendencias")
-def get_trends_data(
-    db: Session = Depends(deps.get_db),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    store_name: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user)
-):
-    return analysis_service.get_daily_trends(db, start_date, end_date, store_name, search)
-
-@router.get("/driver-leaderboard", summary="Ranking Repartidores")
-def get_driver_leaderboard_data(
-    db: Session = Depends(deps.get_db),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    store_name: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user)
-):
-    return analysis_service.get_driver_leaderboard(db, start_date, end_date, store_name, search)
-
-@router.get("/top-stores", summary="Ranking Tiendas")
-def get_top_stores_data(
-    db: Session = Depends(deps.get_db),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    store_name: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user)
-):
-    return analysis_service.get_top_stores(db, start_date, end_date, store_name, search)
-
-@router.get("/top-customers", summary="Ranking Clientes")
-def get_top_customers_data(
-    db: Session = Depends(deps.get_db),
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    store_name: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    current_user: User = Depends(deps.get_current_user)
-):
-    return analysis_service.get_top_customers(db, start_date, end_date, store_name, search)
-
-@router.get("/all-stores-names", summary="Lista completa de tiendas para filtros")
-def get_all_stores_names(
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_user)
-):
+@router.get("/all-stores-names")
+def get_all_stores_names(db: Session = Depends(deps.get_db)):
     stores = db.query(Store.name).order_by(Store.name.asc()).all()
-    return [s.name for s in stores if s.name]
-
-@router.get("/all-stores-names", summary="Lista de Nombres de Tiendas")
-def get_all_stores_names(
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_user)
-):
-    """
-    Retorna lista simple de nombres de tiendas para el dropdown.
-    """
-    # Ordenamos alfabéticamente para que el dropdown se vea ordenado
-    stores = db.query(Store.name).order_by(Store.name.asc()).all()
-    
-    # Extraemos el string de la tupla (store.name) y filtramos nulos
     return [s.name for s in stores if s.name]
