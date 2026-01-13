@@ -97,79 +97,93 @@ class OrderScraper:
             self.driver = None
 
     def download_official_excel(self, order_id: str):
-        """
-        Estrategia V4 (Blindada):
-        1. Dispara evento JS en el botón CSV (evita bloqueos de Excel).
-        2. Descarga el archivo ligero (~1KB).
-        3. Reconstruye un .xlsx nativo usando openpyxl para entregar calidad.
-        """
         if not self.login(): return None, None
         
-        # Limpieza de zona de descarga
+        # 1. Limpieza y PREPARACIÓN DE PERMISOS (CRÍTICO)
+        if not os.path.exists(self.download_dir):
+            os.makedirs(self.download_dir, mode=0o777)
+            
+        # Borrar todo lo anterior
         for f in glob.glob(os.path.join(self.download_dir, "*")):
             try: os.remove(f)
             except: pass
 
-        logger.info(f"🤖 Robot: Extrayendo CSV para pedido #{order_id}...")
+        # --- ORDEN SUPREMA A CHROME: PERMITIR DESCARGAS AQUÍ ---
+        # Esto debe ejecutarse con la sesión activa
+        try:
+            self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {
+                'behavior': 'allow',
+                'downloadPath': self.download_dir
+            })
+            logger.info(f"🔧 Permisos de descarga forzados en: {self.download_dir}")
+        except Exception as e:
+            logger.error(f"⚠️ Error enviando CDP command: {e}")
+
+        logger.info(f"🤖 Robot: Iniciando extracción CSV para #{order_id}...")
         list_url = f"{self.BASE_URL}/admin/order/list/all"
         
         try:
             self.driver.get(list_url)
             
-            # 1. FILTRADO
+            # 2. FILTRADO
             search_input = WebDriverWait(self.driver, 10).until(
                 EC.visibility_of_element_located((By.ID, "datatableSearch_"))
             )
             search_input.clear()
             search_input.send_keys(order_id)
             search_input.send_keys(Keys.RETURN)
-            time.sleep(2) # Pausa para que la tabla reaccione
+            time.sleep(3) # Espera generosa para filtrado
 
-            # 2. DESPLIEGUE DEL MENÚ
+            # 3. INTERACCIÓN (Menú -> CSV)
             try:
-                # Forzamos el clic vía JS para abrir el dropdown
                 export_btn = self.driver.find_element(By.CSS_SELECTOR, ".js-hs-unfold-invoker")
                 self.driver.execute_script("arguments[0].click();", export_btn)
-                time.sleep(0.5)
-            except: pass
-
-            # 3. DISPARO JS AL BOTÓN CSV
-            # Buscamos el botón por texto o ID y le damos click() nativo
-            try:
-                # XPath robusto: busca un enlace que diga CSV o tenga ID relacionado
-                csv_btn = WebDriverWait(self.driver, 5).until(
-                    EC.element_to_be_clickable((By.XPATH, "//a[contains(@id, 'export-csv') or contains(text(), 'CSV')]"))
-                )
+                time.sleep(1)
+                
+                # Clic en CSV
+                csv_btn = self.driver.find_element(By.XPATH, "//a[contains(@id, 'export-csv') or contains(text(), 'CSV')]")
                 self.driver.execute_script("arguments[0].click();", csv_btn)
-                logger.info("✅ Clic en exportar CSV realizado.")
+                logger.info("✅ Clic en exportar CSV realizado. Esperando archivo...")
             except Exception as e:
-                logger.error(f"❌ No se pudo clicar el botón CSV: {e}")
+                logger.error(f"❌ Falló la interacción con el menú: {e}")
+                # FOTO DEL ERROR
+                self.driver.save_screenshot("/app/static/error_menu.png")
+                logger.info("📸 Screenshot guardado en /app/static/error_menu.png")
                 return None, None
             
-            # 4. ESPERAR ARCHIVO .CSV
+            # 4. BUCLE DE ESPERA FORENSE (Ver qué pasa en el disco)
             file_path = None
-            # Esperamos 30s (es un archivo de 1KB, debería bajar en 1s)
-            for i in range(30):
-                files = glob.glob(os.path.join(self.download_dir, "*.csv"))
-                if files:
-                    candidate = max(files, key=os.path.getctime)
-                    # Validación mínima de peso (bytes) para asegurar que no está vacío
-                    if os.path.getsize(candidate) > 50: 
-                        file_path = candidate
+            for i in range(40): # 40 segundos
+                files = os.listdir(self.download_dir)
+                
+                # LOG DE DEPURACIÓN CADA 5 SEGUNDOS
+                if i % 5 == 0: 
+                    logger.info(f"⏳ [{i}s] Contenido carpeta: {files}")
+
+                # Buscamos CSV finalizado (que no termine en .crdownload)
+                candidates = [f for f in files if f.endswith(".csv")]
+                
+                if candidates:
+                    # Encontramos uno!
+                    full_path = os.path.join(self.download_dir, candidates[0])
+                    # Verificamos que tenga datos (>0 bytes)
+                    if os.path.getsize(full_path) > 0:
+                        file_path = full_path
                         break
+                
                 time.sleep(1)
             
             if not file_path:
-                logger.error("❌ El archivo CSV no apareció en el disco.")
+                logger.error(f"❌ Timeout. Carpeta final: {os.listdir(self.download_dir)}")
                 return None, None
 
-            # 5. CONVERSIÓN A EXCEL (Magia)
+            # 5. CONVERSIÓN A EXCEL
+            logger.info(f"📄 Procesando archivo: {file_path}")
             try:
                 import csv
                 import openpyxl
                 from io import BytesIO
 
-                # Leemos el CSV
                 wb = openpyxl.Workbook()
                 ws = wb.active
                 ws.title = f"Orden {order_id}"
@@ -180,29 +194,24 @@ class OrderScraper:
                         for c_idx, value in enumerate(row, 1):
                             ws.cell(row=r_idx, column=c_idx, value=value)
                 
-                # Ajuste de ancho de columnas (Estético)
                 for column_cells in ws.columns:
                     length = max(len(str(cell.value) or "") for cell in column_cells)
                     ws.column_dimensions[column_cells[0].column_letter].width = length + 2
 
-                # Guardamos en memoria
                 output = BytesIO()
                 wb.save(output)
                 output.seek(0)
                 excel_bytes = output.read()
                 
-                logger.info(f"✨ Conversión exitosa. Entregando XLSX ({len(excel_bytes)} bytes).")
                 return excel_bytes, f"Orden_Oficial_{order_id}.xlsx"
 
             except ImportError:
-                # Si falla openpyxl, entregamos el CSV tal cual
-                logger.warning("⚠️ Librería openpyxl no encontrada. Entregando CSV original.")
-                with open(file_path, "rb") as f:
-                    content = f.read()
+                with open(file_path, "rb") as f: content = f.read()
                 return content, f"Orden_Oficial_{order_id}.csv"
 
         except Exception as e:
-            logger.error(f"❌ Error en proceso descarga/conversión: {e}")
+            logger.error(f"❌ Error crítico: {e}")
+            self.driver.save_screenshot("/app/static/error_critico.png")
             return None, None
         finally:
             self.close_driver()
