@@ -38,10 +38,13 @@ class OrderScraper:
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--ignore-certificate-errors")
         chrome_options.add_argument("--disable-popup-blocking")
-        
-        # --- MÁSCARA ANTI-BOT ---
-        # Engaña al sitio para que crea que es un humano real
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        
+        # --- SOLUCIÓN AL "PAGE EXPIRED" ---
+        # Esto le dice a Chrome: "Si sale una alerta, acéptala y sigue"
+        chrome_options.add_argument("--unhandled-alert-behavior=accept")
+        
+        # Configuración experimental
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
@@ -60,48 +63,48 @@ class OrderScraper:
         service = Service()
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        # Script extra para ocultar webdriver property
         self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-            "source": """
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                })
-            """
+            "source": """Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"""
         })
-
         try:
-            self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {
-                'behavior': 'allow', 'downloadPath': self.download_dir
-            })
+            self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {'behavior': 'allow', 'downloadPath': self.download_dir})
         except: pass
 
     def login(self):
-        # Si ya tiene driver y sesión, validar
         if self.driver:
             try:
-                if "dashboard" in self.driver.current_url: return True
+                # Si estamos en dashboard o admin, es válido
+                if "dashboard" in self.driver.current_url or "/admin" in self.driver.current_url: 
+                    return True
             except: pass
         else:
             self.setup_driver()
         
-        # --- SISTEMA DE REINTENTOS (3 VIDAS) ---
         max_retries = 3
         for attempt in range(1, max_retries + 1):
             try:
                 logger.info(f"🔑 Intento de Login {attempt}/{max_retries}...")
+                
+                # LIMPIEZA PREVENTIVA: Borrar cookies para evitar "Session Expired"
+                try: self.driver.delete_all_cookies()
+                except: pass
+
                 self.driver.get(self.LOGIN_URL)
                 
-                # Chequeo rápido de cookie
-                if "dashboard" in self.driver.current_url: 
-                    logger.info("✅ Ya logueado (Cookie persistente).")
-                    return True
+                # MANEJO EXPLÍCITO DE ALERTAS (Doble seguridad)
+                try:
+                    WebDriverWait(self.driver, 3).until(EC.alert_is_present())
+                    alert = self.driver.switch_to.alert
+                    logger.warning(f"⚠️ Alerta detectada y aceptada: {alert.text}")
+                    alert.accept()
+                except: pass
 
-                # Espera explícita de elementos
+                # Validar si ya entró
+                if "dashboard" in self.driver.current_url: return True
+
                 wait = WebDriverWait(self.driver, 20)
-                
                 email_input = wait.until(EC.presence_of_element_located((By.NAME, "email")))
                 email_input.clear()
-                # Simular escritura humana (opcional, pero ayuda)
                 email_input.send_keys(settings.GOPHARMA_EMAIL)
                 time.sleep(0.5)
                 
@@ -110,23 +113,20 @@ class OrderScraper:
                 pass_input.send_keys(settings.GOPHARMA_PASSWORD)
                 pass_input.send_keys(Keys.RETURN)
                 
-                # Esperar entrada al dashboard
-                wait.until(EC.url_contains("dashboard"))
+                # Esperamos dashboard O admin
+                wait.until(lambda d: "dashboard" in d.current_url or "/admin" in d.current_url)
                 logger.info("✅ Login Exitoso.")
                 return True
 
             except Exception as e:
                 logger.warning(f"⚠️ Falló intento {attempt}: {e}")
-                # Guardar foto del error para diagnóstico
-                try:
-                    self.driver.save_screenshot(f"/app/static/error_login_try_{attempt}.png")
-                    logger.info(f"📸 Foto guardada: error_login_try_{attempt}.png")
-                    logger.info(f"🌐 URL actual: {self.driver.current_url}")
+                # Si hay una alerta bloqueando, intentamos aceptarla de nuevo
+                try: self.driver.switch_to.alert.accept()
                 except: pass
                 
-                # Si falló, borramos cookies y recargamos para el siguiente intento
-                try: self.driver.delete_all_cookies()
-                except: pass
+                if self.driver:
+                    self.driver.save_screenshot(f"/app/static/error_login_try_{attempt}.png")
+                
                 time.sleep(2)
         
         logger.error("❌ Se agotaron los intentos de Login.")
