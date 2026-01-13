@@ -299,10 +299,10 @@ window.toggleOrderDetails = function(rowId) {
                                 </div>
                                 <div class="col-md-5 d-flex flex-column justify-content-center align-items-start ps-4">
                                     <h6 class="fw-bold small text-muted mb-3 text-uppercase">⚡ Acciones Operativas</h6>
-                                    <button onclick="event.stopPropagation(); downloadOfficialExcel(this, '${o.external_id}')" 
-                                            class="btn btn-success btn-sm w-100 mb-2 text-start shadow-sm">
-                                        <i class="fa-solid fa-file-excel me-2"></i>Descargar Excel (Oficial)
-                                    </button>
+                                    <button onclick="event.stopPropagation(); openATCModal('${o.id}', '${o.external_id}')" 
+        class="btn btn-primary btn-sm w-100 mb-2 text-start shadow-sm">
+    <i class="fa-solid fa-file-invoice me-2"></i>Ver Ficha ATC (En Vivo)
+</button>
                                     <a href="https://ecosistema.gopharma.com.ve/admin/order/list/all?search=${o.external_id}" target="_blank" 
                                        onclick="event.stopPropagation()"
                                        class="btn btn-white border btn-sm w-100 text-start">
@@ -777,4 +777,205 @@ window.toggleOrderDetails = function(rowId) {
     
     fetchAllData();
     setInterval(fetchAllData, 60000);
+
+    // --- FUNCIÓN AUDITORÍA ATC (NUEVA) ---
+    window.openATCModal = async function(dbId, externalId) {
+        // 1. Instancia del Modal Bootstrap
+        const modalEl = document.getElementById('modalATC');
+        if (!modalEl) {
+            console.error("❌ Error: No se encontró el modal #modalATC en el HTML.");
+            return;
+        }
+        const modalBody = document.getElementById('modalATCBody');
+        const modal = new bootstrap.Modal(modalEl);
+        
+        // 2. Mostrar estado de carga
+        modalBody.innerHTML = `
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+                <h5 class="mt-3 fw-bold text-dark">Auditando Sistema Legacy...</h5>
+                <p class="text-muted">El robot está extrayendo los datos oficiales. Espere unos segundos...</p>
+            </div>
+        `;
+        modal.show();
+
+        try {
+            // 3. Petición al Backend (Scraping en Vivo)
+            // Nota: externalId es el ID tipo '106843'
+            console.log(`📡 Auditando pedido #${externalId}...`);
+            const res = await authFetch(`/api/data/live-audit/${externalId}`);
+            
+            if (!res || !res.ok) throw new Error("No se pudo obtener la data oficial.");
+            
+            const csvData = await res.json();
+            
+            if (!csvData || csvData.length === 0) throw new Error("El archivo Legacy llegó vacío.");
+
+            // Tomamos la primera fila (Row 0)
+            const data = csvData[0];
+            
+            // --- HELPERS DE FORMATO ---
+            // Limpia "14,09" -> 14.09
+            const parseM = (val) => {
+                if (!val) return 0.00;
+                // Si viene como string, reemplazamos coma por punto
+                let v = String(val).replace(',', '.');
+                return parseFloat(v) || 0.00;
+            };
+            
+            const fmt = (val, symbol="$") => {
+                 const n = parseM(val);
+                 return `${symbol}${n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            };
+
+            // --- RENDERIZADO DE LA FICHA ---
+            const html = `
+                <div class="alert alert-primary border-0 d-flex align-items-center mb-4 bg-opacity-10">
+                    <i class="fa-solid fa-shield-halved me-3 fs-3 text-primary"></i>
+                    <div>
+                        <div class="fw-bold text-primary">DATOS OFICIALES DEL LEGACY</div>
+                        <small class="text-muted">Información extraída del archivo CSV oficial en tiempo real.</small>
+                    </div>
+                </div>
+
+                <!-- ENCABEZADO -->
+                <div class="row mb-4 align-items-center">
+                    <div class="col-6">
+                        <h2 class="fw-bold mb-0 text-dark">#${data['ID del pedido'] || externalId}</h2>
+                        <span class="badge bg-dark mt-2 fs-6">${data['Estado del pedido'] || 'N/A'}</span>
+                    </div>
+                    <div class="col-6 text-end">
+                        <div class="text-muted small text-uppercase fw-bold">Fecha Oficial</div>
+                        <div class="fs-5 text-dark">${data['Fecha'] || '--'}</div>
+                    </div>
+                </div>
+
+                <div class="row g-4 mb-4">
+                    <!-- TARJETA CLIENTE -->
+                    <div class="col-md-6">
+                        <div class="card h-100 bg-light border-0">
+                            <div class="card-body">
+                                <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
+                                    <i class="fa-solid fa-user me-2"></i>CLIENTE
+                                </h6>
+                                <div class="mb-2 d-flex justify-content-between">
+                                    <span class="text-muted">Nombre:</span>
+                                    <span class="fw-bold text-end text-dark">${data['Nombre del cliente'] || 'N/A'}</span>
+                                </div>
+                                <div class="mb-2 d-flex justify-content-between">
+                                    <span class="text-muted">Email:</span>
+                                    <span class="text-end small text-break">${data['Correo electrónico del cliente'] || 'N/A'}</span>
+                                </div>
+                                <div class="mb-2 d-flex justify-content-between">
+                                    <span class="text-muted">Teléfono:</span>
+                                    <span class="fw-bold text-end">${data['Teléfono del cliente'] || 'N/A'}</span>
+                                </div>
+                                <div class="mb-2 d-flex justify-content-between">
+                                    <span class="text-muted">Tienda:</span>
+                                    <span class="text-end fw-bold text-dark small">${data['Nombre de la tienda'] || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TARJETA PAGO -->
+                    <div class="col-md-6">
+                        <div class="card h-100 border-success border border-opacity-25">
+                            <div class="card-body">
+                                <h6 class="fw-bold text-success mb-3 border-bottom pb-2">
+                                    <i class="fa-solid fa-money-bill-wave me-2"></i>PAGO
+                                </h6>
+                                <div class="mb-2 d-flex justify-content-between">
+                                    <span class="text-muted">Método:</span>
+                                    <span class="fw-bold text-uppercase">${data['Método de pago'] || 'N/A'}</span>
+                                </div>
+                                <div class="mb-2 d-flex justify-content-between">
+                                    <span class="text-muted">Referencia:</span>
+                                    <span class="fw-bold text-primary select-all">${data['Referencia'] || 'N/A'}</span>
+                                </div>
+                                <div class="mb-2 d-flex justify-content-between">
+                                    <span class="text-muted">Estado:</span>
+                                    <span class="badge bg-${data['Estado del pago'] === 'Pagado' ? 'success' : 'danger'}">${data['Estado del pago']}</span>
+                                </div>
+                                <div class="mb-2 d-flex justify-content-between">
+                                    <span class="text-muted">Tasa Cambio:</span>
+                                    <span class="small">${data['Tasa de cambio'] || '--'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TABLA FINANCIERA -->
+                <h6 class="fw-bold text-secondary ps-1 mb-2">
+                    <i class="fa-solid fa-calculator me-2"></i>DESGLOSE PARA DEVOLUCIONES
+                </h6>
+                <div class="table-responsive border rounded-3 overflow-hidden shadow-sm mb-3">
+                    <table class="table table-bordered mb-0">
+                        <thead class="bg-light text-secondary small text-uppercase">
+                            <tr class="text-center">
+                                <th class="py-2">Concepto</th>
+                                <th class="py-2">USD ($)</th>
+                                <th class="py-2">VED (Bs)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white">
+                            <tr>
+                                <td class="ps-3">Subtotal Artículos</td>
+                                <td class="text-end pe-3 font-monospace">${fmt(data['Precio del artículo (USD)'])}</td>
+                                <td class="text-end pe-3 font-monospace text-muted">${fmt(data['Precio del artículo (VED)'], 'Bs.')}</td>
+                            </tr>
+                            <tr>
+                                <td class="ps-3">Descuentos / Cupones</td>
+                                <td class="text-end pe-3 text-danger font-monospace">-${fmt(data['Monto descontado (USD)'])}</td>
+                                <td class="text-end pe-3 text-danger font-monospace">-${fmt(data['Monto descontado (VED)'], 'Bs.')}</td>
+                            </tr>
+                            <tr>
+                                <td class="ps-3">Impuestos</td>
+                                <td class="text-end pe-3 font-monospace">${fmt(data['Impuesto (USD)'])}</td>
+                                <td class="text-end pe-3 font-monospace">${fmt(data['Impuesto (VED)'], 'Bs.')}</td>
+                            </tr>
+                            <tr class="bg-soft-warning">
+                                <td class="ps-3 fw-bold text-warning-dark">Delivery Fee (Envío)</td>
+                                <td class="text-end pe-3 fw-bold font-monospace">${fmt(data['Cargo de entrega (USD)'])}</td>
+                                <td class="text-end pe-3 fw-bold font-monospace">${fmt(data['Cargo de entrega (VED)'], 'Bs.')}</td>
+                            </tr>
+                            <tr class="bg-soft-info">
+                                <td class="ps-3 fw-bold text-info-dark">Service Fee (Servicio)</td>
+                                <td class="text-end pe-3 fw-bold font-monospace">${fmt(data['Tarifa de servicio (USD)'])}</td>
+                                <td class="text-end pe-3 fw-bold font-monospace">${fmt(data['Tarifa de servicio (VED)'], 'Bs.')}</td>
+                            </tr>
+                        </tbody>
+                        <tfoot class="bg-dark text-white">
+                            <tr>
+                                <td class="ps-3 fw-bold text-end">TOTAL COBRADO:</td>
+                                <td class="text-end pe-3 fw-bold fs-5">${fmt(data['Monto total (USD)'])}</td>
+                                <td class="text-end pe-3 fw-bold fs-5 text-white-50">${fmt(data['Monto total (VED)'], 'Bs.')}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                
+                <div class="alert alert-warning d-flex align-items-start small border-warning">
+                    <i class="fa-solid fa-triangle-exclamation mt-1 me-2"></i>
+                    <div>
+                        <strong>Nota para ATC:</strong> El <em>Service Fee</em> y el <em>Delivery Fee</em> suelen ser no-reembolsables en devoluciones parciales. Verifique políticas.
+                    </div>
+                </div>
+            `;
+
+            modalBody.innerHTML = html;
+
+        } catch (e) {
+            console.error(e);
+            modalBody.innerHTML = `
+                <div class="text-center py-5">
+                    <div class="text-danger mb-3"><i class="fa-solid fa-circle-xmark fa-3x"></i></div>
+                    <h5 class="fw-bold text-danger">Fallo en Auditoría</h5>
+                    <p class="text-muted mb-4">${e.message}</p>
+                    <button class="btn btn-outline-dark btn-sm" onclick="bootstrap.Modal.getInstance(document.getElementById('modalATC')).hide()">Cerrar</button>
+                </div>
+            `;
+        }
+    };
 });

@@ -152,3 +152,25 @@ def download_legacy_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+@router.get("/live-audit/{order_id}", summary="Auditoría en Vivo (Scraping -> JSON)")
+def get_live_audit_data(
+    order_id: str,
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Dispara el robot en tiempo real, descarga el CSV oficial, 
+    y retorna los datos en JSON para visualización inmediata.
+    """
+    scraper = OrderScraper()
+    data = scraper.get_official_data_json(order_id) # Usamos el método nuevo
+    
+    if not data:
+        return JSONResponse(
+            status_code=404, 
+            content={"error": "No se pudo obtener la data oficial. Verifique logs/capturas."}
+        )
+    
+    # data es una lista de filas del CSV.
+    # Generalmente la fila 0 tiene los totales y datos del cliente.
+    return data
