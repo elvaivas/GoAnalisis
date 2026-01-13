@@ -140,26 +140,19 @@ class OrderScraper:
             self.driver = None
 
     def get_official_data_json(self, order_id: str):
-        """
-        Descarga el CSV oficial y lo convierte en una lista de diccionarios (JSON)
-        para mostrar en el Modal de Auditoría.
-        """
         if not self.login(): return None
         
-        # 1. Limpieza de zona de descarga
-        if not os.path.exists(self.download_dir):
-            os.makedirs(self.download_dir, mode=0o777)
-            
+        # 1. Limpieza
+        if not os.path.exists(self.download_dir): os.makedirs(self.download_dir, mode=0o777)
         for f in glob.glob(os.path.join(self.download_dir, "*")):
             try: os.remove(f)
             except: pass
 
-        # REFUERZO DE PERMISOS
-        try:
-            self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {'behavior': 'allow', 'downloadPath': self.download_dir})
+        # Permisos
+        try: self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {'behavior': 'allow', 'downloadPath': self.download_dir})
         except: pass
 
-        logger.info(f"🤖 Robot: Auditando pedido #{order_id} (Modo JSON)...")
+        logger.info(f"🤖 Robot: Auditando pedido #{order_id} (Smart Parser)...")
         
         try:
             self.driver.get(f"{self.BASE_URL}/admin/order/list/all")
@@ -171,29 +164,19 @@ class OrderScraper:
             search_input.send_keys(Keys.RETURN)
             time.sleep(3) 
 
-            # 3. INTERACCIÓN (Botón CSV)
+            # 3. CLICK CSV (Sin target blank)
             try:
-                # Abrir Dropdown
                 export_btn = self.driver.find_element(By.CSS_SELECTOR, ".js-hs-unfold-invoker")
                 self.driver.execute_script("arguments[0].click();", export_btn)
                 time.sleep(1)
-                
-                # Encontrar botón CSV
                 csv_btn = self.driver.find_element(By.XPATH, "//a[contains(@id, 'export-csv') or contains(text(), 'CSV')]")
-                
-                # Quitar target="_blank"
                 self.driver.execute_script("arguments[0].removeAttribute('target');", csv_btn)
-                
-                # Click nativo
                 self.driver.execute_script("arguments[0].click();", csv_btn)
-                logger.info("✅ Clic en CSV realizado.")
-                
             except Exception as e:
                 logger.error(f"❌ Falló clic UI: {e}")
-                self.driver.save_screenshot("/app/static/error_menu_click.png")
                 return None
             
-            # 4. ESPERA ACTIVA
+            # 4. ESPERA
             file_path = None
             for i in range(40):
                 files = os.listdir(self.download_dir)
@@ -205,23 +188,53 @@ class OrderScraper:
                         break
                 time.sleep(1)
             
-            if not file_path:
-                logger.error("❌ Timeout descarga CSV.")
-                return None
+            if not file_path: return None
 
-            # 5. PARSEO CSV -> JSON
-            logger.info(f"📄 Convirtiendo a JSON: {file_path}")
+            # 5. PARSEO INTELIGENTE (AQUÍ ESTÁ LA MAGIA)
+            logger.info(f"📄 Analizando estructura CSV: {file_path}")
             try:
                 import csv
-                data_list = []
                 
-                # Leer CSV con utf-8-sig para quitar BOM
-                with open(file_path, 'r', encoding='utf-8-sig') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        # Limpiar espacios en claves y valores
-                        clean_row = {k.strip(): v.strip() for k, v in row.items() if k}
-                        data_list.append(clean_row)
+                # Leemos todas las líneas primero
+                with open(file_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+                    lines = f.readlines()
+                
+                # A. BUSCAR DONDE EMPIEZAN LOS DATOS
+                start_index = 0
+                header_line = ""
+                
+                for i, line in enumerate(lines):
+                    # Buscamos una columna clave que sabemos que existe
+                    if "ID del pedido" in line or "order_id" in line or "Fecha" in line:
+                        start_index = i
+                        header_line = line
+                        break
+                
+                logger.info(f"🎯 Encabezados encontrados en línea {start_index}: {header_line.strip()[:50]}...")
+
+                # B. DETECTAR SEPARADOR (; o ,)
+                # Contamos cuál aparece más en la línea de encabezado
+                semicolons = header_line.count(';')
+                commas = header_line.count(',')
+                delimiter = ';' if semicolons > commas else ','
+                logger.info(f"🔍 Separador detectado: '{delimiter}'")
+
+                # C. PARSEAR DESDE LA LÍNEA CORRECTA
+                data_list = []
+                # Pasamos las líneas desde start_index en adelante
+                reader = csv.DictReader(lines[start_index:], delimiter=delimiter)
+                
+                for row in reader:
+                    # Limpieza profunda de keys y values
+                    clean_row = {}
+                    for k, v in row.items():
+                        if k: # Solo si la llave existe
+                            # Quitamos espacios y caracteres raros del nombre de la columna
+                            clean_key = k.strip().replace('"', '')
+                            clean_val = (v or "").strip().replace('"', '')
+                            clean_row[clean_key] = clean_val
+                    
+                    data_list.append(clean_row)
                 
                 return data_list
 
@@ -231,7 +244,6 @@ class OrderScraper:
 
         except Exception as e:
             logger.error(f"❌ Crash Scraper: {e}")
-            self.driver.save_screenshot("/app/static/error_crash.png")
             return None
         finally:
             self.close_driver()
