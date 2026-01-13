@@ -37,34 +37,46 @@ class OrderScraper:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--ignore-certificate-errors")
-        chrome_options.add_argument("--disable-popup-blocking") # VITAL para tu caso
+        chrome_options.add_argument("--disable-popup-blocking")
+        
+        # --- MÁSCARA ANTI-BOT ---
+        # Engaña al sitio para que crea que es un humano real
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
         
         if not os.path.exists(self.download_dir):
             os.makedirs(self.download_dir, mode=0o777)
 
-        # Preferencias agresivas
         prefs = {
             "download.default_directory": self.download_dir,
             "download.prompt_for_download": False,
             "download.directory_upgrade": True,
             "safebrowsing.enabled": True,
             "profile.default_content_settings.popups": 0,
-            "profile.content_settings.exceptions.automatic_downloads.*.setting": 1
         }
         chrome_options.add_experimental_option("prefs", prefs)
         
         service = Service()
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        # Comando CDP para asegurar permisos de escritura
+        # Script extra para ocultar webdriver property
+        self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                })
+            """
+        })
+
         try:
             self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {
-                'behavior': 'allow',
-                'downloadPath': self.download_dir
+                'behavior': 'allow', 'downloadPath': self.download_dir
             })
         except: pass
 
     def login(self):
+        # Si ya tiene driver y sesión, validar
         if self.driver:
             try:
                 if "dashboard" in self.driver.current_url: return True
@@ -72,35 +84,54 @@ class OrderScraper:
         else:
             self.setup_driver()
         
-        try:
-            logger.info("🔑 Iniciando Login (Timeout aumentado 30s)...")
-            self.driver.get(self.LOGIN_URL)
-            
-            # Verificar si ya estamos dentro
-            if "dashboard" in self.driver.current_url: return True
+        # --- SISTEMA DE REINTENTOS (3 VIDAS) ---
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"🔑 Intento de Login {attempt}/{max_retries}...")
+                self.driver.get(self.LOGIN_URL)
+                
+                # Chequeo rápido de cookie
+                if "dashboard" in self.driver.current_url: 
+                    logger.info("✅ Ya logueado (Cookie persistente).")
+                    return True
 
-            # AUMENTAMOS EL TIMEOUT A 30 SEGUNDOS (Antes 15)
-            email_input = WebDriverWait(self.driver, 30).until(
-                EC.presence_of_element_located((By.NAME, "email"))
-            )
-            email_input.clear()
-            email_input.send_keys(settings.GOPHARMA_EMAIL)
-            
-            pass_input = self.driver.find_element(By.NAME, "password")
-            pass_input.clear()
-            pass_input.send_keys(settings.GOPHARMA_PASSWORD)
-            pass_input.send_keys(Keys.RETURN)
-            
-            WebDriverWait(self.driver, 30).until(EC.url_contains("dashboard"))
-            logger.info("✅ Login Exitoso.")
-            return True
+                # Espera explícita de elementos
+                wait = WebDriverWait(self.driver, 20)
+                
+                email_input = wait.until(EC.presence_of_element_located((By.NAME, "email")))
+                email_input.clear()
+                # Simular escritura humana (opcional, pero ayuda)
+                email_input.send_keys(settings.GOPHARMA_EMAIL)
+                time.sleep(0.5)
+                
+                pass_input = self.driver.find_element(By.NAME, "password")
+                pass_input.clear()
+                pass_input.send_keys(settings.GOPHARMA_PASSWORD)
+                pass_input.send_keys(Keys.RETURN)
+                
+                # Esperar entrada al dashboard
+                wait.until(EC.url_contains("dashboard"))
+                logger.info("✅ Login Exitoso.")
+                return True
 
-        except Exception as e:
-            logger.error(f"❌ Error Login Selenium: {e}")
-            if self.driver:
-                self.driver.save_screenshot("/app/static/error_login.png")
-            self.close_driver()
-            return False
+            except Exception as e:
+                logger.warning(f"⚠️ Falló intento {attempt}: {e}")
+                # Guardar foto del error para diagnóstico
+                try:
+                    self.driver.save_screenshot(f"/app/static/error_login_try_{attempt}.png")
+                    logger.info(f"📸 Foto guardada: error_login_try_{attempt}.png")
+                    logger.info(f"🌐 URL actual: {self.driver.current_url}")
+                except: pass
+                
+                # Si falló, borramos cookies y recargamos para el siguiente intento
+                try: self.driver.delete_all_cookies()
+                except: pass
+                time.sleep(2)
+        
+        logger.error("❌ Se agotaron los intentos de Login.")
+        self.close_driver()
+        return False
 
     def close_driver(self):
         if self.driver:
