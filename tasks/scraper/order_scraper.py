@@ -209,35 +209,195 @@ class OrderScraper:
                 self.driver.save_screenshot("/app/static/error_timeout.png")
                 return None, None
 
-            # 5. CONVERSIÓN CSV -> XLSX
-            logger.info(f"📄 Procesando: {file_path}")
+            # 5. CONVERSIÓN A EXCEL "PRETTY" (FORMATO FICHA)
+            logger.info(f"📄 Maquetando Excel para ATC: {file_path}")
             try:
                 import csv
                 import openpyxl
+                from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
                 from io import BytesIO
+
+                # Configuración de Estilos
+                BOLD_FONT = Font(bold=True, name='Arial', size=10)
+                TITLE_FONT = Font(bold=True, name='Arial', size=14, color="FFFFFF")
+                HEADER_FILL = PatternFill(start_color="3b82f6", end_color="3b82f6", fill_type="solid") # Azul GoAnalisis
+                SUBHEADER_FILL = PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid") # Gris suave
+                CENTER = Alignment(horizontal='center', vertical='center')
+                LEFT = Alignment(horizontal='left', vertical='center')
+                THIN_BORDER = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
                 wb = openpyxl.Workbook()
                 ws = wb.active
-                ws.title = f"Orden {order_id}"
+                ws.title = f"Ficha {order_id}"
                 
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    reader = csv.reader(f)
-                    for r_idx, row in enumerate(reader, 1):
-                        for c_idx, value in enumerate(row, 1):
-                            ws.cell(row=r_idx, column=c_idx, value=value)
-                
-                for column_cells in ws.columns:
-                    length = max(len(str(cell.value) or "") for cell in column_cells)
-                    ws.column_dimensions[column_cells[0].column_letter].width = length + 2
+                # Desactivar cuadrícula para look de "Reporte"
+                ws.sheet_view.showGridLines = False
 
+                # Leer datos del CSV (Asumimos que es 1 sola fila de datos + headers)
+                data = {}
+                with open(file_path, 'r', encoding='utf-8-sig') as f: # utf-8-sig quita el BOM
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        data = row # Tomamos la primera (y única) fila
+                        break
+                
+                if not data:
+                    raise Exception("El CSV descargado está vacío")
+
+                # --- SECCIÓN 1: ENCABEZADO ---
+                ws.merge_cells('B2:E2')
+                cell = ws['B2']
+                cell.value = f"FICHA DE PEDIDO #{data.get('ID del pedido', order_id)}"
+                cell.font = TITLE_FONT
+                cell.fill = HEADER_FILL
+                cell.alignment = CENTER
+
+                ws['F2'].value = data.get('Estado del pedido', 'N/A').upper()
+                ws['F2'].font = Font(bold=True, color="FF0000" if 'Cancelado' in data.get('Estado del pedido','') else "008000")
+                ws['F2'].alignment = CENTER
+                ws['F2'].border = THIN_BORDER
+
+                # --- SECCIÓN 2: DATOS DEL CLIENTE (Izquierda) Y LOGÍSTICA (Derecha) ---
+                # Fila 4
+                ws['B4'].value = "CLIENTE:"
+                ws['B4'].font = BOLD_FONT
+                ws['C4'].value = data.get('Nombre del cliente', 'N/A')
+                
+                ws['E4'].value = "FECHA:"
+                ws['E4'].font = BOLD_FONT
+                ws['F4'].value = data.get('Fecha', 'N/A')
+
+                # Fila 5
+                ws['B5'].value = "TELÉFONO:"
+                ws['B5'].font = BOLD_FONT
+                ws['C5'].value = data.get('Teléfono del cliente', 'N/A')
+
+                ws['E5'].value = "TIENDA:"
+                ws['E5'].font = BOLD_FONT
+                ws['F5'].value = data.get('Nombre de la tienda', 'N/A')
+
+                # Fila 6
+                ws['B6'].value = "EMAIL:"
+                ws['B6'].font = BOLD_FONT
+                ws['C6'].value = data.get('Correo electrónico del cliente', 'N/A')
+
+                ws['E6'].value = "TIPO:"
+                ws['E6'].font = BOLD_FONT
+                ws['F6'].value = data.get('Tipo de pedido', 'N/A')
+
+                # --- SECCIÓN 3: TABLA FINANCIERA (Crucial para ATC) ---
+                ws.merge_cells('B8:F8')
+                ws['B8'].value = "DETALLE FINANCIERO"
+                ws['B8'].font = BOLD_FONT
+                ws['B8'].fill = SUBHEADER_FILL
+                ws['B8'].alignment = CENTER
+
+                # Headers Tabla
+                headers = [("CONCEPTO", "B9"), ("USD ($)", "C9"), ("VED (Bs)", "D9")]
+                for text, pos in headers:
+                    ws[pos].value = text
+                    ws[pos].font = BOLD_FONT
+                    ws[pos].border = THIN_BORDER
+                    ws[pos].alignment = CENTER
+
+                # Filas de montos
+                financials = [
+                    ("Subtotal Productos", data.get('Precio del artículo (USD)', '0'), data.get('Precio del artículo (VED)', '0')),
+                    ("Delivery (Envío)", data.get('Cargo de entrega (USD)', '0'), data.get('Cargo de entrega (VED)', '0')),
+                    ("Tarifa Servicio", data.get('Tarifa de servicio (USD)', '0'), data.get('Tarifa de servicio (VED)', '0')),
+                    ("Impuestos", data.get('Impuesto (USD)', '0'), data.get('Impuesto (VED)', '0')),
+                    ("Descuentos", f"-{data.get('Monto descontado (USD)', '0')}", f"-{data.get('Monto descontado (VED)', '0')}")
+                ]
+
+                curr_row = 10
+                for label, usd, ved in financials:
+                    ws[f'B{curr_row}'].value = label
+                    ws[f'B{curr_row}'].border = THIN_BORDER
+                    
+                    # Convertir a float para que Excel lo reconozca como número
+                    try: ws[f'C{curr_row}'].value = float(usd.replace(',','.'))
+                    except: ws[f'C{curr_row}'].value = usd
+                    
+                    try: ws[f'D{curr_row}'].value = float(ved.replace(',','.'))
+                    except: ws[f'D{curr_row}'].value = ved
+                    
+                    # Estilo Moneda
+                    ws[f'C{curr_row}'].number_format = '"$"#,##0.00'
+                    ws[f'D{curr_row}'].number_format = '"Bs."#,##0.00'
+                    
+                    ws[f'C{curr_row}'].border = THIN_BORDER
+                    ws[f'D{curr_row}'].border = THIN_BORDER
+                    curr_row += 1
+
+                # TOTAL FINAL
+                ws[f'B{curr_row}'].value = "MONTO TOTAL"
+                ws[f'B{curr_row}'].font = BOLD_FONT
+                ws[f'B{curr_row}'].fill = SUBHEADER_FILL
+                ws[f'B{curr_row}'].border = THIN_BORDER
+                
+                try: ws[f'C{curr_row}'].value = float(data.get('Monto total (USD)', '0').replace(',','.'))
+                except: ws[f'C{curr_row}'].value = 0
+                ws[f'C{curr_row}'].font = BOLD_FONT
+                ws[f'C{curr_row}'].fill = SUBHEADER_FILL
+                ws[f'C{curr_row}'].border = THIN_BORDER
+                ws[f'C{curr_row}'].number_format = '"$"#,##0.00'
+                
+                try: ws[f'D{curr_row}'].value = float(data.get('Monto total (VED)', '0').replace(',','.'))
+                except: ws[f'D{curr_row}'].value = 0
+                ws[f'D{curr_row}'].font = BOLD_FONT
+                ws[f'D{curr_row}'].fill = SUBHEADER_FILL
+                ws[f'D{curr_row}'].border = THIN_BORDER
+                ws[f'D{curr_row}'].number_format = '"Bs."#,##0.00'
+
+                # --- SECCIÓN 4: DATOS DE PAGO (Derecha de Finanzas) ---
+                # Usamos el espacio a la derecha (Columna F)
+                start_pay = 9
+                ws[f'F{start_pay}'].value = "DATOS DE PAGO"
+                ws[f'F{start_pay}'].font = BOLD_FONT
+                ws[f'F{start_pay}'].fill = SUBHEADER_FILL
+                ws[f'F{start_pay}'].alignment = CENTER
+                ws[f'F{start_pay}'].border = THIN_BORDER
+
+                ws[f'E{start_pay+1}'].value = "Método:"
+                ws[f'F{start_pay+1}'].value = data.get('Método de pago', 'N/A')
+                ws[f'F{start_pay+1}'].font = Font(bold=True, color="0000FF")
+
+                ws[f'E{start_pay+2}'].value = "Referencia:"
+                ws[f'F{start_pay+2}'].value = data.get('Referencia', 'N/A')
+                
+                ws[f'E{start_pay+3}'].value = "Estado Pago:"
+                ws[f'F{start_pay+3}'].value = data.get('Estado del pago', 'N/A')
+                status_color = "008000" if data.get('Estado del pago') == 'Pagado' else "FF0000"
+                ws[f'F{start_pay+3}'].font = Font(bold=True, color=status_color)
+
+                ws[f'E{start_pay+4}'].value = "Tasa Cambio:"
+                ws[f'F{start_pay+4}'].value = data.get('Tasa de cambio', 'N/A')
+
+                # AJUSTE DE ANCHO DE COLUMNAS
+                ws.column_dimensions['A'].width = 2
+                ws.column_dimensions['B'].width = 20
+                ws.column_dimensions['C'].width = 15
+                ws.column_dimensions['D'].width = 15
+                ws.column_dimensions['E'].width = 15
+                ws.column_dimensions['F'].width = 25
+
+                # Guardamos en memoria
                 output = BytesIO()
                 wb.save(output)
                 output.seek(0)
-                return output.read(), f"Orden_Oficial_{order_id}.xlsx"
+                
+                logger.info("✨ Excel 'Pretty' generado con éxito.")
+                return output.read(), f"Ficha_Pedido_{order_id}.xlsx"
 
             except ImportError:
+                # Fallback CSV
                 with open(file_path, "rb") as f: content = f.read()
-                return content, f"Orden_Oficial_{order_id}.csv"
+                return content, f"Orden_{order_id}.csv"
+            except Exception as e:
+                logger.error(f"⚠️ Error maquetando Excel: {e}")
+                # Si falla el maquetado, entregamos el CSV crudo por seguridad
+                with open(file_path, "rb") as f: content = f.read()
+                return content, f"Orden_{order_id}.csv"
 
         except Exception as e:
             logger.error(f"❌ Crash Scraper: {e}")
