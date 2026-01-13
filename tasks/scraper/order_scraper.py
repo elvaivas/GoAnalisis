@@ -139,10 +139,17 @@ class OrderScraper:
             except: pass
             self.driver = None
 
-    def download_official_excel(self, order_id: str):
-        if not self.login(): return None, None
+    def get_official_data_json(self, order_id: str):
+        """
+        Descarga el CSV oficial y lo convierte en una lista de diccionarios (JSON)
+        para mostrar en el Modal de Auditoría.
+        """
+        if not self.login(): return None
         
-        # 1. Limpieza
+        # 1. Limpieza de zona de descarga
+        if not os.path.exists(self.download_dir):
+            os.makedirs(self.download_dir, mode=0o777)
+            
         for f in glob.glob(os.path.join(self.download_dir, "*")):
             try: os.remove(f)
             except: pass
@@ -152,10 +159,9 @@ class OrderScraper:
             self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {'behavior': 'allow', 'downloadPath': self.download_dir})
         except: pass
 
-        logger.info(f"🤖 Robot: Buscando CSV para #{order_id}...")
+        logger.info(f"🤖 Robot: Auditando pedido #{order_id} (Modo JSON)...")
         
         try:
-            # Navegar a la lista
             self.driver.get(f"{self.BASE_URL}/admin/order/list/all")
             
             # 2. FILTRADO
@@ -165,7 +171,7 @@ class OrderScraper:
             search_input.send_keys(Keys.RETURN)
             time.sleep(3) 
 
-            # 3. INTERACCIÓN QUIRÚRGICA
+            # 3. INTERACCIÓN (Botón CSV)
             try:
                 # Abrir Dropdown
                 export_btn = self.driver.find_element(By.CSS_SELECTOR, ".js-hs-unfold-invoker")
@@ -175,11 +181,8 @@ class OrderScraper:
                 # Encontrar botón CSV
                 csv_btn = self.driver.find_element(By.XPATH, "//a[contains(@id, 'export-csv') or contains(text(), 'CSV')]")
                 
-                # --- EL TRUCO MAESTRO (DOM SANITIZATION) ---
-                # Removemos target="_blank" para obligar descarga en la misma pestaña
-                # Esto evita el bloqueo "about:blank#blocked"
+                # Quitar target="_blank"
                 self.driver.execute_script("arguments[0].removeAttribute('target');", csv_btn)
-                logger.info("💉 JS: Atributo target='_blank' eliminado.")
                 
                 # Click nativo
                 self.driver.execute_script("arguments[0].click();", csv_btn)
@@ -188,14 +191,12 @@ class OrderScraper:
             except Exception as e:
                 logger.error(f"❌ Falló clic UI: {e}")
                 self.driver.save_screenshot("/app/static/error_menu_click.png")
-                return None, None
+                return None
             
             # 4. ESPERA ACTIVA
             file_path = None
             for i in range(40):
                 files = os.listdir(self.download_dir)
-                if i % 5 == 0: logger.info(f"⏳ [{i}s] Carpeta: {files}")
-                
                 candidates = [f for f in files if f.endswith(".csv")]
                 if candidates:
                     full_path = os.path.join(self.download_dir, candidates[0])
@@ -206,38 +207,30 @@ class OrderScraper:
             
             if not file_path:
                 logger.error("❌ Timeout descarga CSV.")
-                self.driver.save_screenshot("/app/static/error_timeout.png")
-                return None, None
+                return None
 
-            # 5. PARSEO CSV -> JSON (ESTRUCTURA DE DATOS)
-            logger.info(f"📄 Parseando CSV para API: {file_path}")
+            # 5. PARSEO CSV -> JSON
+            logger.info(f"📄 Convirtiendo a JSON: {file_path}")
             try:
                 import csv
                 data_list = []
                 
-                # Leemos el CSV con codificación utf-8-sig para quitar el BOM
+                # Leer CSV con utf-8-sig para quitar BOM
                 with open(file_path, 'r', encoding='utf-8-sig') as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        # Limpiamos los keys y valores (strip)
+                        # Limpiar espacios en claves y valores
                         clean_row = {k.strip(): v.strip() for k, v in row.items() if k}
                         data_list.append(clean_row)
                 
-                # El CSV del legacy suele repetir filas por cada producto, 
-                # o poner todo en una fila larga. Asumiremos que devuelve una lista de objetos.
-                
-                # Agrupamos productos si vienen en múltiples filas (común en reportes detallados)
-                # O si es una sola fila ancha, devolvemos el primer objeto.
-                
-                # Para simplificar la vista ATC, devolvemos la lista completa.
                 return data_list
 
             except Exception as e:
                 logger.error(f"⚠️ Error parseando CSV: {e}")
                 return None
-        
+
         except Exception as e:
-            logger.error(f"❌ Error crítico Scraper: {e}")
+            logger.error(f"❌ Crash Scraper: {e}")
             self.driver.save_screenshot("/app/static/error_crash.png")
             return None
         finally:
