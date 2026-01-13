@@ -124,12 +124,32 @@ window.toggleOrderDetails = function(rowId) {
         } catch (error) { console.error("Error:", error); return null; }
     }
 
+    // Helper para sacar la fecha local exacta (YYYY-MM-DD) sin conversiones locas a UTC
+    function formatDateLocal(date) {
+        if (!date) return '';
+        const offset = date.getTimezoneOffset();
+        const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+        return localDate.toISOString().split('T')[0];
+    }
+
     function buildUrl(endpoint) {
         const url = new URL(window.location.origin + endpoint);
+        
+        // --- CAMBIO AQUÍ: USAR formatDateLocal ---
         if (datePicker && datePicker.selectedDates.length > 0) {
-            url.searchParams.append('start_date', datePicker.selectedDates[0].toISOString().split('T')[0]);
-            if (datePicker.selectedDates.length > 1) url.searchParams.append('end_date', datePicker.selectedDates[1].toISOString().split('T')[0]);
+            // Usamos nuestra función segura en lugar de .toISOString() directo
+            url.searchParams.append('start_date', formatDateLocal(datePicker.selectedDates[0]));
+            
+            if (datePicker.selectedDates.length > 1) {
+                url.searchParams.append('end_date', formatDateLocal(datePicker.selectedDates[1]));
+            } else {
+                // TRUCO: Si selecciona un solo día (ej: 13 Ene), forzamos start=13 y end=13
+                // Esto arregla el bug de que "no muestra nada" si solo eliges el inicio.
+                url.searchParams.append('end_date', formatDateLocal(datePicker.selectedDates[0]));
+            }
         }
+        // ----------------------------------------
+        
         const storeSelect = document.getElementById('store-filter');
         if (storeSelect && storeSelect.value) url.searchParams.append('store_name', storeSelect.value);
         const searchInput = document.getElementById('search-input');
@@ -773,6 +793,15 @@ window.toggleOrderDetails = function(rowId) {
     datePicker = flatpickr("#date-range-picker", { mode: "range", dateFormat: "Y-m-d", defaultDate: [new Date(), new Date()], onClose: fetchAllData });
     document.getElementById('btn-update')?.addEventListener('click', () => fetchAllData(true));
     document.getElementById('btn-all-history')?.addEventListener('click', () => { datePicker.setDate(["2024-01-01", new Date()]); fetchAllData(); });
+    // --- NUEVO LISTENER PARA BOTÓN HOY ---
+    document.getElementById('btn-today')?.addEventListener('click', () => {
+        const today = new Date();
+        // Seteamos Hoy como Inicio y Fin
+        datePicker.setDate([today, today]);
+        fetchAllData();
+    });
+    // -------------------------------------
+        
     loadStoreFilterOptions();
     
     fetchAllData();
