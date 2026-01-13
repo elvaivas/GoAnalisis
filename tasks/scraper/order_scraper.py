@@ -29,34 +29,38 @@ class OrderScraper:
 
     def setup_driver(self):
         chrome_options = Options()
-        # Opciones vitales para Docker
         chrome_options.add_argument("--headless=new") 
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--ignore-certificate-errors")
         
-        # --- CONFIGURACIÓN DE DESCARGAS (FIX CRÍTICO) ---
+        # --- CONFIGURACIÓN DE DESCARGAS ROBUSTA ---
         self.download_dir = "/tmp/downloads"
         if not os.path.exists(self.download_dir):
-            os.makedirs(self.download_dir)
+            os.makedirs(self.download_dir, mode=0o777) # Permisos totales
 
+        # Preferencias agresivas para evitar popups
         prefs = {
             "download.default_directory": self.download_dir,
             "download.prompt_for_download": False,
             "download.directory_upgrade": True,
-            "safebrowsing.enabled": True,
-            "profile.default_content_settings.popups": 0
+            "safebrowsing.enabled": True,  # Necesario para evitar bloqueos por 'archivo sospechoso'
+            "profile.default_content_settings.popups": 0,
+            "profile.content_settings.exceptions.automatic_downloads.*.setting": 1
         }
         chrome_options.add_experimental_option("prefs", prefs)
         
-        service = Service() # Usa el driver instalado en el sistema
+        service = Service()
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        # --- COMANDO MÁGICO PARA DOCKER HEADLESS ---
-        # Esto obliga a Chrome a permitir descargas aunque no tenga pantalla
-        params = {'behavior': 'allow', 'downloadPath': self.download_dir}
-        self.driver.execute_cdp_cmd('Page.setDownloadBehavior', params)
+        # --- DOBLE SEGURO: CDP COMMAND ---
+        # Enviamos el comando directamente al navegador para asegurar la ruta
+        self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {
+            'behavior': 'allow',
+            'downloadPath': self.download_dir
+        })
 
     def login(self):
         """Login híbrido: Requests (rápido) + Selenium (si es necesario)"""
@@ -94,78 +98,113 @@ class OrderScraper:
 
     def download_official_excel(self, order_id: str):
         """
-        Robot que entra, filtra por ID y descarga el Excel oficial.
+        Estrategia V4 (Blindada):
+        1. Dispara evento JS en el botón CSV (evita bloqueos de Excel).
+        2. Descarga el archivo ligero (~1KB).
+        3. Reconstruye un .xlsx nativo usando openpyxl para entregar calidad.
         """
-        if not self.login():
-            return None, None
+        if not self.login(): return None, None
+        
+        # Limpieza de zona de descarga
+        for f in glob.glob(os.path.join(self.download_dir, "*")):
+            try: os.remove(f)
+            except: pass
 
-        logger.info(f"🤖 Robot: Iniciando descarga para pedido #{order_id}...")
+        logger.info(f"🤖 Robot: Extrayendo CSV para pedido #{order_id}...")
         list_url = f"{self.BASE_URL}/admin/order/list/all"
         
         try:
             self.driver.get(list_url)
             
-            # 1. BUSCAR PEDIDO
+            # 1. FILTRADO
             search_input = WebDriverWait(self.driver, 10).until(
                 EC.visibility_of_element_located((By.ID, "datatableSearch_"))
             )
             search_input.clear()
             search_input.send_keys(order_id)
             search_input.send_keys(Keys.RETURN)
-            
-            # Espera técnica para que la tabla filtre (Importante)
-            time.sleep(3)
+            time.sleep(2) # Pausa para que la tabla reaccione
 
-            # 2. ABRIR MENÚ EXPORTAR
-            # Usamos JS para clicar porque a veces los elementos flotantes tapan el botón
-            export_btn = self.driver.find_element(By.CSS_SELECTOR, ".js-hs-unfold-invoker i.tio-download-to")
-            self.driver.execute_script("arguments[0].click();", export_btn.find_element(By.XPATH, ".."))
-            
-            time.sleep(1)
+            # 2. DESPLIEGUE DEL MENÚ
+            try:
+                # Forzamos el clic vía JS para abrir el dropdown
+                export_btn = self.driver.find_element(By.CSS_SELECTOR, ".js-hs-unfold-invoker")
+                self.driver.execute_script("arguments[0].click();", export_btn)
+                time.sleep(0.5)
+            except: pass
 
-            # 3. CLIC EN EXCEL
-            excel_link = self.driver.find_element(By.ID, "export-excel")
-            # Forzamos el click con JS para evitar errores de "Elemento no interactuable"
-            self.driver.execute_script("arguments[0].click();", excel_link)
+            # 3. DISPARO JS AL BOTÓN CSV
+            # Buscamos el botón por texto o ID y le damos click() nativo
+            try:
+                # XPath robusto: busca un enlace que diga CSV o tenga ID relacionado
+                csv_btn = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, "//a[contains(@id, 'export-csv') or contains(text(), 'CSV')]"))
+                )
+                self.driver.execute_script("arguments[0].click();", csv_btn)
+                logger.info("✅ Clic en exportar CSV realizado.")
+            except Exception as e:
+                logger.error(f"❌ No se pudo clicar el botón CSV: {e}")
+                return None, None
             
-            logger.info("⏳ Esperando descarga...")
-            
-            # 4. BUSCAR EL ARCHIVO (MODIFICADO: 60 segs + Validación de Peso)
+            # 4. ESPERAR ARCHIVO .CSV
             file_path = None
-            # Aumentamos de 20 a 60 intentos (1 minuto de tolerancia)
-            for i in range(60):
-                files = glob.glob(os.path.join(self.download_dir, "*.xlsx"))
-                files = [f for f in files if not f.endswith('.crdownload')]
-                
+            # Esperamos 30s (es un archivo de 1KB, debería bajar en 1s)
+            for i in range(30):
+                files = glob.glob(os.path.join(self.download_dir, "*.csv"))
                 if files:
                     candidate = max(files, key=os.path.getctime)
-                    # VALIDACIÓN CRÍTICA:
-                    # Chrome crea el archivo con 0 bytes al inicio. 
-                    # Esperamos a que tenga al menos 2KB (un Excel real pesa más)
-                    if os.path.exists(candidate) and os.path.getsize(candidate) > 2000:
+                    # Validación mínima de peso (bytes) para asegurar que no está vacío
+                    if os.path.getsize(candidate) > 50: 
                         file_path = candidate
                         break
-                
-                if i % 5 == 0: logger.info(f"⏳ ... esperando archivo ({i}s)")
                 time.sleep(1)
             
-            if file_path and os.path.exists(file_path):
-                logger.info(f"✅ Archivo descargado y validado: {file_path}")
-                with open(file_path, "rb") as f:
-                    content = f.read()
-                
-                # Limpieza inmediata
-                os.remove(file_path)
-                return content, f"Orden_Oficial_{order_id}.xlsx"
-            else:
-                logger.error("❌ Timeout: El archivo no terminó de descargarse o está vacío.")
+            if not file_path:
+                logger.error("❌ El archivo CSV no apareció en el disco.")
                 return None, None
 
+            # 5. CONVERSIÓN A EXCEL (Magia)
+            try:
+                import csv
+                import openpyxl
+                from io import BytesIO
+
+                # Leemos el CSV
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = f"Orden {order_id}"
+                
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    reader = csv.reader(f)
+                    for r_idx, row in enumerate(reader, 1):
+                        for c_idx, value in enumerate(row, 1):
+                            ws.cell(row=r_idx, column=c_idx, value=value)
+                
+                # Ajuste de ancho de columnas (Estético)
+                for column_cells in ws.columns:
+                    length = max(len(str(cell.value) or "") for cell in column_cells)
+                    ws.column_dimensions[column_cells[0].column_letter].width = length + 2
+
+                # Guardamos en memoria
+                output = BytesIO()
+                wb.save(output)
+                output.seek(0)
+                excel_bytes = output.read()
+                
+                logger.info(f"✨ Conversión exitosa. Entregando XLSX ({len(excel_bytes)} bytes).")
+                return excel_bytes, f"Orden_Oficial_{order_id}.xlsx"
+
+            except ImportError:
+                # Si falla openpyxl, entregamos el CSV tal cual
+                logger.warning("⚠️ Librería openpyxl no encontrada. Entregando CSV original.")
+                with open(file_path, "rb") as f:
+                    content = f.read()
+                return content, f"Orden_Oficial_{order_id}.csv"
+
         except Exception as e:
-            logger.error(f"❌ Error crítico en robot descarga: {e}")
+            logger.error(f"❌ Error en proceso descarga/conversión: {e}")
             return None, None
         finally:
-            # Cerramos para liberar memoria
             self.close_driver()
 
     def _parse_duration(self, row_element) -> str:
