@@ -778,7 +778,7 @@ window.toggleOrderDetails = function(rowId) {
     fetchAllData();
     setInterval(fetchAllData, 60000);
 
-    // --- FUNCIÓN AUDITORÍA ATC (NUEVA) ---
+// --- FUNCIÓN AUDITORÍA ATC (NUEVA) ---
     window.openATCModal = async function(dbId, externalId) {
         // 1. Instancia del Modal Bootstrap
         const modalEl = document.getElementById('modalATC');
