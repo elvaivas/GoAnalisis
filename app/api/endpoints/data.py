@@ -132,15 +132,17 @@ def download_legacy_excel(
     """
     scraper = OrderScraper()
     
-    # Ejecutamos la descarga (Esto puede tardar unos 3-5 segundos)
+    # Ejecutamos la descarga
+    # El scraper ya gestiona su propio ciclo de vida (abre y cierra driver internamente)
     file_content, filename = scraper.download_official_excel(order_id)
     
-    # Cerramos sesión del scraper para no dejar conexiones colgadas
-    scraper.session.close()
-
     if not file_content:
-        # Si falla, podrías devolver un error 404 o un JSON
-        return {"error": "No se pudo descargar el archivo del sistema legado."}
+        # Si falla, devolvemos un JSON (pero ya no crasheará con 500)
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=404, 
+            content={"error": "No se pudo descargar el archivo. Verifica la captura de error en /static/error_login.png"}
+        )
 
     # Convertimos bytes a un stream para FastAPI
     stream = io.BytesIO(file_content)

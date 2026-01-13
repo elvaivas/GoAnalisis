@@ -66,7 +66,6 @@ class OrderScraper:
 
     def login(self):
         if self.driver:
-            # Verificar si la sesión sigue viva
             try:
                 if "dashboard" in self.driver.current_url: return True
             except: pass
@@ -74,16 +73,16 @@ class OrderScraper:
             self.setup_driver()
         
         try:
-            logger.info("🔑 Iniciando Login...")
+            logger.info("🔑 Iniciando Login (Timeout aumentado 30s)...")
             self.driver.get(self.LOGIN_URL)
             
-            # Verificar si ya estamos dentro (cookies persistentes)
-            if "dashboard" in self.driver.current_url: 
-                logger.info("✅ Ya logueado.")
-                return True
+            # Verificar si ya estamos dentro
+            if "dashboard" in self.driver.current_url: return True
 
-            # Esperar inputs
-            email_input = WebDriverWait(self.driver, 15).until(EC.presence_of_element_located((By.NAME, "email")))
+            # AUMENTAMOS EL TIMEOUT A 30 SEGUNDOS (Antes 15)
+            email_input = WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located((By.NAME, "email"))
+            )
             email_input.clear()
             email_input.send_keys(settings.GOPHARMA_EMAIL)
             
@@ -92,17 +91,14 @@ class OrderScraper:
             pass_input.send_keys(settings.GOPHARMA_PASSWORD)
             pass_input.send_keys(Keys.RETURN)
             
-            # Esperar redirección al dashboard
-            WebDriverWait(self.driver, 20).until(EC.url_contains("dashboard"))
+            WebDriverWait(self.driver, 30).until(EC.url_contains("dashboard"))
             logger.info("✅ Login Exitoso.")
             return True
 
         except Exception as e:
             logger.error(f"❌ Error Login Selenium: {e}")
-            # FOTO DEL ERROR DE LOGIN (Vital para ver si hay captcha o bloqueo)
             if self.driver:
                 self.driver.save_screenshot("/app/static/error_login.png")
-                logger.info("📸 FOTO Login Error guardada en static/error_login.png")
             self.close_driver()
             return False
 
