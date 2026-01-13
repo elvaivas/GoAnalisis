@@ -25,9 +25,11 @@ class OrderScraper:
         self.BASE_URL = "https://ecosistema.gopharma.com.ve"
         self.LOGIN_URL = f"{self.BASE_URL}/login/admin"
         self.driver = None
-        self.session = requests.Session()
+        self.download_dir = "/tmp/downloads" # Definido centralmente
 
     def setup_driver(self):
+        if self.driver: return
+        
         chrome_options = Options()
         chrome_options.add_argument("--headless=new") 
         chrome_options.add_argument("--no-sandbox")
@@ -35,18 +37,17 @@ class OrderScraper:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--ignore-certificate-errors")
+        chrome_options.add_argument("--disable-popup-blocking") # VITAL para tu caso
         
-        # --- CONFIGURACIÓN DE DESCARGAS ROBUSTA ---
-        self.download_dir = "/tmp/downloads"
         if not os.path.exists(self.download_dir):
-            os.makedirs(self.download_dir, mode=0o777) # Permisos totales
+            os.makedirs(self.download_dir, mode=0o777)
 
-        # Preferencias agresivas para evitar popups
+        # Preferencias agresivas
         prefs = {
             "download.default_directory": self.download_dir,
             "download.prompt_for_download": False,
             "download.directory_upgrade": True,
-            "safebrowsing.enabled": True,  # Necesario para evitar bloqueos por 'archivo sospechoso'
+            "safebrowsing.enabled": True,
             "profile.default_content_settings.popups": 0,
             "profile.content_settings.exceptions.automatic_downloads.*.setting": 1
         }
@@ -55,38 +56,53 @@ class OrderScraper:
         service = Service()
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        # --- DOBLE SEGURO: CDP COMMAND ---
-        # Enviamos el comando directamente al navegador para asegurar la ruta
-        self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {
-            'behavior': 'allow',
-            'downloadPath': self.download_dir
-        })
+        # Comando CDP para asegurar permisos de escritura
+        try:
+            self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {
+                'behavior': 'allow',
+                'downloadPath': self.download_dir
+            })
+        except: pass
 
     def login(self):
-        """Login híbrido: Requests (rápido) + Selenium (si es necesario)"""
-        # (Mantenemos tu lógica de login actual o la básica)
-        # Para descarga de Excel NECESITAMOS Selenium logueado
-        if self.driver: return True
+        if self.driver:
+            # Verificar si la sesión sigue viva
+            try:
+                if "dashboard" in self.driver.current_url: return True
+            except: pass
+        else:
+            self.setup_driver()
         
         try:
-            self.setup_driver()
+            logger.info("🔑 Iniciando Login...")
             self.driver.get(self.LOGIN_URL)
             
-            # Verificar si ya estamos dentro (cookies)
-            if "dashboard" in self.driver.current_url: return True
+            # Verificar si ya estamos dentro (cookies persistentes)
+            if "dashboard" in self.driver.current_url: 
+                logger.info("✅ Ya logueado.")
+                return True
 
-            email_input = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.NAME, "email")))
+            # Esperar inputs
+            email_input = WebDriverWait(self.driver, 15).until(EC.presence_of_element_located((By.NAME, "email")))
+            email_input.clear()
             email_input.send_keys(settings.GOPHARMA_EMAIL)
             
             pass_input = self.driver.find_element(By.NAME, "password")
+            pass_input.clear()
             pass_input.send_keys(settings.GOPHARMA_PASSWORD)
             pass_input.send_keys(Keys.RETURN)
             
-            # Esperar redirección
-            WebDriverWait(self.driver, 15).until(EC.url_contains("dashboard"))
+            # Esperar redirección al dashboard
+            WebDriverWait(self.driver, 20).until(EC.url_contains("dashboard"))
+            logger.info("✅ Login Exitoso.")
             return True
+
         except Exception as e:
-            logger.error(f"Error Login Selenium: {e}")
+            logger.error(f"❌ Error Login Selenium: {e}")
+            # FOTO DEL ERROR DE LOGIN (Vital para ver si hay captcha o bloqueo)
+            if self.driver:
+                self.driver.save_screenshot("/app/static/error_login.png")
+                logger.info("📸 FOTO Login Error guardada en static/error_login.png")
             self.close_driver()
             return False
 
@@ -99,86 +115,75 @@ class OrderScraper:
     def download_official_excel(self, order_id: str):
         if not self.login(): return None, None
         
-        # 1. Limpieza y PREPARACIÓN DE PERMISOS (CRÍTICO)
-        if not os.path.exists(self.download_dir):
-            os.makedirs(self.download_dir, mode=0o777)
-            
-        # Borrar todo lo anterior
+        # 1. Limpieza
         for f in glob.glob(os.path.join(self.download_dir, "*")):
             try: os.remove(f)
             except: pass
 
-        # --- ORDEN SUPREMA A CHROME: PERMITIR DESCARGAS AQUÍ ---
-        # Esto debe ejecutarse con la sesión activa
+        # REFUERZO DE PERMISOS
         try:
-            self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {
-                'behavior': 'allow',
-                'downloadPath': self.download_dir
-            })
-            logger.info(f"🔧 Permisos de descarga forzados en: {self.download_dir}")
-        except Exception as e:
-            logger.error(f"⚠️ Error enviando CDP command: {e}")
+            self.driver.execute_cdp_cmd('Page.setDownloadBehavior', {'behavior': 'allow', 'downloadPath': self.download_dir})
+        except: pass
 
-        logger.info(f"🤖 Robot: Iniciando extracción CSV para #{order_id}...")
-        list_url = f"{self.BASE_URL}/admin/order/list/all"
+        logger.info(f"🤖 Robot: Buscando CSV para #{order_id}...")
         
         try:
-            self.driver.get(list_url)
+            # Navegar a la lista
+            self.driver.get(f"{self.BASE_URL}/admin/order/list/all")
             
             # 2. FILTRADO
-            search_input = WebDriverWait(self.driver, 10).until(
-                EC.visibility_of_element_located((By.ID, "datatableSearch_"))
-            )
+            search_input = WebDriverWait(self.driver, 10).until(EC.visibility_of_element_located((By.ID, "datatableSearch_")))
             search_input.clear()
             search_input.send_keys(order_id)
             search_input.send_keys(Keys.RETURN)
-            time.sleep(3) # Espera generosa para filtrado
+            time.sleep(3) 
 
-            # 3. INTERACCIÓN (Menú -> CSV)
+            # 3. INTERACCIÓN QUIRÚRGICA
             try:
+                # Abrir Dropdown
                 export_btn = self.driver.find_element(By.CSS_SELECTOR, ".js-hs-unfold-invoker")
                 self.driver.execute_script("arguments[0].click();", export_btn)
                 time.sleep(1)
                 
-                # Clic en CSV
+                # Encontrar botón CSV
                 csv_btn = self.driver.find_element(By.XPATH, "//a[contains(@id, 'export-csv') or contains(text(), 'CSV')]")
+                
+                # --- EL TRUCO MAESTRO (DOM SANITIZATION) ---
+                # Removemos target="_blank" para obligar descarga en la misma pestaña
+                # Esto evita el bloqueo "about:blank#blocked"
+                self.driver.execute_script("arguments[0].removeAttribute('target');", csv_btn)
+                logger.info("💉 JS: Atributo target='_blank' eliminado.")
+                
+                # Click nativo
                 self.driver.execute_script("arguments[0].click();", csv_btn)
-                logger.info("✅ Clic en exportar CSV realizado. Esperando archivo...")
+                logger.info("✅ Clic en CSV realizado.")
+                
             except Exception as e:
-                logger.error(f"❌ Falló la interacción con el menú: {e}")
-                # FOTO DEL ERROR
-                self.driver.save_screenshot("/app/static/error_menu.png")
-                logger.info("📸 Screenshot guardado en /app/static/error_menu.png")
+                logger.error(f"❌ Falló clic UI: {e}")
+                self.driver.save_screenshot("/app/static/error_menu_click.png")
                 return None, None
             
-            # 4. BUCLE DE ESPERA FORENSE (Ver qué pasa en el disco)
+            # 4. ESPERA ACTIVA
             file_path = None
-            for i in range(40): # 40 segundos
+            for i in range(40):
                 files = os.listdir(self.download_dir)
+                if i % 5 == 0: logger.info(f"⏳ [{i}s] Carpeta: {files}")
                 
-                # LOG DE DEPURACIÓN CADA 5 SEGUNDOS
-                if i % 5 == 0: 
-                    logger.info(f"⏳ [{i}s] Contenido carpeta: {files}")
-
-                # Buscamos CSV finalizado (que no termine en .crdownload)
                 candidates = [f for f in files if f.endswith(".csv")]
-                
                 if candidates:
-                    # Encontramos uno!
                     full_path = os.path.join(self.download_dir, candidates[0])
-                    # Verificamos que tenga datos (>0 bytes)
-                    if os.path.getsize(full_path) > 0:
+                    if os.path.getsize(full_path) > 50:
                         file_path = full_path
                         break
-                
                 time.sleep(1)
             
             if not file_path:
-                logger.error(f"❌ Timeout. Carpeta final: {os.listdir(self.download_dir)}")
+                logger.error("❌ Timeout descarga CSV.")
+                self.driver.save_screenshot("/app/static/error_timeout.png")
                 return None, None
 
-            # 5. CONVERSIÓN A EXCEL
-            logger.info(f"📄 Procesando archivo: {file_path}")
+            # 5. CONVERSIÓN CSV -> XLSX
+            logger.info(f"📄 Procesando: {file_path}")
             try:
                 import csv
                 import openpyxl
@@ -201,17 +206,15 @@ class OrderScraper:
                 output = BytesIO()
                 wb.save(output)
                 output.seek(0)
-                excel_bytes = output.read()
-                
-                return excel_bytes, f"Orden_Oficial_{order_id}.xlsx"
+                return output.read(), f"Orden_Oficial_{order_id}.xlsx"
 
             except ImportError:
                 with open(file_path, "rb") as f: content = f.read()
                 return content, f"Orden_Oficial_{order_id}.csv"
 
         except Exception as e:
-            logger.error(f"❌ Error crítico: {e}")
-            self.driver.save_screenshot("/app/static/error_critico.png")
+            logger.error(f"❌ Crash Scraper: {e}")
+            self.driver.save_screenshot("/app/static/error_crash.png")
             return None, None
         finally:
             self.close_driver()
