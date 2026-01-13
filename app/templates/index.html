@@ -259,6 +259,64 @@
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-    <script src="/static/js/dashboard.js?v=5.9"></script>
+    <script src="/static/js/dashboard.js?v=6"></script>
+<!-- ========================================== -->
+    <!-- MODAL AUDITORÍA ATC (Estructura Vacía) -->
+    <!-- ========================================== -->
+    <div class="modal fade" id="modalATC" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <!-- Header Azul -->
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold">
+                        <i class="fa-solid fa-file-invoice me-2"></i>Auditoría de Pedido
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <!-- Cuerpo (Aquí el JS inyecta la magia) -->
+                <div class="modal-body p-4" id="modalATCBody">
+                    <!-- Spinner por defecto -->
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2 text-muted">Iniciando...</p>
+                    </div>
+                </div>
+
+                <!-- Footer con Acciones -->
+                <div class="modal-footer bg-light">
+                    <div class="d-flex w-100 justify-content-between align-items-center">
+                        <small class="text-muted fst-italic"><i class="fa-solid fa-robot me-1"></i>Auditado por GoAnalisis Dron</small>
+                        <div>
+                            <!-- Botón de respaldo (Excel Lento) -->
+                            <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="btn-legacy-download">
+                                <i class="fa-solid fa-cloud-arrow-down me-1"></i>Excel Oficial
+                            </button>
+                            <!-- Botón Imprimir -->
+                            <button type="button" class="btn btn-dark btn-sm fw-bold" onclick="window.print()">
+                                <i class="fa-solid fa-print me-1"></i>Imprimir Ficha
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ESTILOS DE IMPRESIÓN (Para que salga limpia la hoja) -->
+    <style>
+        @media print {
+            body * { visibility: hidden; } /* Ocultar todo el sitio */
+            #modalATC, #modalATC * { visibility: visible; } /* Mostrar solo el modal */
+            #modalATC { 
+                position: absolute; 
+                left: 0; top: 0; 
+                width: 100%; margin: 0; padding: 0; 
+                background: white !important;
+            }
+            .modal-header, .modal-footer, .btn-close { display: none !important; } /* Ocultar botones al imprimir */
+            .modal-body { padding: 0 !important; }
+        }
+    </style>
 </body>
 </html>
