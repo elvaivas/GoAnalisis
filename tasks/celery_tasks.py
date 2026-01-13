@@ -325,7 +325,7 @@ def enrich_missing_data(self):
                 time_threshold = datetime.utcnow() - timedelta(hours=6)
                 
                 zombies = db.query(Order).filter(
-                    Order.current_status.in_(['pending', 'processing', 'confirmed', 'driver_assigned']),
+                    Order.current_status.in_(['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way']),
                     Order.created_at < time_threshold
                 ).limit(limit).all()
                 

@@ -130,32 +130,35 @@ class OrderScraper:
             
             logger.info("⏳ Esperando descarga...")
             
-            # 4. BUSCAR EL ARCHIVO
+            # 4. BUSCAR EL ARCHIVO (MODIFICADO: 60 segs + Validación de Peso)
             file_path = None
-            # Esperamos hasta 20 segundos
-            for _ in range(20):
-                # Buscamos archivos .xlsx recientes
+            # Aumentamos de 20 a 60 intentos (1 minuto de tolerancia)
+            for i in range(60):
                 files = glob.glob(os.path.join(self.download_dir, "*.xlsx"))
-                # Filtramos archivos temporales de descarga (.crdownload)
                 files = [f for f in files if not f.endswith('.crdownload')]
                 
                 if files:
-                    file_path = max(files, key=os.path.getctime)
-                    # Verificar que tenga tamaño > 0
-                    if os.path.getsize(file_path) > 0:
+                    candidate = max(files, key=os.path.getctime)
+                    # VALIDACIÓN CRÍTICA:
+                    # Chrome crea el archivo con 0 bytes al inicio. 
+                    # Esperamos a que tenga al menos 2KB (un Excel real pesa más)
+                    if os.path.exists(candidate) and os.path.getsize(candidate) > 2000:
+                        file_path = candidate
                         break
+                
+                if i % 5 == 0: logger.info(f"⏳ ... esperando archivo ({i}s)")
                 time.sleep(1)
             
             if file_path and os.path.exists(file_path):
-                logger.info(f"✅ Archivo encontrado: {file_path}")
+                logger.info(f"✅ Archivo descargado y validado: {file_path}")
                 with open(file_path, "rb") as f:
                     content = f.read()
                 
-                # Limpieza
+                # Limpieza inmediata
                 os.remove(file_path)
                 return content, f"Orden_Oficial_{order_id}.xlsx"
             else:
-                logger.error("❌ Timeout: El archivo no apareció en la carpeta.")
+                logger.error("❌ Timeout: El archivo no terminó de descargarse o está vacío.")
                 return None, None
 
         except Exception as e:
