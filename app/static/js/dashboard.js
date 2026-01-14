@@ -843,18 +843,34 @@ window.toggleOrderDetails = function(rowId) {
             // Tomamos la primera fila (Row 0)
             const data = csvData[0];
             
-            // --- HELPERS DE FORMATO ---
-            // Limpia "14,09" -> 14.09
+            // --- HELPERS DE FORMATO (CORREGIDO PARA MONEDA VENEZOLANA) ---
+            
+            // Transforma "1.543,70" -> 1543.70 (Float numérico)
             const parseM = (val) => {
                 if (!val) return 0.00;
-                // Si viene como string, reemplazamos coma por punto
-                let v = String(val).replace(',', '.');
+                let v = String(val).trim();
+                
+                // 1. Si no tiene comas ni puntos, es un número simple
+                if (v.indexOf(',') === -1 && v.indexOf('.') === -1) return parseFloat(v);
+
+                // 2. Lógica para formato "1.543,70" (VED/EUR)
+                // Eliminamos TODOS los puntos (separadores de miles)
+                v = v.replace(/\./g, '');
+                // Reemplazamos la coma por punto (separador decimal JS)
+                v = v.replace(',', '.');
+                
                 return parseFloat(v) || 0.00;
             };
             
+            // Formateador visual: Devuelve string bonito "1.543,70"
             const fmt = (val, symbol="$") => {
                  const n = parseM(val);
-                 return `${symbol}${n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                 
+                 // Usamos 'es-VE' para que ponga puntos en miles y coma en decimales
+                 // Forzamos siempre 2 decimales
+                 const strVal = n.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                 
+                 return `${symbol}${strVal}`;
             };
 
             // --- RENDERIZADO DE LA FICHA ---
