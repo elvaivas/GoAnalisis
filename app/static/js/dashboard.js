@@ -342,12 +342,47 @@ window.toggleOrderDetails = function(rowId) {
 
     function startLiveTimers() {
         if (ordersInterval) clearInterval(ordersInterval);
+        
+        // Función auxiliar para formatear segundos a HH:MM:SS
+        const formatTime = (seconds) => {
+            if (seconds < 0) return "0s";
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            if (h > 0) return `${h}h ${m}m ${s}s`;
+            return `${m}m ${s}s`;
+        };
+
         ordersInterval = setInterval(() => {
             const now = new Date();
+            
             document.querySelectorAll('.live-timer-container').forEach(el => {
-                const totalSeconds = Math.floor((now - new Date(el.dataset.created)) / 1000);
-                const h = Math.floor(totalSeconds / 3600), m = Math.floor((totalSeconds % 3600) / 60), s = Math.floor(totalSeconds % 60);
-                el.querySelector('.timer-total').textContent = h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
+                // 1. CÁLCULO TIEMPO TOTAL (Negro Grande)
+                // Usamos dataset.created
+                const createdDate = new Date(el.dataset.created);
+                const totalSeconds = Math.floor((now - createdDate) / 1000);
+                
+                const totalEl = el.querySelector('.timer-total');
+                if (totalEl) totalEl.textContent = formatTime(totalSeconds);
+
+                // 2. CÁLCULO TIEMPO DE FASE (Azul Pequeño)
+                // Usamos dataset.stateStart
+                const stateStartDate = new Date(el.dataset.stateStart);
+                const phaseEl = el.querySelector('.timer-state');
+                
+                if (phaseEl && !isNaN(stateStartDate)) {
+                    const phaseSeconds = Math.floor((now - stateStartDate) / 1000);
+                    phaseEl.textContent = formatTime(phaseSeconds);
+                    
+                    // Alerta visual: Si una fase dura más de 20 min, poner en rojo
+                    if (phaseSeconds > 1200) { 
+                        phaseEl.classList.remove('text-primary');
+                        phaseEl.classList.add('text-danger', 'fw-bold');
+                    } else {
+                        phaseEl.classList.remove('text-danger', 'fw-bold');
+                        phaseEl.classList.add('text-primary');
+                    }
+                }
             });
         }, 1000);
     }
