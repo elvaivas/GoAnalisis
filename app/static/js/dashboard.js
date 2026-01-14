@@ -842,6 +842,26 @@ window.toggleOrderDetails = function(rowId) {
 
             // Tomamos la primera fila (Row 0)
             const data = csvData[0];
+
+            // const data = csvData[0]; <--- ESTA LÍNEA YA EXISTE
+
+            // --- LÓGICA DE NOMBRE DE ARCHIVO PDF ---
+            const originalTitle = document.title; // Guardamos "GoAnalisis Pro"
+            
+            // Construimos el nombre: "#ID - Cliente - MetodoPago"
+            // Usamos una regex simple para quitar caracteres prohibidos en nombres de archivo (/ \ : *)
+            const cleanName = (data['Nombre del cliente'] || 'Cliente').replace(/[\\/:*?"<>|]/g, '');
+            const cleanMethod = (data['Método de pago'] || 'Pago').replace(/[\\/:*?"<>|]/g, '');
+            
+            // Título Final
+            const printTitle = `Pedido #${data['ID del pedido']} - ${cleanName} - ${cleanMethod}`;
+            document.title = printTitle;
+
+            // DETECTAR CIERRE DEL MODAL PARA RESTAURAR TÍTULO
+            modalEl.addEventListener('hidden.bs.modal', function () {
+                document.title = originalTitle;
+            }, { once: true }); // {once: true} es vital para no acumular eventos
+            // ---------------------------------------
             
             // --- HELPERS DE FORMATO (CORREGIDO PARA MONEDA VENEZOLANA) ---
             
