@@ -177,9 +177,23 @@ def process_drone_data(db, data: dict):
         cust_lat, cust_lng = data.get('customer_lat'), data.get('customer_lng')
         if cust_lat and store and store.latitude: dist_km = calculate_distance_km(store.latitude, store.longitude, cust_lat, cust_lng)
         
-        order_type = "Delivery"
-        if db_status == "canceled": order_type = None
-        elif dist_km < 0.1 and dist_km > 0: order_type = "Pickup"
+        # --- LÓGICA DE CLASIFICACIÓN LOGÍSTICA ---
+        order_type = "Delivery" # Por defecto
+        
+        # 1. Cancelados no tienen tipo activo
+        if db_status == "canceled": 
+            order_type = None
+            
+        # 2. Criterio de Distancia (Cliente en la tienda)
+        # Subimos tolerancia a 0.2km por errores de GPS
+        elif dist_km < 0.2 and dist_km >= 0: 
+            order_type = "Pickup"
+            
+        # 3. CRITERIO DE ORO (Heurística ATC):
+        # Si está entregado y no hay chofer, nadie lo llevó -> El cliente lo buscó.
+        elif db_status == "delivered" and (not driver or driver.name == "No Asignado" or driver.name == "N/A"):
+            order_type = "Pickup"
+        # -----------------------------------------
 
         c_reason = normalize_cancellation_reason(data.get('cancellation_reason'))
 
