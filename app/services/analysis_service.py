@@ -157,6 +157,80 @@ def calculate_bottlenecks(db: Session, start_date: Optional[date] = None, end_da
     if not logs: return {"delivery": [], "pickup": []}
 
     metrics = {
+        'Delivery': {'pending':[], 'processing':[], 'confirmed':[], 'driver_assigned':[], 'on_the_way':[], 'delivered_life_time':[], 'canceled_life_time':[]},
+        'Pickup': {'pending':[], 'processing':[], 'canceled_life_time':[]}
+    }
+
+    orders_data = {}
+    for log in logs:
+        if log.order_id not in orders_data: orders_data[log.order_id] = {'created_at': log.created_at, 'type': log.order_type, 'current_status': log.current_status, 'logs': []}
+        orders_data[log.order_id]['logs'].append(log)
+
+    for oid, data in orders_data.items():
+        o_created, o_type, o_status, o_logs = data['created_at'], data['type'], data['current_status'], data['logs']
+        
+        # 1. Decidir tipo de pedido (Si no está definido, forzamos Delivery)
+        o_type = o_type or 'Delivery'
+        if o_type not in metrics: continue # Evitar errores si el tipo no existe
+        target = metrics[o_type] # AHORA USAMOS PICKUP/DELIVERY
+
+        # 2. Cancelados (Separados)
+        if o_status == 'canceled':
+            cancel_log = next((l for l in reversed(o_logs) if l.status == 'canceled'), None)
+            if cancel_log:
+                life = (cancel_log.timestamp - o_created).total_seconds()
+                if 0 < life < 172800: target['canceled_life_time'].append(life)
+            continue
+
+        # 3. Calcular tiempos por estado
+        for i in range(len(o_logs) - 1):
+            curr, nxt = o_logs[i], o_logs[i+1]
+            if curr.status in target:
+                delta = (nxt.timestamp - curr.timestamp).total_seconds()
+                if 10 < delta < MAX_STEP_SEC:
+                    target[curr.status].append(delta)
+    
+    # 4. Construir las barras de tiempo
+    def build_flow(metric_dict):
+        res = []
+        total = 0.0
+        
+        # Orden de estados (Importante)
+        steps = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way']
+        
+        for step in steps:
+            if step in metric_dict and metric_dict[step]:
+                avg = sum(metric_dict[step]) / len(metric_dict[step])
+                res.append({"status": step, "avg_duration_seconds": avg})
+                total += avg
+        
+        # Barra TOTAL Entregado (Calculada)
+        if total > 0: res.append({"status": "delivered", "avg_duration_seconds": total})
+
+        # Barra Cancelado (Promedio, por separado)
+        if metric_dict.get('canceled_life_time'):
+            avg_can = sum(metric_dict['canceled_life_time']) / len(metric_dict['canceled_life_time'])
+            res.append({"status": "canceled", "avg_duration_seconds": avg_can})
+        
+        return res
+
+    return {
+        "delivery": build_flow(metrics['Delivery']),
+        "pickup": build_flow(metrics['Pickup'])
+    } 
+
+    query = db.query(OrderStatusLog.order_id, OrderStatusLog.status, OrderStatusLog.timestamp, Order.created_at, Order.order_type, Order.current_status).join(Order, OrderStatusLog.order_id == Order.id)
+    local_date = func.date(func.timezone('America/Caracas', func.timezone('UTC', Order.created_at)))
+
+    if start_date: query = query.filter(local_date >= start_date)
+    if end_date: query = query.filter(local_date <= end_date)
+    if store_name: query = query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
+    query = apply_search(query, search_query)
+
+    logs = query.order_by(OrderStatusLog.order_id, OrderStatusLog.timestamp).all()
+    if not logs: return {"delivery": [], "pickup": []}
+
+    metrics = {
         'Delivery': {'pending':[], 'processing':[], 'confirmed':[], 'driver_assigned':[], 'on_the_way':[], 'canceled_life_time':[]},
         'Pickup': {'pending':[], 'processing':[], 'canceled_life_time':[]}
     }
