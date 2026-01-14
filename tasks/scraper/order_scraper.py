@@ -21,11 +21,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class OrderScraper:
-    def __init__(self):
+    ddef __init__(self):
         self.BASE_URL = "https://ecosistema.gopharma.com.ve"
         self.LOGIN_URL = f"{self.BASE_URL}/login/admin"
+        # --- AGREGAR ESTA LÍNEA ---
+        self.orders_url = f"{self.BASE_URL}/admin/order/list/all" 
+        # --------------------------
         self.driver = None
-        self.download_dir = "/tmp/downloads" # Definido centralmente
+        self.download_dir = "/tmp/downloads"
 
     def setup_driver(self):
         if self.driver: return
