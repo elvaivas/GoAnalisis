@@ -47,4 +47,11 @@ celery_app.conf.beat_schedule = {
         'schedule': crontab(hour=3, minute=0),
         'kwargs': {'limit_pages': 10} 
     },
+
+    # 4. AUTOREPARACIÓN DE SISTEMA
+    # 4:00 AM todos los días
+    'nightly-healing': {
+        'task': 'tasks.maintenance.nightly_deep_clean',
+        'schedule': crontab(hour=4, minute=0), 
+    },
 }
