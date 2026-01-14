@@ -222,7 +222,16 @@ def process_drone_data(db, data: dict):
             if c_reason: order.cancellation_reason = c_reason
             
             if minutes_calc: order.delivery_time_minutes = minutes_calc
-            if cust_lat: order.latitude=cust_lat; order.longitude=cust_lng; order.distance_km=dist_km; order.order_type=order_type
+            
+            # 1. Actualizamos Coordenadas solo si existen
+            if cust_lat: 
+                order.latitude=cust_lat; order.longitude=cust_lng; order.distance_km=dist_km
+            
+            # 2. Actualizamos el Tipo SIEMPRE (Liberado del IF anterior)
+            # Esto garantiza que la lógica de "Sin Chofer = Pickup" se guarde
+            if order_type:
+                order.order_type = order_type
+
             if driver: order.driver_id = driver.id
         
         # PRODUCTOS
