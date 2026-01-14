@@ -66,10 +66,27 @@ def nightly_deep_clean(self):
                     # 3. Tiene monto 0.
                     
                     needs_repair = False
-                    if not local_order: needs_repair = True
-                    elif local_order.current_status not in ['delivered', 'canceled']: needs_repair = True
-                    elif local_order.total_amount == 0: needs_repair = True
                     
+                    # 1. No existe en DB
+                    if not local_order: 
+                        needs_repair = True
+                    
+                    # 2. Zombie: No está finalizado (delivered/canceled)
+                    elif local_order.current_status not in ['delivered', 'canceled']: 
+                        needs_repair = True
+                    
+                    # 3. Datos Incompletos: Monto cero
+                    elif local_order.total_amount == 0: 
+                        needs_repair = True
+                        
+                    # 4. NUEVO: INCOHERENCIA LOGÍSTICA (Falso Delivery)
+                    # Si dice "Entregado" y "Delivery", PERO no tiene chofer asignado -> Es un Pickup mal clasificado
+                    elif (local_order.current_status == 'delivered' and 
+                          local_order.order_type == 'Delivery' and 
+                          local_order.driver_id is None):
+                        needs_repair = True
+                        logger.info(f"🧐 Detectada Incoherencia en #{eid}: Delivery sin Chofer. Forzando corrección...")
+
                     if needs_repair:
                         count += 1
                         logger.info(f"🚑 Reparando Pedido #{eid}...")
