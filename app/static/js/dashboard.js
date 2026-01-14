@@ -343,7 +343,6 @@ window.toggleOrderDetails = function(rowId) {
     function startLiveTimers() {
         if (ordersInterval) clearInterval(ordersInterval);
         
-        // Función auxiliar para formatear segundos a HH:MM:SS
         const formatTime = (seconds) => {
             if (seconds < 0) return "0s";
             const h = Math.floor(seconds / 3600);
@@ -357,30 +356,38 @@ window.toggleOrderDetails = function(rowId) {
             const now = new Date();
             
             document.querySelectorAll('.live-timer-container').forEach(el => {
-                // 1. CÁLCULO TIEMPO TOTAL (Negro Grande)
-                // Usamos dataset.created
+                // 1. TIEMPO TOTAL (Viene en Local, se usa directo)
+                // data-created="2026-01-14T11:19:00" -> Navegador asume Local
                 const createdDate = new Date(el.dataset.created);
                 const totalSeconds = Math.floor((now - createdDate) / 1000);
                 
                 const totalEl = el.querySelector('.timer-total');
                 if (totalEl) totalEl.textContent = formatTime(totalSeconds);
 
-                // 2. CÁLCULO TIEMPO DE FASE (Azul Pequeño)
-                // Usamos dataset.stateStart
-                const stateStartDate = new Date(el.dataset.stateStart);
-                const phaseEl = el.querySelector('.timer-state');
+                // 2. TIEMPO DE FASE (Viene en UTC, forzamos conversión)
+                // data-state-start="2026-01-14T15:57..." -> Es UTC, hay que decirle al navegador
+                let stateStr = el.dataset.stateStart;
                 
-                if (phaseEl && !isNaN(stateStartDate)) {
-                    const phaseSeconds = Math.floor((now - stateStartDate) / 1000);
-                    phaseEl.textContent = formatTime(phaseSeconds);
+                if (stateStr) {
+                    // TRUCO: Si no termina en 'Z', se la ponemos.
+                    // Esto obliga a JS a tratarlo como UTC y restarle las 4 horas de VET
+                    if (!stateStr.endsWith('Z')) stateStr += 'Z';
                     
-                    // Alerta visual: Si una fase dura más de 20 min, poner en rojo
-                    if (phaseSeconds > 1200) { 
-                        phaseEl.classList.remove('text-primary');
-                        phaseEl.classList.add('text-danger', 'fw-bold');
-                    } else {
-                        phaseEl.classList.remove('text-danger', 'fw-bold');
-                        phaseEl.classList.add('text-primary');
+                    const stateStartDate = new Date(stateStr);
+                    const phaseEl = el.querySelector('.timer-state');
+                    
+                    if (phaseEl && !isNaN(stateStartDate)) {
+                        const phaseSeconds = Math.floor((now - stateStartDate) / 1000);
+                        phaseEl.textContent = formatTime(phaseSeconds);
+                        
+                        // Alerta Roja > 20 min
+                        if (phaseSeconds > 1200) { 
+                            phaseEl.classList.remove('text-primary');
+                            phaseEl.classList.add('text-danger', 'fw-bold');
+                        } else {
+                            phaseEl.classList.remove('text-danger', 'fw-bold');
+                            phaseEl.classList.add('text-primary');
+                        }
                     }
                 }
             });
