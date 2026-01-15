@@ -116,12 +116,35 @@ window.toggleOrderDetails = function(rowId) {
         });
     }
 
-    async function authFetch(url) {
+    async function authFetch(url, options = {}) { // <--- Recibe URL y Opciones
         try {
-            const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
-            if (response.status === 401) { localStorage.clear(); window.location.href = '/login'; return null; }
+            // Combinamos los headers de autenticación con las opciones que enviamos (POST, etc)
+            const defaultHeaders = { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+
+            // Mezclar headers por si enviamos otros custom
+            const finalOptions = {
+                ...options,
+                headers: {
+                    ...defaultHeaders,
+                    ...(options.headers || {})
+                }
+            };
+
+            const response = await fetch(url, finalOptions); // <--- Ahora sí pasa el POST
+            
+            if (response.status === 401) { 
+                localStorage.clear(); 
+                window.location.href = '/login'; 
+                return null; 
+            }
             return response;
-        } catch (error) { console.error("Error:", error); return null; }
+        } catch (error) { 
+            console.error("Error en authFetch:", error); 
+            return null; 
+        }
     }
 
     // Helper para sacar la fecha local exacta (YYYY-MM-DD) sin conversiones locas a UTC
