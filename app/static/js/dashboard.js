@@ -985,7 +985,13 @@ window.toggleOrderDetails = function(rowId) {
                                         let multiplier = 1;
                                         let badge = '';
                                         
-                                        if (methodUsed === 'exact' || methodUsed === 'all') {
+                                        // --- REGLA MAESTRA DEL CERO ---
+                                        if (item.unit_price === 0) {
+                                            multiplier = 1; // El cero se queda quieto
+                                            badge = '<span class="badge bg-light text-secondary border ms-1" style="font-size:0.6em">Obsequio</span>';
+                                        } 
+                                        // --- LÓGICA DE IMPUESTOS NORMAL ---
+                                        else if (methodUsed === 'exact' || methodUsed === 'all') {
                                             if (itemTaxMap[idx] === 1) {
                                                 multiplier = 1.16;
                                                 badge = '<span class="badge bg-secondary ms-1" style="font-size:0.6em">+IVA</span>';
