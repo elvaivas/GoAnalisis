@@ -230,20 +230,45 @@ window.toggleOrderDetails = function(rowId) {
             // 1. DEFINICIÓN DE VARIABLES
             // =========================================================
 
-            // A. Estado
+            // =========================================================
+            // A. ESTADO (PALETA DE COLORES SEMÁNTICA)
+            // =========================================================
             let statusBadge = '';
             let isFinal = false;
-            if (o.current_status === 'delivered') {
-                statusBadge = '<span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">ENTREGADO</span>';
+
+            // Configuración Visual por Estado
+            const statusConfig = {
+                'pending':         { color: 'secondary', icon: 'fa-clock',               label: 'Pendiente' },
+                'processing':      { color: 'warning',   icon: 'fa-file-invoice-dollar', label: 'Facturando' },
+                'confirmed':       { color: 'primary',   icon: 'fa-tower-broadcast',     label: 'Solicitando' },
+                'driver_assigned': { color: 'dark',      icon: 'fa-user-check',          label: 'Asignado' },
+                'on_the_way':      { color: 'info',      icon: 'fa-motorcycle',          label: 'En Camino' },
+                'delivered':       { color: 'success',   icon: 'fa-check',               label: 'ENTREGADO' },
+                'canceled':        { color: 'danger',    icon: 'fa-ban',                 label: 'CANCELADO' }
+            };
+
+            // Obtener config o default
+            const st = statusConfig[o.current_status] || { color: 'light', icon: 'fa-question', label: o.current_status };
+
+            // Determinamos si es estado final (para el cronómetro)
+            if (o.current_status === 'delivered' || o.current_status === 'canceled') {
                 isFinal = true;
-            } else if (o.current_status === 'canceled') {
-                statusBadge = '<span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">CANCELADO</span>';
-                isFinal = true;
-            } else if (o.current_status === 'on_the_way') {
-                statusBadge = '<span class="badge bg-info text-white animate-pulse">EN CAMINO</span>';
+            }
+
+            // Generamos el HTML del Badge
+            if (o.current_status === 'on_the_way') {
+                // Estilo especial PULSE para "En Camino"
+                statusBadge = `<span class="badge bg-info text-white animate-pulse shadow-sm">
+                                <i class="fa-solid ${st.icon} me-1"></i>${st.label}
+                               </span>`;
             } else {
-                const trans = statusTranslations[o.current_status] || o.current_status.toUpperCase();
-                statusBadge = `<span class="badge bg-secondary bg-opacity-25 text-dark">${trans}</span>`;
+                // Estilo Moderno (Fondo suave + Borde)
+                // text-warning-emphasis es para que el amarillo se lea bien sobre blanco
+                const textColor = st.color === 'warning' ? 'text-warning-emphasis' : `text-${st.color}`;
+                
+                statusBadge = `<span class="badge bg-${st.color} bg-opacity-10 ${textColor} border border-${st.color} border-opacity-25">
+                                <i class="fa-solid ${st.icon} me-1"></i>${st.label}
+                               </span>`;
             }
 
             // B. Lealtad (TIER BADGE)
