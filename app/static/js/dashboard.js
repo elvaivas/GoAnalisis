@@ -884,17 +884,35 @@ window.toggleOrderDetails = function(rowId) {
             
             modalEl.addEventListener('hidden.bs.modal', () => { document.title = originalTitle; }, { once: true });
 
-            // 3. HELPERS DE MONEDA (Blindados para VED)
+            // 3. HELPERS DE MONEDA (PARSER HÍBRIDO INTELIGENTE)
             const parseM = (val) => {
                 if (!val) return 0.00;
                 if (typeof val === 'number') return val;
-                // Formato "1.543,70" -> Quitar puntos, cambiar coma por punto
-                let v = String(val).trim().replace(/\./g, '').replace(',', '.');
+                
+                let v = String(val).trim();
+                
+                // DETECCIÓN DE FORMATO:
+                
+                // CASO A: Formato VED/EUR -> "1.500,50" (La coma está al final o después del último punto)
+                if (v.includes(',') && (v.lastIndexOf(',') > v.lastIndexOf('.'))) {
+                    v = v.replace(/\./g, ''); // Quitar puntos de miles
+                    v = v.replace(',', '.');  // Cambiar coma decimal a punto
+                }
+                
+                // CASO B: Formato USA -> "1,500.50" (El punto está al final o después de la última coma)
+                else if (v.includes('.') && (v.lastIndexOf('.') > v.lastIndexOf(','))) {
+                    v = v.replace(/,/g, ''); // Quitar comas de miles
+                    // El punto ya es decimal, se deja quieto
+                }
+                
+                // CASO C: Solo números planos -> "339"
+                // (parseFloat lo maneja nativo)
+
                 return parseFloat(v) || 0.00;
             };
 
             const fmt = (n, symbol="$") => {
-                 // Formato visual español Venezuela
+                 // Para visualizar, SIEMPRE usamos formato Venezuela (1.500,00)
                  return `${symbol}${n.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             };
 
