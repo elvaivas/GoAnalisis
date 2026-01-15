@@ -9,6 +9,8 @@ from tasks.scraper.order_scraper import OrderScraper
 from app.api import deps
 from app.db.base import Order, OrderStatusLog, Store, Customer, User, Driver, OrderItem
 from app.services import analysis_service
+from tasks.scraper.drone_scraper import DroneScraper
+from tasks.celery_tasks import process_drone_data
 
 router = APIRouter()
 
@@ -191,3 +193,33 @@ def get_live_audit_data(
         "legacy": legacy_data,
         "items": items_response
     }
+
+@router.post("/orders/{order_id}/resync", summary="Sincronización Manual Quirúrgica")
+def resync_single_order(
+    order_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Fuerza una actualización inmediata de un solo pedido desde el Legacy.
+    Útil para corregir nombres de clientes o montos tras una edición manual.
+    NO borra logs de tiempos (Bottlenecks).
+    """
+    drone = DroneScraper()
+    
+    if not drone.login():
+        return JSONResponse(status_code=500, content={"error": "El Dron no pudo iniciar sesión."})
+    
+    try:
+        # 1. Scrapeo en vivo
+        data = drone.scrape_detail(order_id, mode='full')
+        
+        # 2. Guardado seguro (La función process_drone_data respeta el historial)
+        process_drone_data(db, data)
+        
+        drone.close_driver()
+        return {"status": "success", "message": f"Pedido #{order_id} sincronizado."}
+        
+    except Exception as e:
+        drone.close_driver()
+        return JSONResponse(status_code=500, content={"error": str(e)})

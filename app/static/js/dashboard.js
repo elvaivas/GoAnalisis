@@ -279,7 +279,15 @@ window.toggleOrderDetails = function(rowId) {
                         <div class="d-flex align-items-center">
                             <i id="icon-${o.id}" class="fa-solid fa-chevron-right text-muted me-2 small" style="width: 15px; transition: transform 0.2s;"></i>
                             <div>
-                                <div class="fw-bold text-dark mb-1">#${o.external_id}</div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="fw-bold text-dark">#${o.external_id}</div>
+                                    <!-- BOTÓN RESYNC -->
+                                    <button class="btn btn-link p-0 text-muted btn-resync" 
+                                            onclick="event.stopPropagation(); resyncOrder('${o.external_id}', this)" 
+                                            title="Sincronizar datos de este pedido ahora">
+                                        <i class="fa-solid fa-arrows-rotate small"></i>
+                                    </button>
+                                </div>
                                 <span class="badge bg-light text-secondary border fw-normal" style="font-size:0.7rem">${o.store_name}</span>
                             </div>
                         </div>
@@ -848,6 +856,41 @@ window.toggleOrderDetails = function(rowId) {
     
     fetchAllData();
     setInterval(fetchAllData, 60000);
+// --- FUNCIÓN RESYNC MANUAL ---
+    window.resyncOrder = async function(externalId, btnElement) {
+        // 1. Efecto Visual de Carga (Spinning)
+        const icon = btnElement.querySelector('i');
+        icon.classList.add('fa-spin', 'text-primary');
+        btnElement.disabled = true;
+
+        try {
+            // 2. Llamada al Backend
+            const res = await authFetch(`/api/data/orders/${externalId}/resync`, {
+                method: 'POST' // Es una acción, usamos POST
+            });
+
+            if (res && res.ok) {
+                // 3. Éxito: Feedback y Recarga suave
+                icon.classList.remove('text-primary');
+                icon.classList.add('text-success');
+                
+                // Pequeña pausa para que el usuario vea el verde
+                setTimeout(() => {
+                    fetchAllData(); // Recargamos la tabla para ver los cambios
+                }, 500);
+            } else {
+                alert("Error al sincronizar. Revise los logs.");
+                icon.classList.remove('fa-spin', 'text-primary');
+                icon.classList.add('text-danger');
+                btnElement.disabled = false;
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error de conexión.");
+            icon.classList.remove('fa-spin');
+            btnElement.disabled = false;
+        }
+    };
 
 // --- FUNCIÓN AUDITORÍA ATC (V4 - INTEGRADA Y BLINDADA) ---
     window.openATCModal = async function(dbId, externalId) {
