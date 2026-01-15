@@ -207,6 +207,9 @@ window.toggleOrderDetails = function(rowId) {
         if (!res) return;
         const data = await res.json();
         
+        // Guardamos data global para el Modal ATC
+        currentOrdersData = data;
+        
         const tableBody = document.getElementById('recent-orders-table-body');
         if (!tableBody) return;
         
@@ -223,8 +226,10 @@ window.toggleOrderDetails = function(rowId) {
         let html = '';
         
         data.forEach(o => {
+            // =========================================================
             // 1. DEFINICIÓN DE VARIABLES
-            
+            // =========================================================
+
             // A. Estado
             let statusBadge = '';
             let isFinal = false;
@@ -241,18 +246,83 @@ window.toggleOrderDetails = function(rowId) {
                 statusBadge = `<span class="badge bg-secondary bg-opacity-25 text-dark">${trans}</span>`;
             }
 
-            // B. Botón Resync (SOLO ADMIN)
+            // B. Lealtad (TIER BADGE)
+            let tierBadge = '<span class="badge rounded-pill bg-light text-muted border" style="font-size:0.6rem">Nuevo</span>';
+            const count = o.customer_orders_count || 1;
+            if (count > 10) tierBadge = '<span class="badge rounded-pill bg-warning text-dark border border-warning" style="font-size:0.6rem">VIP</span>';
+            else if (count > 1) tierBadge = '<span class="badge rounded-pill bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">Frecuente</span>';
+
+            // C. Botón Resync (SOLO ADMIN)
             const userRole = localStorage.getItem('role');
             let resyncButtonHtml = '';
             
-            // VALIDACIÓN ESTRICTA DE ROL
             if (userRole === 'admin') {
                 resyncButtonHtml = `
                     <button class="btn btn-link p-0 text-muted btn-resync ms-2" 
                             onclick="event.stopPropagation(); resyncOrder('${o.external_id}', this)" 
                             title="Sincronizar datos (Solo Admin)">
                         <i class="fa-solid fa-arrows-rotate small"></i>
-                                    </button>
+                    </button>
+                `;
+            }
+
+            // D. Tiempo
+            let timeHtml = '';
+            if (isFinal) {
+                const finalTime = cleanFinalTime(o.duration_text);
+                timeHtml = `<div class="fw-bold text-dark fs-6">${finalTime}</div><small class="text-muted" style="font-size:0.7rem">Tiempo Total</small>`;
+            } else {
+                // Notar data-state-start para el cronómetro de fase
+                timeHtml = `
+                    <div class="live-timer-container" data-created="${o.created_at}" data-state-start="${o.state_start_at}">
+                        <div class="fw-bold text-dark fs-5 timer-total font-monospace">--:--</div>
+                        <small class="text-muted" style="font-size:0.65rem">En fase: <span class="timer-state text-primary fw-bold">--:--</span></small>
+                    </div>`;
+            }
+
+            // E. Logística
+            const typeBadge = o.order_type === 'Delivery' 
+                ? '<span class="badge bg-primary bg-opacity-10 text-primary mb-1"><i class="fa-solid fa-motorcycle me-1"></i>Delivery</span>'
+                : '<span class="badge bg-warning bg-opacity-10 text-warning mb-1"><i class="fa-solid fa-person-walking me-1"></i>Pickup</span>';
+            
+            const driverHtml = o.driver && o.driver.name !== 'No Asignado' 
+                ? `<div class="d-flex align-items-center small text-dark"><i class="fa-solid fa-helmet-safety me-2 text-muted"></i>${o.driver.name}</div>`
+                : `<div class="small text-muted fst-italic">--</div>`;
+
+            // F. Items Detalle
+            let itemsTable = '<div class="text-muted small fst-italic p-3">Sin productos registrados</div>';
+            if (o.items && o.items.length > 0) {
+                itemsTable = `
+                    <table class="table table-sm table-borderless mb-0 small" style="background: transparent;">
+                        <thead class="text-muted border-bottom"><tr><th>Producto</th><th class="text-center">Cant.</th><th class="text-end">Precio</th><th class="text-end">Total</th></tr></thead>
+                        <tbody>
+                            ${o.items.map(i => `
+                                <tr>
+                                    <td class="text-truncate" style="max-width: 250px;" title="${i.name}">${i.name}</td>
+                                    <td class="text-center">${i.quantity}</td>
+                                    <td class="text-end">$${i.unit_price.toFixed(2)}</td>
+                                    <td class="text-end fw-bold">$${i.total_price.toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
+
+            // =========================================================
+            // 2. RENDERIZADO HTML
+            // =========================================================
+
+            // FILA PRINCIPAL
+            html += `
+                <tr id="row-${o.id}" style="cursor: pointer; transition: background 0.2s;" onclick="toggleOrderDetails('${o.id}')">
+                    <td class="ps-4">
+                        <div class="d-flex align-items-center">
+                            <i id="icon-${o.id}" class="fa-solid fa-chevron-right text-muted me-2 small" style="width: 15px; transition: transform 0.2s;"></i>
+                            <div>
+                                <div class="d-flex align-items-center">
+                                    <div class="fw-bold text-dark">#${o.external_id}</div>
+                                    ${resyncButtonHtml}
                                 </div>
                                 <span class="badge bg-light text-secondary border fw-normal" style="font-size:0.7rem">${o.store_name}</span>
                             </div>
@@ -261,7 +331,7 @@ window.toggleOrderDetails = function(rowId) {
                     <td>
                         <div class="fw-bold text-dark" style="font-size: 0.95rem;">${o.customer_name}</div>
                         <div class="d-flex align-items-center mt-1 gap-2">
-                            ${tierBadge} <!-- AQUÍ SE USA LA VARIABLE -->
+                            ${tierBadge}
                             ${o.customer_phone ? `<a href="https://wa.me/${o.customer_phone.replace(/\D/g,'')}" target="_blank" onclick="event.stopPropagation()" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
                         </div>
                     </td>
@@ -293,10 +363,13 @@ window.toggleOrderDetails = function(rowId) {
                                 </div>
                                 <div class="col-md-5 d-flex flex-column justify-content-center align-items-start ps-4">
                                     <h6 class="fw-bold small text-muted mb-3 text-uppercase">⚡ Acciones Operativas</h6>
+                                    
+                                    <!-- BOTÓN FICHA ATC (NUEVO) -->
                                     <button onclick="event.stopPropagation(); openATCModal('${o.id}', '${o.external_id}')" 
-        class="btn btn-primary btn-sm w-100 mb-2 text-start shadow-sm">
-    <i class="fa-solid fa-file-invoice me-2"></i>Ver Ficha ATC (En Vivo)
-</button>
+                                            class="btn btn-primary btn-sm w-100 mb-2 text-start shadow-sm">
+                                        <i class="fa-solid fa-file-invoice me-2"></i>Ver Ficha ATC (En Vivo)
+                                    </button>
+
                                     <a href="https://ecosistema.gopharma.com.ve/admin/order/list/all?search=${o.external_id}" target="_blank" 
                                        onclick="event.stopPropagation()"
                                        class="btn btn-white border btn-sm w-100 text-start">
@@ -313,6 +386,7 @@ window.toggleOrderDetails = function(rowId) {
         tableBody.innerHTML = html;
         startLiveTimers();
     }
+
 
     function startLiveTimers() {
         if (ordersInterval) clearInterval(ordersInterval);
