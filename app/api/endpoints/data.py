@@ -11,6 +11,7 @@ from app.db.base import Order, OrderStatusLog, Store, Customer, User, Driver, Or
 from app.services import analysis_service
 from tasks.scraper.drone_scraper import DroneScraper
 from tasks.celery_tasks import process_drone_data
+from fastapi import HTTPException
 
 router = APIRouter()
 
@@ -200,6 +201,9 @@ def resync_single_order(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
 ):
+    # --- SEGURIDAD ---
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Permiso denegado. Solo administradores pueden forzar sincronización.")
     """
     Fuerza una actualización inmediata de un solo pedido desde el Legacy.
     Útil para corregir nombres de clientes o montos tras una edición manual.

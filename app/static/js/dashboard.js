@@ -201,8 +201,23 @@ window.toggleOrderDetails = function(rowId) {
         
         data.forEach(o => {
             // =========================================================
-            // PASO 1: DEFINIR VARIABLES (ANTES DEL HTML)
+            // PASO 1: DEFINIR VARIABLES
             // =========================================================
+            
+            // --- SEGURIDAD: BOTÓN RESYNC SOLO PARA ADMINS ---
+            const userRole = localStorage.getItem('role');
+            let resyncButtonHtml = '';
+            
+            if (userRole === 'admin') {
+                resyncButtonHtml = `
+                    <button class="btn btn-link p-0 text-muted btn-resync ms-2" 
+                            onclick="event.stopPropagation(); resyncOrder('${o.external_id}', this)" 
+                            title="Sincronizar datos (Solo Admin)">
+                        <i class="fa-solid fa-arrows-rotate small"></i>
+                    </button>
+                `;
+            }
+            // ------------------------------------------------
 
             // A. Estado
             let statusBadge = '';
@@ -281,6 +296,7 @@ window.toggleOrderDetails = function(rowId) {
                             <div>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="fw-bold text-dark">#${o.external_id}</div>
+                                    ${resyncButtonHtml}
                                     <!-- BOTÓN RESYNC -->
                                     <button class="btn btn-link p-0 text-muted btn-resync" 
                                             onclick="event.stopPropagation(); resyncOrder('${o.external_id}', this)" 
