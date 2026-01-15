@@ -153,24 +153,41 @@ def download_legacy_excel(
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
-@router.get("/live-audit/{order_id}", summary="Auditoría en Vivo (Scraping -> JSON)")
+@router.get("/live-audit/{order_id}", summary="Auditoría en Vivo + Items")
 def get_live_audit_data(
     order_id: str,
+    db: Session = Depends(deps.get_db), # Inyectamos DB
     current_user: User = Depends(deps.get_current_user)
 ):
     """
-    Dispara el robot en tiempo real, descarga el CSV oficial, 
-    y retorna los datos en JSON para visualización inmediata.
+    1. Scrapea el CSV oficial (Fuente de verdad financiera).
+    2. Busca los items en la DB local (Detalle de productos).
+    3. Retorna todo unido para la Ficha ATC.
     """
     scraper = OrderScraper()
-    data = scraper.get_official_data_json(order_id) # Usamos el método nuevo
+    csv_data_list = scraper.get_official_data_json(order_id)
     
-    if not data:
-        return JSONResponse(
-            status_code=404, 
-            content={"error": "No se pudo obtener la data oficial. Verifique logs/capturas."}
-        )
+    if not csv_data_list:
+        return JSONResponse(status_code=404, content={"error": "Fallo al obtener CSV del Legacy."})
     
-    # data es una lista de filas del CSV.
-    # Generalmente la fila 0 tiene los totales y datos del cliente.
-    return data
+    # Tomamos la data del CSV (Fila 0)
+    legacy_data = csv_data_list[0]
+
+    # Buscamos los productos en nuestra DB
+    # Usamos external_id porque order_id del parámetro es el ID externo (ej: 106866)
+    local_order = db.query(Order).filter(Order.external_id == order_id).first()
+    
+    items_response = []
+    if local_order and local_order.items:
+        for i in local_order.items:
+            items_response.append({
+                "name": i.name,
+                "quantity": i.quantity,
+                "unit_price": i.unit_price,
+                "total_price": i.total_price
+            })
+    
+    return {
+        "legacy": legacy_data,
+        "items": items_response
+    }

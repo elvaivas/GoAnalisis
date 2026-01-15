@@ -849,224 +849,212 @@ window.toggleOrderDetails = function(rowId) {
     fetchAllData();
     setInterval(fetchAllData, 60000);
 
-// --- FUNCIÓN AUDITORÍA ATC (NUEVA) ---
+// --- FUNCIÓN AUDITORÍA ATC (VERSIÓN FINAL V3) ---
     window.openATCModal = async function(dbId, externalId) {
-        // 1. Instancia del Modal Bootstrap
         const modalEl = document.getElementById('modalATC');
-        if (!modalEl) {
-            console.error("❌ Error: No se encontró el modal #modalATC en el HTML.");
-            return;
-        }
+        if (!modalEl) return;
         const modalBody = document.getElementById('modalATCBody');
         const modal = new bootstrap.Modal(modalEl);
         
-        // 2. Mostrar estado de carga
+        // Loader elegante
         modalBody.innerHTML = `
             <div class="text-center py-5">
-                <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
-                <h5 class="mt-3 fw-bold text-dark">Auditando Sistema Legacy...</h5>
-                <p class="text-muted">El robot está extrayendo los datos oficiales. Espere unos segundos...</p>
+                <div class="spinner-border text-primary" role="status"></div>
+                <h5 class="mt-3 fw-bold text-dark">Generando Ficha Técnica...</h5>
+                <p class="text-muted">Cruzando datos del Legacy con Inventario Local...</p>
             </div>
         `;
         modal.show();
 
         try {
-            // 3. Petición al Backend (Scraping en Vivo)
-            // Nota: externalId es el ID tipo '106843'
-            console.log(`📡 Auditando pedido #${externalId}...`);
+            // 1. Petición al Backend (Data Combinada)
             const res = await authFetch(`/api/data/live-audit/${externalId}`);
+            if (!res || !res.ok) throw new Error("No se pudo sincronizar con el Legacy.");
             
-            if (!res || !res.ok) throw new Error("No se pudo obtener la data oficial.");
+            const responseJson = await res.json();
+            const data = responseJson.legacy; // CSV
+            const items = responseJson.items || []; // DB Local
             
-            const csvData = await res.json();
-            
-            if (!csvData || csvData.length === 0) throw new Error("El archivo Legacy llegó vacío.");
+            if (!data) throw new Error("El archivo Legacy llegó vacío.");
 
-            // Tomamos la primera fila (Row 0)
-            const data = csvData[0];
-
-            // const data = csvData[0]; <--- ESTA LÍNEA YA EXISTE
-
-            // --- LÓGICA DE NOMBRE DE ARCHIVO PDF ---
-            const originalTitle = document.title; // Guardamos "GoAnalisis Pro"
-            
-            // Construimos el nombre: "#ID - Cliente - MetodoPago"
-            // Usamos una regex simple para quitar caracteres prohibidos en nombres de archivo (/ \ : *)
+            // 2. Configurar Título del PDF
+            const originalTitle = document.title;
             const cleanName = (data['Nombre del cliente'] || 'Cliente').replace(/[\\/:*?"<>|]/g, '');
-            const cleanMethod = (data['Método de pago'] || 'Pago').replace(/[\\/:*?"<>|]/g, '');
+            document.title = `Ficha #${data['ID del pedido']} - ${cleanName}`;
             
-            // Título Final
-            const printTitle = `Pedido #${data['ID del pedido']} - ${cleanName} - ${cleanMethod}`;
-            document.title = printTitle;
+            modalEl.addEventListener('hidden.bs.modal', () => { document.title = originalTitle; }, { once: true });
 
-            // DETECTAR CIERRE DEL MODAL PARA RESTAURAR TÍTULO
-            modalEl.addEventListener('hidden.bs.modal', function () {
-                document.title = originalTitle;
-            }, { once: true }); // {once: true} es vital para no acumular eventos
-            // ---------------------------------------
-            
-            // --- HELPERS DE FORMATO (CORREGIDO PARA MONEDA VENEZOLANA) ---
-            
-            // Transforma "1.543,70" -> 1543.70 (Float numérico)
+            // 3. HELPERS DE MONEDA (Blindados para VED)
             const parseM = (val) => {
                 if (!val) return 0.00;
-                let v = String(val).trim();
-                
-                // 1. Si no tiene comas ni puntos, es un número simple
-                if (v.indexOf(',') === -1 && v.indexOf('.') === -1) return parseFloat(v);
-
-                // 2. Lógica para formato "1.543,70" (VED/EUR)
-                // Eliminamos TODOS los puntos (separadores de miles)
-                v = v.replace(/\./g, '');
-                // Reemplazamos la coma por punto (separador decimal JS)
-                v = v.replace(',', '.');
-                
+                if (typeof val === 'number') return val;
+                // Formato "1.543,70" -> Quitar puntos, cambiar coma por punto
+                let v = String(val).trim().replace(/\./g, '').replace(',', '.');
                 return parseFloat(v) || 0.00;
             };
-            
-            // Formateador visual: Devuelve string bonito "1.543,70"
-            const fmt = (val, symbol="$") => {
-                 const n = parseM(val);
-                 
-                 // Usamos 'es-VE' para que ponga puntos en miles y coma en decimales
-                 // Forzamos siempre 2 decimales
-                 const strVal = n.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-                 
-                 return `${symbol}${strVal}`;
+
+            const fmt = (n, symbol="$") => {
+                 // Formato visual español Venezuela
+                 return `${symbol}${n.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             };
 
-            // --- RENDERIZADO DE LA FICHA ---
-            const html = `
-                <div class="alert alert-primary border-0 d-flex align-items-center mb-4 bg-opacity-10">
-                    <i class="fa-solid fa-shield-halved me-3 fs-3 text-primary"></i>
-                    <div>
-                        <div class="fw-bold text-primary">DATOS OFICIALES DEL LEGACY</div>
-                        <small class="text-muted">Información extraída del archivo CSV oficial en tiempo real.</small>
+            // 4. EXTRAER TASA DE CAMBIO
+            let exchangeRate = 0;
+            const tasaStr = data['Tasa de cambio'] || "";
+            // Busca el número al final de la cadena (ej: "USD 1.00 = VED 325,39")
+            const match = tasaStr.match(/VED\s*([\d.,]+)/i) || tasaStr.match(/=\s*([\d.,]+)/);
+            if (match) exchangeRate = parseM(match[1]);
+
+            console.log(`💱 Tasa aplicada: ${exchangeRate}`);
+
+            // 5. GENERAR TABLA DE PRODUCTOS (Cálculo Parcial)
+            let productsHtml = '';
+            if (items.length > 0 && exchangeRate > 0) {
+                productsHtml = `
+                    <div class="mt-4 mb-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fa-solid fa-calculator text-primary me-2"></i>
+                            <h6 class="fw-bold text-dark mb-0">CÁLCULO UNITARIO (Para Devoluciones Parciales)</h6>
+                        </div>
+                        <div class="table-responsive border rounded-3">
+                            <table class="table table-striped table-hover mb-0 align-middle small">
+                                <thead class="bg-light text-secondary">
+                                    <tr>
+                                        <th class="ps-3 py-2">PRODUCTO</th>
+                                        <th class="text-center py-2">CANT.</th>
+                                        <th class="text-end py-2">UNIT ($)</th>
+                                        <th class="text-end py-2 bg-soft-success text-success fw-bold border-start">REEMBOLSO (Bs)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${items.map(item => {
+                                        const unitBs = item.unit_price * exchangeRate;
+                                        return `
+                                        <tr>
+                                            <td class="ps-3 text-truncate" style="max-width: 250px;">${item.name}</td>
+                                            <td class="text-center fw-bold">${item.quantity}</td>
+                                            <td class="text-end text-muted">${fmt(item.unit_price)}</td>
+                                            <td class="text-end fw-bold text-success bg-soft-success border-start fs-6">
+                                                ${fmt(unitBs, 'Bs.')}
+                                            </td>
+                                        </tr>`;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                            <div class="bg-light p-1 px-3 text-end text-muted fst-italic" style="font-size: 0.75rem;">
+                                Calculado a tasa histórica del pedido: <strong>1 USD = ${fmt(exchangeRate, 'Bs.')}</strong>
+                            </div>
+                        </div>
                     </div>
-                </div>
+                `;
+            }
+
+            // 6. RENDERIZADO FINAL (Con estilos de impresión)
+            const html = `
+                <!-- ESTILOS DE IMPRESIÓN INYECTADOS -->
+                <style>
+                    @media print {
+                        @page { margin: 15mm; size: auto; } /* MARGEN DE 1.5 CM */
+                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .modal-footer, .btn-close { display: none !important; }
+                        .card { border: 1px solid #ddd !important; }
+                        .bg-soft-success { background-color: #ecfdf5 !important; }
+                        a { text-decoration: none !important; color: black !important; }
+                    }
+                </style>
 
                 <!-- ENCABEZADO -->
-                <div class="row mb-4 align-items-center">
-                    <div class="col-6">
-                        <h2 class="fw-bold mb-0 text-dark">#${data['ID del pedido'] || externalId}</h2>
-                        <span class="badge bg-dark mt-2 fs-6">${data['Estado del pedido'] || 'N/A'}</span>
+                <div class="d-flex justify-content-between align-items-start mb-4 border-bottom pb-3">
+                    <div>
+                        <div class="text-primary fw-bold small mb-1"><i class="fa-solid fa-shield-halved me-1"></i>DATOS OFICIALES DEL LEGACY</div>
+                        <h1 class="fw-bold mb-0 text-dark display-6">#${data['ID del pedido']}</h1>
+                        <div class="text-muted">${data['Nombre de la tienda']}</div>
                     </div>
-                    <div class="col-6 text-end">
-                        <div class="text-muted small text-uppercase fw-bold">Fecha Oficial</div>
-                        <div class="fs-5 text-dark">${data['Fecha'] || '--'}</div>
+                    <div class="text-end">
+                        <div class="small text-muted text-uppercase fw-bold">FECHA OFICIAL</div>
+                        <div class="fs-5 text-dark mb-2">${data['Fecha']}</div>
+                        <span class="badge bg-${data['Estado del pedido'] === 'Entregado' ? 'success' : 'dark'} fs-6 border">
+                            ${data['Estado del pedido']}
+                        </span>
                     </div>
                 </div>
 
+                <!-- INFO PRINCIPAL (GRID) -->
                 <div class="row g-4 mb-4">
-                    <!-- TARJETA CLIENTE -->
-                    <div class="col-md-6">
-                        <div class="card h-100 bg-light border-0">
-                            <div class="card-body">
-                                <h6 class="fw-bold text-primary mb-3 border-bottom pb-2">
-                                    <i class="fa-solid fa-user me-2"></i>CLIENTE
-                                </h6>
-                                <div class="mb-2 d-flex justify-content-between">
-                                    <span class="text-muted">Nombre:</span>
-                                    <span class="fw-bold text-end text-dark">${data['Nombre del cliente'] || 'N/A'}</span>
-                                </div>
-                                <div class="mb-2 d-flex justify-content-between">
-                                    <span class="text-muted">Email:</span>
-                                    <span class="text-end small text-break">${data['Correo electrónico del cliente'] || 'N/A'}</span>
-                                </div>
-                                <div class="mb-2 d-flex justify-content-between">
-                                    <span class="text-muted">Teléfono:</span>
-                                    <span class="fw-bold text-end">${data['Teléfono del cliente'] || 'N/A'}</span>
-                                </div>
-                                <div class="mb-2 d-flex justify-content-between">
-                                    <span class="text-muted">Tienda:</span>
-                                    <span class="text-end fw-bold text-dark small">${data['Nombre de la tienda'] || 'N/A'}</span>
-                                </div>
-                            </div>
+                    <div class="col-6">
+                        <div class="p-3 border rounded h-100">
+                            <h6 class="text-primary fw-bold mb-3"><i class="fa-solid fa-user me-2"></i>CLIENTE</h6>
+                            <table class="table table-borderless table-sm mb-0 small">
+                                <tr><td class="text-muted ps-0">Nombre:</td><td class="fw-bold text-end">${data['Nombre del cliente']}</td></tr>
+                                <tr><td class="text-muted ps-0">Email:</td><td class="text-end text-break">${data['Correo electrónico del cliente']}</td></tr>
+                                <tr><td class="text-muted ps-0">Teléfono:</td><td class="text-end fw-bold">${data['Teléfono del cliente']}</td></tr>
+                            </table>
                         </div>
                     </div>
-
-                    <!-- TARJETA PAGO -->
-                    <div class="col-md-6">
-                        <div class="card h-100 border-success border border-opacity-25">
-                            <div class="card-body">
-                                <h6 class="fw-bold text-success mb-3 border-bottom pb-2">
-                                    <i class="fa-solid fa-money-bill-wave me-2"></i>PAGO
-                                </h6>
-                                <div class="mb-2 d-flex justify-content-between">
-                                    <span class="text-muted">Método:</span>
-                                    <span class="fw-bold text-uppercase">${data['Método de pago'] || 'N/A'}</span>
-                                </div>
-                                <div class="mb-2 d-flex justify-content-between">
-                                    <span class="text-muted">Referencia:</span>
-                                    <span class="fw-bold text-primary select-all">${data['Referencia'] || 'N/A'}</span>
-                                </div>
-                                <div class="mb-2 d-flex justify-content-between">
-                                    <span class="text-muted">Estado:</span>
-                                    <span class="badge bg-${data['Estado del pago'] === 'Pagado' ? 'success' : 'danger'}">${data['Estado del pago']}</span>
-                                </div>
-                                <div class="mb-2 d-flex justify-content-between">
-                                    <span class="text-muted">Tasa Cambio:</span>
-                                    <span class="small">${data['Tasa de cambio'] || '--'}</span>
-                                </div>
-                            </div>
+                    <div class="col-6">
+                        <div class="p-3 border rounded h-100">
+                            <h6 class="text-success fw-bold mb-3"><i class="fa-solid fa-money-check-dollar me-2"></i>PAGO</h6>
+                            <table class="table table-borderless table-sm mb-0 small">
+                                <tr><td class="text-muted ps-0">Método:</td><td class="text-end fw-bold">${data['Método de pago']}</td></tr>
+                                <tr><td class="text-muted ps-0">Referencia:</td><td class="text-end fw-bold text-primary">${data['Referencia']}</td></tr>
+                                <tr><td class="text-muted ps-0">Estado:</td><td class="text-end text-success fw-bold">${data['Estado del pago']}</td></tr>
+                                <tr><td class="text-muted ps-0">Tasa:</td><td class="text-end">${data['Tasa de cambio']}</td></tr>
+                            </table>
                         </div>
                     </div>
                 </div>
 
-                <!-- TABLA FINANCIERA -->
-                <h6 class="fw-bold text-secondary ps-1 mb-2">
-                    <i class="fa-solid fa-calculator me-2"></i>DESGLOSE PARA DEVOLUCIONES
-                </h6>
-                <div class="table-responsive border rounded-3 overflow-hidden shadow-sm mb-3">
-                    <table class="table table-bordered mb-0">
-                        <thead class="bg-light text-secondary small text-uppercase">
-                            <tr class="text-center">
-                                <th class="py-2">Concepto</th>
-                                <th class="py-2">USD ($)</th>
-                                <th class="py-2">VED (Bs)</th>
-                            </tr>
+                <!-- TABLA DE PRODUCTOS (NUEVA) -->
+                ${productsHtml}
+
+                <!-- TOTALES (DEL CSV) -->
+                <h6 class="fw-bold text-dark ps-1 mb-2 mt-4"><i class="fa-solid fa-receipt me-2"></i>DESGLOSE FINAL (LEGACY)</h6>
+                <div class="table-responsive border rounded mb-3">
+                    <table class="table table-bordered mb-0 small">
+                        <thead class="bg-light text-center text-uppercase text-secondary">
+                            <tr><th>Concepto</th><th>USD ($)</th><th>VED (Bs)</th></tr>
                         </thead>
-                        <tbody class="bg-white">
+                        <tbody>
                             <tr>
                                 <td class="ps-3">Subtotal Artículos</td>
-                                <td class="text-end pe-3 font-monospace">${fmt(data['Precio del artículo (USD)'])}</td>
-                                <td class="text-end pe-3 font-monospace text-muted">${fmt(data['Precio del artículo (VED)'], 'Bs.')}</td>
+                                <td class="text-end pe-3">${fmt(parseM(data['Precio del artículo (USD)']))}</td>
+                                <td class="text-end pe-3">${fmt(parseM(data['Precio del artículo (VED)']), 'Bs.')}</td>
                             </tr>
                             <tr>
-                                <td class="ps-3">Descuentos / Cupones</td>
-                                <td class="text-end pe-3 text-danger font-monospace">-${fmt(data['Monto descontado (USD)'])}</td>
-                                <td class="text-end pe-3 text-danger font-monospace">-${fmt(data['Monto descontado (VED)'], 'Bs.')}</td>
+                                <td class="ps-3">Descuentos</td>
+                                <td class="text-end pe-3 text-danger">-${fmt(parseM(data['Monto descontado (USD)']))}</td>
+                                <td class="text-end pe-3 text-danger">-${fmt(parseM(data['Monto descontado (VED)']), 'Bs.')}</td>
                             </tr>
                             <tr>
                                 <td class="ps-3">Impuestos</td>
-                                <td class="text-end pe-3 font-monospace">${fmt(data['Impuesto (USD)'])}</td>
-                                <td class="text-end pe-3 font-monospace">${fmt(data['Impuesto (VED)'], 'Bs.')}</td>
+                                <td class="text-end pe-3">${fmt(parseM(data['Impuesto (USD)']))}</td>
+                                <td class="text-end pe-3">${fmt(parseM(data['Impuesto (VED)']), 'Bs.')}</td>
                             </tr>
-                            <tr class="bg-soft-warning">
-                                <td class="ps-3 fw-bold text-warning-dark">Delivery Fee (Envío)</td>
-                                <td class="text-end pe-3 fw-bold font-monospace">${fmt(data['Cargo de entrega (USD)'])}</td>
-                                <td class="text-end pe-3 fw-bold font-monospace">${fmt(data['Cargo de entrega (VED)'], 'Bs.')}</td>
+                            <tr>
+                                <td class="ps-3 text-muted">Delivery Fee</td>
+                                <td class="text-end pe-3 text-muted">${fmt(parseM(data['Cargo de entrega (USD)']))}</td>
+                                <td class="text-end pe-3 text-muted">${fmt(parseM(data['Cargo de entrega (VED)']), 'Bs.')}</td>
                             </tr>
-                            <tr class="bg-soft-info">
-                                <td class="ps-3 fw-bold text-info-dark">Service Fee (Servicio)</td>
-                                <td class="text-end pe-3 fw-bold font-monospace">${fmt(data['Tarifa de servicio (USD)'])}</td>
-                                <td class="text-end pe-3 fw-bold font-monospace">${fmt(data['Tarifa de servicio (VED)'], 'Bs.')}</td>
+                            <tr>
+                                <td class="ps-3 text-muted">Service Fee</td>
+                                <td class="text-end pe-3 text-muted">${fmt(parseM(data['Tarifa de servicio (USD)']))}</td>
+                                <td class="text-end pe-3 text-muted">${fmt(parseM(data['Tarifa de servicio (VED)']), 'Bs.')}</td>
                             </tr>
                         </tbody>
                         <tfoot class="bg-dark text-white">
                             <tr>
                                 <td class="ps-3 fw-bold text-end">TOTAL COBRADO:</td>
-                                <td class="text-end pe-3 fw-bold fs-5">${fmt(data['Monto total (USD)'])}</td>
-                                <td class="text-end pe-3 fw-bold fs-5 text-white-50">${fmt(data['Monto total (VED)'], 'Bs.')}</td>
+                                <td class="text-end pe-3 fw-bold fs-6">${fmt(parseM(data['Monto total (USD)']))}</td>
+                                <td class="text-end pe-3 fw-bold fs-6">${fmt(parseM(data['Monto total (VED)']), 'Bs.')}</td>
                             </tr>
                         </tfoot>
                     </table>
                 </div>
-                
-                <div class="alert alert-warning d-flex align-items-start small border-warning">
+
+                <div class="alert alert-warning small d-flex align-items-start py-2">
                     <i class="fa-solid fa-triangle-exclamation mt-1 me-2"></i>
                     <div>
-                        <strong>Nota para ATC:</strong> El <em>Service Fee</em> y el <em>Delivery Fee</em> suelen ser no-reembolsables en devoluciones parciales. Verifique políticas.
+                        <strong>Nota para ATC:</strong> El <em>Service Fee</em> y el <em>Delivery Fee</em> no suelen ser reembolsables. Verifique políticas.
                     </div>
                 </div>
             `;
@@ -1075,14 +1063,7 @@ window.toggleOrderDetails = function(rowId) {
 
         } catch (e) {
             console.error(e);
-            modalBody.innerHTML = `
-                <div class="text-center py-5">
-                    <div class="text-danger mb-3"><i class="fa-solid fa-circle-xmark fa-3x"></i></div>
-                    <h5 class="fw-bold text-danger">Fallo en Auditoría</h5>
-                    <p class="text-muted mb-4">${e.message}</p>
-                    <button class="btn btn-outline-dark btn-sm" onclick="bootstrap.Modal.getInstance(document.getElementById('modalATC')).hide()">Cerrar</button>
-                </div>
-            `;
+            modalBody.innerHTML = `<div class="text-center py-5 text-danger"><h5>Error</h5><p>${e.message}</p></div>`;
         }
     };
 });
