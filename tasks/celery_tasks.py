@@ -190,9 +190,23 @@ def process_drone_data(db, data: dict):
             order_type = "Pickup"
             
         # 3. CRITERIO DE ORO (Heurística ATC):
-        # Si está entregado y no hay chofer, nadie lo llevó -> El cliente lo buscó.
-        elif db_status == "delivered" and (not driver or driver.name == "No Asignado" or driver.name == "N/A"):
+      
+        # 1. Si detectamos un Driver, ES DELIVERY (Mata cualquier otra regla)
+        if driver and driver.name and driver.name not in ["No Asignado", "N/A"]:
+            order_type = "Delivery"
+            
+        # 2. Cancelados no tienen tipo
+        elif db_status == "canceled": 
+            order_type = None
+            
+        # 3. Solo es Pickup si la distancia es MUY corta
+        # (Quitamos la regla de "falta de chofer" porque es propensa a errores de scraping)
+        elif dist_km is not None and dist_km < 0.2 and dist_km >= 0: 
             order_type = "Pickup"
+            
+        else:
+            # Ante la duda, mantenemos lo que ya tenía o Delivery por defecto
+            order_type = order_type or "Delivery"
         # -----------------------------------------
 
         c_reason = normalize_cancellation_reason(data.get('cancellation_reason'))
