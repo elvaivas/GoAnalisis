@@ -925,14 +925,82 @@ window.toggleOrderDetails = function(rowId) {
 
             console.log(`💱 Tasa aplicada: ${exchangeRate}`);
 
-            // 5. GENERAR TABLA DE PRODUCTOS (Cálculo Parcial)
-            let productsHtml = '';
+            // 5. CÁLCULO DE REEMBOLSO (CON DETECTIVE DE IVA)
+            let itemsHtml = '';
             if (items.length > 0 && exchangeRate > 0) {
-                productsHtml = `
+                
+                // === ALGORITMO DETECTIVE DE IVA ===
+                const IVA_RATE = 0.16; // Tasa estándar Vzla
+                const totalDbNetUsd = items.reduce((acc, item) => acc + (item.unit_price * item.quantity), 0);
+                const legacyTaxUsd = parseM(data['Impuesto (USD)']);
+                
+                let itemTaxMap = new Array(items.length).fill(0); // 0 = Exento, 1 = Gravado
+                let methodUsed = "mixed"; // 'exact' (detective), 'all' (todo), 'none' (exento), 'proportional' (fallback)
+
+                // CASO A: TODO EXENTO (Tax = 0)
+                if (legacyTaxUsd === 0) {
+                    methodUsed = "none";
+                }
+                // CASO B: TODO GRAVADO (Tax ~= 16% del total)
+                else if (Math.abs(legacyTaxUsd - (totalDbNetUsd * IVA_RATE)) < 0.05) {
+                    itemTaxMap.fill(1);
+                    methodUsed = "all";
+                }
+                // CASO C: MIXTO (DETECTIVE DE SUBSET SUM)
+                else {
+                    // Buscamos qué productos suman la Base Imponible (Tax / 0.16)
+                    const targetBase = legacyTaxUsd / IVA_RATE;
+                    
+                    // Función recursiva simple para encontrar la combinación
+                    // Retorna true si encuentra los items que suman targetBase
+                    const findSubset = (index, currentSum, selectedIndices) => {
+                        // Tolerancia de $0.02 para errores de redondeo
+                        if (Math.abs(currentSum - targetBase) < 0.03) return selectedIndices;
+                        if (index >= items.length || currentSum > targetBase + 0.03) return null;
+
+                        // Opción 1: Incluir este item (multiplicado por cantidad)
+                        const val = items[index].unit_price * items[index].quantity;
+                        const res1 = findSubset(index + 1, currentSum + val, [...selectedIndices, index]);
+                        if (res1) return res1;
+
+                        // Opción 2: No incluir este item
+                        return findSubset(index + 1, currentSum, selectedIndices);
+                    };
+
+                    // Solo intentamos si son menos de 15 items para no congelar el navegador
+                    if (items.length <= 15) {
+                        const resultIndices = findSubset(0, 0, []);
+                        if (resultIndices) {
+                            resultIndices.forEach(idx => itemTaxMap[idx] = 1);
+                            methodUsed = "exact";
+                            console.log("🕵️‍♂️ Detective de IVA: Encontrados productos gravados:", resultIndices);
+                        } else {
+                            methodUsed = "proportional"; // Falló el detective, usamos promedio
+                        }
+                    } else {
+                        methodUsed = "proportional"; // Muchos items, usamos promedio
+                    }
+                }
+
+                // CALCULAR FACTOR PROPORCIONAL (SOLO PARA FALLBACK)
+                let taxMultiplierFallback = 1;
+                if (totalDbNetUsd > 0) taxMultiplierFallback = 1 + (legacyTaxUsd / totalDbNetUsd);
+
+                // --- GENERACIÓN DE HTML ---
+                itemsHtml = `
                     <div class="mt-4 mb-3">
-                        <div class="d-flex align-items-center mb-2">
-                            <i class="fa-solid fa-calculator text-primary me-2"></i>
-                            <h6 class="fw-bold text-dark mb-0">CÁLCULO UNITARIO (Para Devoluciones Parciales)</h6>
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <div class="d-flex align-items-center">
+                                <i class="fa-solid fa-calculator text-primary me-2"></i>
+                                <div>
+                                    <h6 class="fw-bold text-dark mb-0">CÁLCULO UNITARIO DE REEMBOLSO</h6>
+                                    <small class="text-muted" style="font-size: 0.75rem;">
+                                        ${methodUsed === 'exact' ? '<span class="text-success"><i class="fa-solid fa-check-circle"></i> IVA Identificado por Producto</span>' : 
+                                          methodUsed === 'proportional' ? '<span class="text-warning"><i class="fa-solid fa-scale-balanced"></i> IVA Prorrateado (Estimado)</span>' : 
+                                          methodUsed === 'all' ? 'Todos los productos incluyen IVA (16%)' : 'Productos Exentos de IVA'}
+                                    </small>
+                                </div>
+                            </div>
                         </div>
                         <div class="table-responsive border rounded-3">
                             <table class="table table-striped table-hover mb-0 align-middle small">
@@ -940,27 +1008,52 @@ window.toggleOrderDetails = function(rowId) {
                                     <tr>
                                         <th class="ps-3 py-2">PRODUCTO</th>
                                         <th class="text-center py-2">CANT.</th>
-                                        <th class="text-end py-2">UNIT ($)</th>
-                                        <th class="text-end py-2 bg-soft-success text-success fw-bold border-start">REEMBOLSO (Bs)</th>
+                                        <th class="text-end py-2">UNIT NETO ($)</th>
+                                        <th class="text-end py-2 bg-soft-success text-success fw-bold border-start">
+                                            REEMBOLSO (Bs)
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${items.map(item => {
-                                        const unitBs = item.unit_price * exchangeRate;
+                                    ${items.map((item, idx) => {
+                                        let finalMultiplier = 1;
+                                        let badgeHtml = '';
+
+                                        if (methodUsed === 'exact' || methodUsed === 'all') {
+                                            // Método Exacto: O tiene 16% o tiene 0%
+                                            if (itemTaxMap[idx] === 1) {
+                                                finalMultiplier = 1.16;
+                                                badgeHtml = '<span class="badge bg-secondary text-white ms-1" style="font-size:0.6em">+IVA</span>';
+                                            }
+                                        } else if (methodUsed === 'proportional') {
+                                            // Método Fallback
+                                            finalMultiplier = taxMultiplierFallback;
+                                        }
+
+                                        const unitGrossUsd = item.unit_price * finalMultiplier;
+                                        const unitBs = unitGrossUsd * exchangeRate;
+                                        const totalRowBs = unitBs * item.quantity;
+                                        
                                         return `
                                         <tr>
-                                            <td class="ps-3 text-truncate" style="max-width: 250px;">${item.name}</td>
+                                            <td class="ps-3 text-truncate" style="max-width: 230px;" title="${item.name}">
+                                                ${item.name}
+                                            </td>
                                             <td class="text-center fw-bold">${item.quantity}</td>
-                                            <td class="text-end text-muted">${fmt(item.unit_price)}</td>
+                                            <td class="text-end text-muted">
+                                                ${fmt(item.unit_price)}
+                                                ${badgeHtml}
+                                            </td>
                                             <td class="text-end fw-bold text-success bg-soft-success border-start fs-6">
                                                 ${fmt(unitBs, 'Bs.')}
+                                                ${item.quantity > 1 ? `<div class="small fw-normal text-muted opacity-75">(Total: ${fmt(totalRowBs, 'Bs.')})</div>` : ''}
                                             </td>
                                         </tr>`;
                                     }).join('')}
                                 </tbody>
                             </table>
-                            <div class="bg-light p-1 px-3 text-end text-muted fst-italic" style="font-size: 0.75rem;">
-                                Calculado a tasa histórica del pedido: <strong>1 USD = ${fmt(exchangeRate, 'Bs.')}</strong>
+                            <div class="bg-light p-1 px-3 d-flex justify-content-between text-muted fst-italic" style="font-size: 0.75rem;">
+                                <span>* Tasa Ref: 1 USD = ${fmt(exchangeRate, 'Bs.')}</span>
                             </div>
                         </div>
                     </div>
