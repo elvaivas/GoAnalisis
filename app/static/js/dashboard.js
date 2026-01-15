@@ -849,157 +849,125 @@ window.toggleOrderDetails = function(rowId) {
     fetchAllData();
     setInterval(fetchAllData, 60000);
 
-// --- FUNCIÓN AUDITORÍA ATC (VERSIÓN FINAL V3) ---
+// --- FUNCIÓN AUDITORÍA ATC (V4 - INTEGRADA Y BLINDADA) ---
     window.openATCModal = async function(dbId, externalId) {
         const modalEl = document.getElementById('modalATC');
         if (!modalEl) return;
         const modalBody = document.getElementById('modalATCBody');
         const modal = new bootstrap.Modal(modalEl);
         
-        // Loader elegante
         modalBody.innerHTML = `
             <div class="text-center py-5">
                 <div class="spinner-border text-primary" role="status"></div>
-                <h5 class="mt-3 fw-bold text-dark">Generando Ficha Técnica...</h5>
-                <p class="text-muted">Cruzando datos del Legacy con Inventario Local...</p>
+                <h5 class="mt-3 fw-bold">Generando Ficha Técnica...</h5>
+                <p class="text-muted">Sincronizando Legacy + Base de Datos Local...</p>
             </div>
         `;
         modal.show();
 
         try {
-            // 1. Petición al Backend (Data Combinada)
+            // 1. PETICIÓN DE DATOS
             const res = await authFetch(`/api/data/live-audit/${externalId}`);
-            if (!res || !res.ok) throw new Error("No se pudo sincronizar con el Legacy.");
+            if (!res || !res.ok) throw new Error("Error conectando con API de Auditoría.");
             
             const responseJson = await res.json();
-            const data = responseJson.legacy; // CSV
-            const items = responseJson.items || []; // DB Local
+            const data = responseJson.legacy; // Datos del CSV (La Verdad)
+            const items = responseJson.items || []; // Productos (DB Local)
             
-            if (!data) throw new Error("El archivo Legacy llegó vacío.");
+            if (!data) throw new Error("El archivo CSV del Legacy llegó vacío.");
 
-            // 2. Configurar Título del PDF
+            // 2. CONFIGURACIÓN VISUAL
             const originalTitle = document.title;
             const cleanName = (data['Nombre del cliente'] || 'Cliente').replace(/[\\/:*?"<>|]/g, '');
             document.title = `Ficha #${data['ID del pedido']} - ${cleanName}`;
             
             modalEl.addEventListener('hidden.bs.modal', () => { document.title = originalTitle; }, { once: true });
 
-            // 3. HELPERS DE MONEDA (PARSER HÍBRIDO INTELIGENTE)
+            // 3. PARSER INTELIGENTE (USA / VED)
             const parseM = (val) => {
                 if (!val) return 0.00;
                 if (typeof val === 'number') return val;
-                
                 let v = String(val).trim();
                 
-                // DETECCIÓN DE FORMATO:
-                
-                // CASO A: Formato VED/EUR -> "1.500,50" (La coma está al final o después del último punto)
+                // Detección automática de formato
+                // Caso VED: "1.500,50" (Coma al final)
                 if (v.includes(',') && (v.lastIndexOf(',') > v.lastIndexOf('.'))) {
-                    v = v.replace(/\./g, ''); // Quitar puntos de miles
-                    v = v.replace(',', '.');  // Cambiar coma decimal a punto
+                    v = v.replace(/\./g, '').replace(',', '.'); 
                 }
-                
-                // CASO B: Formato USA -> "1,500.50" (El punto está al final o después de la última coma)
+                // Caso USA: "1,500.50" (Punto al final)
                 else if (v.includes('.') && (v.lastIndexOf('.') > v.lastIndexOf(','))) {
-                    v = v.replace(/,/g, ''); // Quitar comas de miles
-                    // El punto ya es decimal, se deja quieto
+                    v = v.replace(/,/g, '');
                 }
-                
-                // CASO C: Solo números planos -> "339"
-                // (parseFloat lo maneja nativo)
-
                 return parseFloat(v) || 0.00;
             };
 
             const fmt = (n, symbol="$") => {
-                 // Para visualizar, SIEMPRE usamos formato Venezuela (1.500,00)
                  return `${symbol}${n.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
             };
 
-            // 4. EXTRAER TASA DE CAMBIO
+            // 4. EXTRACCIÓN DE TASA
             let exchangeRate = 0;
             const tasaStr = data['Tasa de cambio'] || "";
-            // Busca el número al final de la cadena (ej: "USD 1.00 = VED 325,39")
+            // Regex que busca "VED 123.45" o "= 123.45"
             const match = tasaStr.match(/VED\s*([\d.,]+)/i) || tasaStr.match(/=\s*([\d.,]+)/);
             if (match) exchangeRate = parseM(match[1]);
 
-            console.log(`💱 Tasa aplicada: ${exchangeRate}`);
+            console.log(`📊 Debug: Items=${items.length}, Tasa=${exchangeRate}, StringTasa="${tasaStr}"`);
 
-            // 5. CÁLCULO DE REEMBOLSO (CON DETECTIVE DE IVA)
+            // 5. CÁLCULO DE TABLA DETALLADA (EL CEREBRO)
             let productsHtml = '';
+            
             if (items.length > 0 && exchangeRate > 0) {
-                
-                // === ALGORITMO DETECTIVE DE IVA ===
-                const IVA_RATE = 0.16; // Tasa estándar Vzla
+                // --- ALGORITMO DETECTIVE DE IVA ---
+                const IVA_RATE = 0.16; 
                 const totalDbNetUsd = items.reduce((acc, item) => acc + (item.unit_price * item.quantity), 0);
                 const legacyTaxUsd = parseM(data['Impuesto (USD)']);
                 
-                let itemTaxMap = new Array(items.length).fill(0); // 0 = Exento, 1 = Gravado
-                let methodUsed = "mixed"; // 'exact' (detective), 'all' (todo), 'none' (exento), 'proportional' (fallback)
+                let itemTaxMap = new Array(items.length).fill(0); 
+                let methodUsed = "proportional"; // Por defecto seguro
 
-                // CASO A: TODO EXENTO (Tax = 0)
+                // Lógica de detección
                 if (legacyTaxUsd === 0) {
-                    methodUsed = "none";
-                }
-                // CASO B: TODO GRAVADO (Tax ~= 16% del total)
-                else if (Math.abs(legacyTaxUsd - (totalDbNetUsd * IVA_RATE)) < 0.05) {
+                    methodUsed = "none"; // Todo exento
+                } else if (Math.abs(legacyTaxUsd - (totalDbNetUsd * IVA_RATE)) < 0.05) {
                     itemTaxMap.fill(1);
-                    methodUsed = "all";
-                }
-                // CASO C: MIXTO (DETECTIVE DE SUBSET SUM)
-                else {
-                    // Buscamos qué productos suman la Base Imponible (Tax / 0.16)
+                    methodUsed = "all"; // Todo gravado
+                } else if (items.length <= 20) {
+                    // Detective Subset Sum (Solo si hay pocos items)
                     const targetBase = legacyTaxUsd / IVA_RATE;
-                    
-                    // Función recursiva simple para encontrar la combinación
-                    // Retorna true si encuentra los items que suman targetBase
-                    const findSubset = (index, currentSum, selectedIndices) => {
-                        // Tolerancia de $0.02 para errores de redondeo
-                        if (Math.abs(currentSum - targetBase) < 0.03) return selectedIndices;
-                        if (index >= items.length || currentSum > targetBase + 0.03) return null;
-
-                        // Opción 1: Incluir este item (multiplicado por cantidad)
-                        const val = items[index].unit_price * items[index].quantity;
-                        const res1 = findSubset(index + 1, currentSum + val, [...selectedIndices, index]);
-                        if (res1) return res1;
-
-                        // Opción 2: No incluir este item
-                        return findSubset(index + 1, currentSum, selectedIndices);
+                    const findSubset = (idx, currentSum, selection) => {
+                        if (Math.abs(currentSum - targetBase) < 0.03) return selection;
+                        if (idx >= items.length || currentSum > targetBase + 0.03) return null;
+                        
+                        // Con item
+                        const v = items[idx].unit_price * items[idx].quantity;
+                        const r1 = findSubset(idx + 1, currentSum + v, [...selection, idx]);
+                        if (r1) return r1;
+                        // Sin item
+                        return findSubset(idx + 1, currentSum, selection);
                     };
-
-                    // Solo intentamos si son menos de 15 items para no congelar el navegador
-                    if (items.length <= 15) {
-                        const resultIndices = findSubset(0, 0, []);
-                        if (resultIndices) {
-                            resultIndices.forEach(idx => itemTaxMap[idx] = 1);
-                            methodUsed = "exact";
-                            console.log("🕵️‍♂️ Detective de IVA: Encontrados productos gravados:", resultIndices);
-                        } else {
-                            methodUsed = "proportional"; // Falló el detective, usamos promedio
-                        }
-                    } else {
-                        methodUsed = "proportional"; // Muchos items, usamos promedio
+                    
+                    const res = findSubset(0, 0, []);
+                    if (res) {
+                        res.forEach(i => itemTaxMap[i] = 1);
+                        methodUsed = "exact";
                     }
                 }
 
-                // CALCULAR FACTOR PROPORCIONAL (SOLO PARA FALLBACK)
+                // Fallback proporcional
                 let taxMultiplierFallback = 1;
                 if (totalDbNetUsd > 0) taxMultiplierFallback = 1 + (legacyTaxUsd / totalDbNetUsd);
 
-                // --- GENERACIÓN DE HTML ---
-                itemsHtml = `
+                // --- ARMADO DE HTML ---
+                productsHtml = `
                     <div class="mt-4 mb-3">
-                        <div class="d-flex align-items-center justify-content-between mb-2">
-                            <div class="d-flex align-items-center">
-                                <i class="fa-solid fa-calculator text-primary me-2"></i>
-                                <div>
-                                    <h6 class="fw-bold text-dark mb-0">CÁLCULO UNITARIO DE REEMBOLSO</h6>
-                                    <small class="text-muted" style="font-size: 0.75rem;">
-                                        ${methodUsed === 'exact' ? '<span class="text-success"><i class="fa-solid fa-check-circle"></i> IVA Identificado por Producto</span>' : 
-                                          methodUsed === 'proportional' ? '<span class="text-warning"><i class="fa-solid fa-scale-balanced"></i> IVA Prorrateado (Estimado)</span>' : 
-                                          methodUsed === 'all' ? 'Todos los productos incluyen IVA (16%)' : 'Productos Exentos de IVA'}
-                                    </small>
-                                </div>
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fa-solid fa-calculator text-primary me-2"></i>
+                            <div>
+                                <h6 class="fw-bold text-dark mb-0">CÁLCULO UNITARIO (Para Devoluciones)</h6>
+                                <small class="text-muted" style="font-size: 0.7rem;">
+                                    ${methodUsed === 'exact' ? 'IVA identificado por producto' : methodUsed === 'proportional' ? 'IVA prorrateado (estimado)' : 'Cálculo directo'}
+                                </small>
                             </div>
                         </div>
                         <div class="table-responsive border rounded-3">
@@ -1008,73 +976,66 @@ window.toggleOrderDetails = function(rowId) {
                                     <tr>
                                         <th class="ps-3 py-2">PRODUCTO</th>
                                         <th class="text-center py-2">CANT.</th>
-                                        <th class="text-end py-2">UNIT NETO ($)</th>
-                                        <th class="text-end py-2 bg-soft-success text-success fw-bold border-start">
-                                            REEMBOLSO (Bs)
-                                        </th>
+                                        <th class="text-end py-2">UNIT ($)</th>
+                                        <th class="text-end py-2 bg-soft-success text-success fw-bold border-start">REEMBOLSO (Bs)</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     ${items.map((item, idx) => {
-                                        let finalMultiplier = 1;
-                                        let badgeHtml = '';
-
+                                        let multiplier = 1;
+                                        let badge = '';
+                                        
                                         if (methodUsed === 'exact' || methodUsed === 'all') {
-                                            // Método Exacto: O tiene 16% o tiene 0%
                                             if (itemTaxMap[idx] === 1) {
-                                                finalMultiplier = 1.16;
-                                                badgeHtml = '<span class="badge bg-secondary text-white ms-1" style="font-size:0.6em">+IVA</span>';
+                                                multiplier = 1.16;
+                                                badge = '<span class="badge bg-secondary ms-1" style="font-size:0.6em">+IVA</span>';
                                             }
                                         } else if (methodUsed === 'proportional') {
-                                            // Método Fallback
-                                            finalMultiplier = taxMultiplierFallback;
+                                            multiplier = taxMultiplierFallback;
                                         }
 
-                                        const unitGrossUsd = item.unit_price * finalMultiplier;
-                                        const unitBs = unitGrossUsd * exchangeRate;
-                                        const totalRowBs = unitBs * item.quantity;
+                                        const grossUsd = item.unit_price * multiplier;
+                                        const grossBs = grossUsd * exchangeRate;
                                         
                                         return `
                                         <tr>
-                                            <td class="ps-3 text-truncate" style="max-width: 230px;" title="${item.name}">
-                                                ${item.name}
-                                            </td>
+                                            <td class="ps-3 text-truncate" style="max-width: 250px;">${item.name}</td>
                                             <td class="text-center fw-bold">${item.quantity}</td>
-                                            <td class="text-end text-muted">
-                                                ${fmt(item.unit_price)}
-                                                ${badgeHtml}
-                                            </td>
+                                            <td class="text-end text-muted">${fmt(item.unit_price)}${badge}</td>
                                             <td class="text-end fw-bold text-success bg-soft-success border-start fs-6">
-                                                ${fmt(unitBs, 'Bs.')}
-                                                ${item.quantity > 1 ? `<div class="small fw-normal text-muted opacity-75">(Total: ${fmt(totalRowBs, 'Bs.')})</div>` : ''}
+                                                ${fmt(grossBs, 'Bs.')}
                                             </td>
                                         </tr>`;
                                     }).join('')}
                                 </tbody>
                             </table>
-                            <div class="bg-light p-1 px-3 d-flex justify-content-between text-muted fst-italic" style="font-size: 0.75rem;">
-                                <span>* Tasa Ref: 1 USD = ${fmt(exchangeRate, 'Bs.')}</span>
+                            <div class="bg-light p-1 px-3 text-end text-muted fst-italic" style="font-size: 0.75rem;">
+                                Tasa Ref: 1 USD = ${fmt(exchangeRate, 'Bs.')}
                             </div>
                         </div>
                     </div>
                 `;
+            } else {
+                // MENSAJE DE ERROR AMIGABLE SI FALLA LA TABLA
+                let errorMsg = "No se pudo generar el cálculo detallado.";
+                if (items.length === 0) errorMsg = "⚠️ No hay productos registrados en la base de datos local para este pedido.";
+                else if (exchangeRate === 0) errorMsg = "⚠️ No se pudo leer la Tasa de Cambio del archivo Legacy.";
+                
+                productsHtml = `<div class="alert alert-warning mt-3 small">${errorMsg}</div>`;
             }
 
-            // 6. RENDERIZADO FINAL (Con estilos de impresión)
+            // 6. PLANTILLA FINAL
             const html = `
-                <!-- ESTILOS DE IMPRESIÓN INYECTADOS -->
                 <style>
                     @media print {
-                        @page { margin: 15mm; size: auto; } /* MARGEN DE 1.5 CM */
+                        @page { margin: 15mm; size: auto; }
                         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                         .modal-footer, .btn-close { display: none !important; }
                         .card { border: 1px solid #ddd !important; }
-                        .bg-soft-success { background-color: #ecfdf5 !important; }
                         a { text-decoration: none !important; color: black !important; }
                     }
                 </style>
 
-                <!-- ENCABEZADO -->
                 <div class="d-flex justify-content-between align-items-start mb-4 border-bottom pb-3">
                     <div>
                         <div class="text-primary fw-bold small mb-1"><i class="fa-solid fa-shield-halved me-1"></i>DATOS OFICIALES DEL LEGACY</div>
@@ -1090,7 +1051,6 @@ window.toggleOrderDetails = function(rowId) {
                     </div>
                 </div>
 
-                <!-- INFO PRINCIPAL (GRID) -->
                 <div class="row g-4 mb-4">
                     <div class="col-6">
                         <div class="p-3 border rounded h-100">
@@ -1115,10 +1075,9 @@ window.toggleOrderDetails = function(rowId) {
                     </div>
                 </div>
 
-                <!-- TABLA DE PRODUCTOS (NUEVA) -->
+                <!-- AQUÍ SE INYECTA LA TABLA DE PRODUCTOS -->
                 ${productsHtml}
 
-                <!-- TOTALES (DEL CSV) -->
                 <h6 class="fw-bold text-dark ps-1 mb-2 mt-4"><i class="fa-solid fa-receipt me-2"></i>DESGLOSE FINAL (LEGACY)</h6>
                 <div class="table-responsive border rounded mb-3">
                     <table class="table table-bordered mb-0 small">
@@ -1126,31 +1085,11 @@ window.toggleOrderDetails = function(rowId) {
                             <tr><th>Concepto</th><th>USD ($)</th><th>VED (Bs)</th></tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td class="ps-3">Subtotal Artículos</td>
-                                <td class="text-end pe-3">${fmt(parseM(data['Precio del artículo (USD)']))}</td>
-                                <td class="text-end pe-3">${fmt(parseM(data['Precio del artículo (VED)']), 'Bs.')}</td>
-                            </tr>
-                            <tr>
-                                <td class="ps-3">Descuentos</td>
-                                <td class="text-end pe-3 text-danger">-${fmt(parseM(data['Monto descontado (USD)']))}</td>
-                                <td class="text-end pe-3 text-danger">-${fmt(parseM(data['Monto descontado (VED)']), 'Bs.')}</td>
-                            </tr>
-                            <tr>
-                                <td class="ps-3">Impuestos</td>
-                                <td class="text-end pe-3">${fmt(parseM(data['Impuesto (USD)']))}</td>
-                                <td class="text-end pe-3">${fmt(parseM(data['Impuesto (VED)']), 'Bs.')}</td>
-                            </tr>
-                            <tr>
-                                <td class="ps-3 text-muted">Delivery Fee</td>
-                                <td class="text-end pe-3 text-muted">${fmt(parseM(data['Cargo de entrega (USD)']))}</td>
-                                <td class="text-end pe-3 text-muted">${fmt(parseM(data['Cargo de entrega (VED)']), 'Bs.')}</td>
-                            </tr>
-                            <tr>
-                                <td class="ps-3 text-muted">Service Fee</td>
-                                <td class="text-end pe-3 text-muted">${fmt(parseM(data['Tarifa de servicio (USD)']))}</td>
-                                <td class="text-end pe-3 text-muted">${fmt(parseM(data['Tarifa de servicio (VED)']), 'Bs.')}</td>
-                            </tr>
+                            <tr><td class="ps-3">Subtotal Artículos</td><td class="text-end pe-3">${fmt(parseM(data['Precio del artículo (USD)']))}</td><td class="text-end pe-3">${fmt(parseM(data['Precio del artículo (VED)']), 'Bs.')}</td></tr>
+                            <tr><td class="ps-3">Descuentos</td><td class="text-end pe-3 text-danger">-${fmt(parseM(data['Monto descontado (USD)']))}</td><td class="text-end pe-3 text-danger">-${fmt(parseM(data['Monto descontado (VED)']), 'Bs.')}</td></tr>
+                            <tr><td class="ps-3">Impuestos</td><td class="text-end pe-3">${fmt(parseM(data['Impuesto (USD)']))}</td><td class="text-end pe-3">${fmt(parseM(data['Impuesto (VED)']), 'Bs.')}</td></tr>
+                            <tr><td class="ps-3 text-muted">Delivery Fee</td><td class="text-end pe-3 text-muted">${fmt(parseM(data['Cargo de entrega (USD)']))}</td><td class="text-end pe-3 text-muted">${fmt(parseM(data['Cargo de entrega (VED)']), 'Bs.')}</td></tr>
+                            <tr><td class="ps-3 text-muted">Service Fee</td><td class="text-end pe-3 text-muted">${fmt(parseM(data['Tarifa de servicio (USD)']))}</td><td class="text-end pe-3 text-muted">${fmt(parseM(data['Tarifa de servicio (VED)']), 'Bs.')}</td></tr>
                         </tbody>
                         <tfoot class="bg-dark text-white">
                             <tr>
@@ -1164,9 +1103,7 @@ window.toggleOrderDetails = function(rowId) {
 
                 <div class="alert alert-warning small d-flex align-items-start py-2">
                     <i class="fa-solid fa-triangle-exclamation mt-1 me-2"></i>
-                    <div>
-                        <strong>Nota para ATC:</strong> El <em>Service Fee</em> y el <em>Delivery Fee</em> no suelen ser reembolsables. Verifique políticas.
-                    </div>
+                    <div><strong>Nota:</strong> Service Fee y Delivery Fee no suelen ser reembolsables.</div>
                 </div>
             `;
 
