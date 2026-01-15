@@ -223,36 +223,54 @@ def process_drone_data(db, data: dict):
             db.add(order); db.commit(); db.refresh(order)
             db.add(OrderStatusLog(order_id=order.id, status=db_status, timestamp=datetime.utcnow()))
         else:
+            # 1. Actualización de Estatus
             if order.current_status != db_status:
                 logger.info(f"🔄 Cambio #{external_id}: {order.current_status}->{db_status}")
                 db.add(OrderStatusLog(order_id=order.id, status=db_status, timestamp=datetime.utcnow()))
                 order.current_status = db_status
             
-            # Updates
+            # 2. Actualización Financiera
             order.total_amount = data.get('total_amount', order.total_amount)
             if data.get('real_delivery_fee'): order.gross_delivery_fee = data['real_delivery_fee']
             if data.get('service_fee'): order.service_fee = data['service_fee']
             if data.get('product_price'): order.product_price = data['product_price']
             if c_reason: order.cancellation_reason = c_reason
             
+            # 3. Actualización Logística (Tiempo, Mapa, Tipo, Chofer)
             if minutes_calc: order.delivery_time_minutes = minutes_calc
             
-            # 1. Actualizamos Coordenadas solo si existen
+            # Actualizamos Coordenadas solo si existen en el scrape actual
             if cust_lat: 
-                order.latitude=cust_lat; order.longitude=cust_lng; order.distance_km=dist_km
+                order.latitude = cust_lat
+                order.longitude = cust_lng
+                order.distance_km = dist_km
             
-            # 2. Actualizamos el Tipo SIEMPRE (Liberado del IF anterior)
-            # Esto garantiza que la lógica de "Sin Chofer = Pickup" se guarde
+            # Actualizamos el Tipo SIEMPRE (Para corregir falsos deliveries)
             if order_type:
                 order.order_type = order_type
 
-            if driver: order.driver_id = driver.id
+            if driver: 
+                order.driver_id = driver.id
+            
+            # 4. Actualización de Cliente (CRÍTICO PARA RESYNC)
+            # Si el Dron trajo un cliente válido, actualizamos la relación
+            if customer: 
+                order.customer_id = customer.id
         
-        # PRODUCTOS
+        # 5. PRODUCTOS (Esto va fuera del else/if inicial, o indentado igual que el else)
+        # Nota: En tu código original esto estaba indentado al mismo nivel que el if/else principal
+        # Asegúrate de que esta parte de productos quede alineada con el 'if not order' / 'else'
         if "items" in data and data["items"]:
             db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
             for item in data["items"]:
-                db.add(OrderItem(order_id=order.id, name=item['name'], quantity=item['quantity'], unit_price=item['unit_price'], total_price=item['total_price'], barcode=item.get('barcode')))
+                db.add(OrderItem(
+                    order_id=order.id, 
+                    name=item['name'], 
+                    quantity=item['quantity'], 
+                    unit_price=item['unit_price'], 
+                    total_price=item['total_price'], 
+                    barcode=item.get('barcode')
+                ))
         
         db.commit()
     except Exception as e:

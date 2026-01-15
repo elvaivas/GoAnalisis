@@ -223,25 +223,8 @@ window.toggleOrderDetails = function(rowId) {
         let html = '';
         
         data.forEach(o => {
-            // =========================================================
-            // PASO 1: DEFINIR VARIABLES
-            // =========================================================
+            // 1. DEFINICIÓN DE VARIABLES
             
-            // --- SEGURIDAD: BOTÓN RESYNC SOLO PARA ADMINS ---
-            const userRole = localStorage.getItem('role');
-            let resyncButtonHtml = '';
-            
-            if (userRole === 'admin') {
-                resyncButtonHtml = `
-                    <button class="btn btn-link p-0 text-muted btn-resync ms-2" 
-                            onclick="event.stopPropagation(); resyncOrder('${o.external_id}', this)" 
-                            title="Sincronizar datos (Solo Admin)">
-                        <i class="fa-solid fa-arrows-rotate small"></i>
-                    </button>
-                `;
-            }
-            // ------------------------------------------------
-
             // A. Estado
             let statusBadge = '';
             let isFinal = false;
@@ -258,73 +241,17 @@ window.toggleOrderDetails = function(rowId) {
                 statusBadge = `<span class="badge bg-secondary bg-opacity-25 text-dark">${trans}</span>`;
             }
 
-            // B. Lealtad (TIER BADGE)
-            let tierBadge = '<span class="badge rounded-pill bg-light text-muted border" style="font-size:0.6rem">Nuevo</span>';
-            const count = o.customer_orders_count || 1;
-            if (count > 10) tierBadge = '<span class="badge rounded-pill bg-warning text-dark border border-warning" style="font-size:0.6rem">VIP</span>';
-            else if (count > 1) tierBadge = '<span class="badge rounded-pill bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">Frecuente</span>';
-
-            // C. Tiempo
-            let timeHtml = '';
-            if (isFinal) {
-                const finalTime = cleanFinalTime(o.duration_text);
-                timeHtml = `<div class="fw-bold text-dark fs-6">${finalTime}</div><small class="text-muted" style="font-size:0.7rem">Tiempo Total</small>`;
-            } else {
-                timeHtml = `
-                    <div class="live-timer-container" data-created="${o.created_at}" data-state-start="${o.state_start_at}">
-                        <div class="fw-bold text-dark fs-5 timer-total font-monospace">--:--</div>
-                        <small class="text-muted" style="font-size:0.65rem">En fase: <span class="timer-state text-primary fw-bold">--:--</span></small>
-                    </div>`;
-            }
-
-            // D. Logística
-            const typeBadge = o.order_type === 'Delivery' 
-                ? '<span class="badge bg-primary bg-opacity-10 text-primary mb-1"><i class="fa-solid fa-motorcycle me-1"></i>Delivery</span>'
-                : '<span class="badge bg-warning bg-opacity-10 text-warning mb-1"><i class="fa-solid fa-person-walking me-1"></i>Pickup</span>';
+            // B. Botón Resync (SOLO ADMIN)
+            const userRole = localStorage.getItem('role');
+            let resyncButtonHtml = '';
             
-            const driverHtml = o.driver && o.driver.name !== 'No Asignado' 
-                ? `<div class="d-flex align-items-center small text-dark"><i class="fa-solid fa-helmet-safety me-2 text-muted"></i>${o.driver.name}</div>`
-                : `<div class="small text-muted fst-italic">--</div>`;
-
-            // E. Items
-            let itemsTable = '<div class="text-muted small fst-italic p-3">Sin productos registrados</div>';
-            if (o.items && o.items.length > 0) {
-                itemsTable = `
-                    <table class="table table-sm table-borderless mb-0 small" style="background: transparent;">
-                        <thead class="text-muted border-bottom"><tr><th>Producto</th><th class="text-center">Cant.</th><th class="text-end">Precio</th><th class="text-end">Total</th></tr></thead>
-                        <tbody>
-                            ${o.items.map(i => `
-                                <tr>
-                                    <td class="text-truncate" style="max-width: 250px;" title="${i.name}">${i.name}</td>
-                                    <td class="text-center">${i.quantity}</td>
-                                    <td class="text-end">$${i.unit_price.toFixed(2)}</td>
-                                    <td class="text-end fw-bold">$${i.total_price.toFixed(2)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                `;
-            }
-
-            // =========================================================
-            // PASO 2: RENDERIZAR HTML (AHORA SÍ EXISTEN LAS VARIABLES)
-            // =========================================================
-
-            // FILA PRINCIPAL
-            html += `
-                <tr id="row-${o.id}" style="cursor: pointer; transition: background 0.2s;" onclick="toggleOrderDetails('${o.id}')">
-                    <td class="ps-4">
-                        <div class="d-flex align-items-center">
-                            <i id="icon-${o.id}" class="fa-solid fa-chevron-right text-muted me-2 small" style="width: 15px; transition: transform 0.2s;"></i>
-                            <div>
-                                <div class="d-flex align-items-center gap-2">
-                                    <div class="fw-bold text-dark">#${o.external_id}</div>
-                                    ${resyncButtonHtml}
-                                    <!-- BOTÓN RESYNC -->
-                                    <button class="btn btn-link p-0 text-muted btn-resync" 
-                                            onclick="event.stopPropagation(); resyncOrder('${o.external_id}', this)" 
-                                            title="Sincronizar datos de este pedido ahora">
-                                        <i class="fa-solid fa-arrows-rotate small"></i>
+            // VALIDACIÓN ESTRICTA DE ROL
+            if (userRole === 'admin') {
+                resyncButtonHtml = `
+                    <button class="btn btn-link p-0 text-muted btn-resync ms-2" 
+                            onclick="event.stopPropagation(); resyncOrder('${o.external_id}', this)" 
+                            title="Sincronizar datos (Solo Admin)">
+                        <i class="fa-solid fa-arrows-rotate small"></i>
                                     </button>
                                 </div>
                                 <span class="badge bg-light text-secondary border fw-normal" style="font-size:0.7rem">${o.store_name}</span>
