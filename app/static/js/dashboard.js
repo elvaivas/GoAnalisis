@@ -770,7 +770,6 @@ window.toggleOrderDetails = function(rowId) {
         });
     }
 
-    // --- 7. MAPA DE CALOR (Leaflet) ---
     // --- 7. MAPA DE CALOR (Leaflet - BLINDADO) ---
     async function updateHeatmap() {
         const mapDiv = document.getElementById('heatmapContainer');
@@ -840,20 +839,6 @@ window.toggleOrderDetails = function(rowId) {
                 const stores = await resStores.json();
                 stores.forEach(s => {
                     // Usamos un ID único para no duplicar marcadores si ya existen (opcional, Leaflet maneja esto bien)
-                    L.circleMarker([s.lat, s.lng], { 
-                        radius: 5, fillColor: "#fff", color: "#3b82f6", weight: 2, fillOpacity: 1 
-                    }).bindPopup(`<b>${s.name}</b>`).addTo(mapInstance);
-                });
-            }
-        } catch(e) {}
-    }
-
-        // Cargar Tiendas
-        try {
-            const resStores = await authFetch('/api/data/stores-locations');
-            if(resStores) {
-                const stores = await resStores.json();
-                stores.forEach(s => {
                     L.circleMarker([s.lat, s.lng], { 
                         radius: 5, fillColor: "#fff", color: "#3b82f6", weight: 2, fillOpacity: 1 
                     }).bindPopup(`<b>${s.name}</b>`).addTo(mapInstance);
