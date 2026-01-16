@@ -771,56 +771,82 @@ window.toggleOrderDetails = function(rowId) {
     }
 
     // --- 7. MAPA DE CALOR (Leaflet) ---
+    // --- 7. MAPA DE CALOR (Leaflet - BLINDADO) ---
     async function updateHeatmap() {
         const mapDiv = document.getElementById('heatmapContainer');
         if (!mapDiv) return;
 
-        // CHECK DE SEGURIDAD: Si el div está oculto (altura 0), NO dibujamos nada para evitar el error IndexSizeError
-        if (mapDiv.clientHeight === 0 || mapDiv.clientWidth === 0) {
-            console.warn("⚠️ Mapa oculto: Saltando renderizado para evitar crash.");
-            return; 
-        }
-
-        // Inicialización única
-        if (!mapInstance) {
-            mapInstance = L.map('heatmapContainer').setView([10.4806, -66.9036], 12);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(mapInstance);
-        }
-
-        // Forzamos ajuste de tamaño
-        mapInstance.invalidateSize();
-
+        // 1. Obtener Datos (Siempre, para tenerlos listos)
         const res = await authFetch(buildUrl('/api/data/heatmap'));
         if (!res) return;
         const data = await res.json();
 
-        // Limpieza de capa anterior
+        // 2. CHECK DE SEGURIDAD (Si está oculto/colapsado)
+        if (mapDiv.clientHeight === 0 || mapDiv.clientWidth === 0) {
+            console.warn("⚠️ Mapa oculto: Limpiando capas para evitar crash.");
+            
+            // CRÍTICO: Si el mapa está oculto, QUITAMOS la capa de calor para que no intente
+            // dibujarse en un canvas de 0px y genere el error IndexSizeError.
+            if (mapInstance && heatLayer) {
+                mapInstance.removeLayer(heatLayer);
+                heatLayer = null;
+            }
+            return; 
+        }
+
+        // 3. Inicialización única (Si es visible y no existe el mapa)
+        if (!mapInstance) {
+            mapInstance = L.map('heatmapContainer').setView([10.4806, -66.9036], 12);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { 
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap'
+            }).addTo(mapInstance);
+        }
+
+        // 4. Forzar ajuste de tamaño (Vital cuando se abre el acordeón)
+        mapInstance.invalidateSize();
+
+        // 5. Limpieza de capa anterior (Si existía)
         if (heatLayer) {
             mapInstance.removeLayer(heatLayer);
             heatLayer = null;
         }
 
+        // 6. Pintar Nueva Capa
         if (data && data.length > 0) {
             try {
-                // Validación extra antes de pintar
-                if (mapInstance.getSize().x > 0) {
-                    heatLayer = L.heatLayer(data, { 
-                        radius: 20, 
-                        blur: 15, 
-                        maxZoom: 14, 
-                        minOpacity: 0.4,
-                        gradient: {0.4: 'cyan', 0.65: 'lime', 1: 'red'} 
-                    }).addTo(mapInstance);
-                    
-                    if (data.length > 1) {
-                        const bounds = data.map(p => [p[0], p[1]]);
-                        mapInstance.fitBounds(bounds, { padding: [20, 20] });
-                    }
+                heatLayer = L.heatLayer(data, { 
+                    radius: 20, 
+                    blur: 15, 
+                    maxZoom: 14, 
+                    minOpacity: 0.4,
+                    gradient: {0.4: 'cyan', 0.65: 'lime', 1: 'red'} 
+                }).addTo(mapInstance);
+                
+                // Auto-ajustar zoom para ver los puntos
+                if (data.length > 1) {
+                    const bounds = data.map(p => [p[0], p[1]]);
+                    mapInstance.fitBounds(bounds, { padding: [20, 20] });
                 }
             } catch(e) { 
-                console.error("Error pintando heatmap (posiblemente oculto):", e); 
+                console.error("Error pintando heatmap:", e); 
             }
         }
+
+        // 7. Cargar Tiendas (Puntos Azules)
+        try {
+            const resStores = await authFetch('/api/data/stores-locations');
+            if(resStores) {
+                const stores = await resStores.json();
+                stores.forEach(s => {
+                    // Usamos un ID único para no duplicar marcadores si ya existen (opcional, Leaflet maneja esto bien)
+                    L.circleMarker([s.lat, s.lng], { 
+                        radius: 5, fillColor: "#fff", color: "#3b82f6", weight: 2, fillOpacity: 1 
+                    }).bindPopup(`<b>${s.name}</b>`).addTo(mapInstance);
+                });
+            }
+        } catch(e) {}
+    }
 
         // Cargar Tiendas
         try {
