@@ -1383,7 +1383,22 @@ window.toggleOrderDetails = function(rowId) {
         const LIMITS = { 'pending': 10, 'processing': 15, 'confirmed': 15, 'driver_assigned': 15, 'on_the_way': 45 };
         const currentIds = new Set();
 
+        // --- DEFINIR EL INICIO DEL DÍA (00:00 AM) ---
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Resetear a medianoche local
+        const todayTime = today.getTime();
+
         newOrders.forEach(o => {
+            // --- FILTRO ANTI-SPAM (SEGURIDAD) ---
+            // Convertimos la fecha del pedido a objeto Date
+            const orderDate = new Date(o.created_at);
+            
+            // Si el pedido es más viejo que hoy a las 00:00, LO IGNORAMOS.
+            if (orderDate.getTime() < todayTime) {
+                return; // Salta a la siguiente iteración sin notificar
+            }
+            // ------------------------------------
+
             currentIds.add(o.id);
             const prev = ordersMemory[o.id];
 
@@ -1411,12 +1426,11 @@ window.toggleOrderDetails = function(rowId) {
             // C. RETRASOS
             if (o.state_start_at && LIMITS[o.current_status]) {
                 let stateStr = o.state_start_at;
-                if (!stateStr.endsWith('Z')) stateStr += 'Z'; // Fix Zona Horaria
+                if (!stateStr.endsWith('Z')) stateStr += 'Z'; 
                 
                 const elapsedMinutes = (new Date() - new Date(stateStr)) / 1000 / 60;
                 const keyAlert = `alerted_${o.current_status}`;
                 
-                // Si la memoria previa existe, recuperamos los flags de alerta
                 const prevFlags = prev || {};
 
                 if (elapsedMinutes > LIMITS[o.current_status] && !prevFlags[keyAlert]) {
@@ -1425,13 +1439,11 @@ window.toggleOrderDetails = function(rowId) {
                         `${Math.floor(elapsedMinutes)} min en ${o.current_status.toUpperCase()}`,
                         'alert'
                     );
-                    // Marcamos como alertado
                     if (!ordersMemory[o.id]) ordersMemory[o.id] = {};
                     ordersMemory[o.id][keyAlert] = true;
                 }
             }
             
-            // Actualizar memoria (manteniendo flags)
             const existing = ordersMemory[o.id] || {};
             ordersMemory[o.id] = { ...existing, status: o.current_status, time: new Date() };
         });
