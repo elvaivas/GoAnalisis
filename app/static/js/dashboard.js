@@ -1278,27 +1278,31 @@ window.toggleOrderDetails = function(rowId) {
 
     // 2. GESTIÓN DEL BOTÓN
     btnNotif?.addEventListener('click', () => {
-        console.log("👆 Click en Campana. Estado actual:", notificationsEnabled);
+        console.log("👆 Click en Campana. Estado Permiso:", Notification.permission);
 
         if (!notificationsEnabled) {
-            // INTENTAR ACTIVAR
+            // CASO A: Ya concedido (Solo encender lógica interna)
             if (Notification.permission === "granted") {
-                // Ya tenemos permiso, solo activamos
                 toggleVigilante(true);
-            } else if (Notification.permission !== "denied") {
-                // No tenemos permiso, pedimos
+            } 
+            // CASO B: Bloqueado por el usuario (Mostrar Guía Visual)
+            else if (Notification.permission === "denied") {
+                const helpModal = new bootstrap.Modal(document.getElementById('modalNotifHelp'));
+                helpModal.show();
+            } 
+            // CASO C: Pregunta virgen (Pedir permiso nativo)
+            else {
                 Notification.requestPermission().then(permission => {
                     if (permission === "granted") {
                         toggleVigilante(true);
                     } else {
-                        alert("⚠️ Debes permitir notificaciones en el navegador para usar el Vigilante.");
+                        // Si el usuario le da a "Bloquear" en el popup
+                        console.warn("Usuario denegó permiso.");
                     }
                 });
-            } else {
-                alert("🚫 Las notificaciones están bloqueadas en tu navegador. Habilítalas en la configuración del sitio (candado junto a la URL).");
             }
         } else {
-            // DESACTIVAR
+            // DESACTIVAR (Apagar lógica interna)
             toggleVigilante(false);
         }
     });

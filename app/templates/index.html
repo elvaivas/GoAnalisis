@@ -311,6 +311,43 @@
             </div>
         </div>
     </div>
+    <!-- MODAL AYUDA NOTIFICACIONES -->
+    <div class="modal fade" id="modalNotifHelp" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold text-dark">
+                        <i class="fa-solid fa-lock text-warning me-2"></i>Permiso Bloqueado
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center pt-2">
+                    <p class="text-muted mb-4">
+                        Para que el <strong>Vigilante</strong> funcione en segundo plano, necesitas habilitar el permiso manualmente para este sitio.
+                    </p>
+                    
+                    <div class="card bg-light border-0 p-3 mb-3 text-start">
+                        <h6 class="fw-bold small text-uppercase text-muted mb-3">Cómo activar en 3 pasos:</h6>
+                        <ol class="mb-0 ps-3 small">
+                            <li class="mb-2">Dale clic al ícono de <strong>Configuración</strong> (el candado 🔒 o los ajustes) a la izquierda de la URL del navegador.</li>
+                            <li class="mb-2">Busca la opción <strong>"Notificaciones"</strong>.</li>
+                            <li>Cambia el interruptor a <strong>"Permitir"</strong> (Allow).</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="alert alert-info d-flex align-items-center small py-2">
+                        <i class="fa-solid fa-circle-info me-2"></i>
+                        <div>Solo recibirás alertas de <strong>GoAnalisis</strong>, no de otros sitios.</div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0 justify-content-center">
+                    <button type="button" class="btn btn-primary px-4 rounded-pill" onclick="location.reload()">
+                        Ya lo hice, Recargar Página
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ESTILOS DE IMPRESIÓN (Para que salga limpia la hoja) -->
     <style>
