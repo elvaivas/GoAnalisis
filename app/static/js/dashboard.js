@@ -1244,144 +1244,117 @@ window.toggleOrderDetails = function(rowId) {
         }
     };
 // =========================================================
-    // 🔔 MÓDULO VIGILANTE (NOTIFICACIONES AGRESIVAS)
+    // 🔔 MÓDULO VIGILANTE V2 (PERSISTENTE Y ROBUSTO)
     // =========================================================
     
-    let notificationsEnabled = false;
-    let ordersMemory = {}; // Memoria local para comparar cambios
-    let isFirstLoad = true; // Para no gritar al abrir la página
+    // Leemos preferencia guardada (o false por defecto)
+    let notificationsEnabled = localStorage.getItem('vigilante_active') === 'true';
+    let ordersMemory = {}; 
+    let isFirstLoad = true;
 
-    // Sonidos (Base64 para no depender de archivos externos)
-    const soundNewOrder = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg"); // Beep corto
-    const soundAlert = new Audio("https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg"); // Alarma fuerte
+    const soundNewOrder = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+    const soundAlert = new Audio("https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg");
 
-    // 1. GESTIÓN DEL BOTÓN
     const btnNotif = document.getElementById('btn-notifications');
     const badgeNotif = document.getElementById('notif-badge');
 
-    btnNotif?.addEventListener('click', () => {
-        if (!notificationsEnabled) {
-            // Pedir Permiso
-            Notification.requestPermission().then(permission => {
-                if (permission === "granted") {
-                    notificationsEnabled = true;
-                    updateNotifIcon();
-                    // Sonido de prueba para desbloquear el AudioContext del navegador
-                    soundNewOrder.play().catch(e => console.log("Audio autoplay block handled"));
-                    alert("🔔 ¡Modo Vigilante Activado!\nRecibirás alertas en segundo plano.");
-                }
-            });
+    // 1. INICIALIZACIÓN VISUAL (Al cargar página)
+    function initVigilante() {
+        if (!btnNotif) {
+            console.warn("⚠️ No se encontró el botón #btn-notifications en el HTML.");
+            return;
+        }
+        
+        // Si el usuario lo dejó activo, verificamos que el navegador aún tenga permiso
+        if (notificationsEnabled && Notification.permission === "granted") {
+            updateNotifIcon(true);
+            console.log("🔔 Vigilante: Restaurado (ACTIVO)");
         } else {
             notificationsEnabled = false;
-            updateNotifIcon();
+            updateNotifIcon(false);
+            console.log("🔕 Vigilante: Inactivo");
+        }
+    }
+
+    // 2. GESTIÓN DEL BOTÓN
+    btnNotif?.addEventListener('click', () => {
+        console.log("👆 Click en Campana. Estado actual:", notificationsEnabled);
+
+        if (!notificationsEnabled) {
+            // INTENTAR ACTIVAR
+            if (Notification.permission === "granted") {
+                // Ya tenemos permiso, solo activamos
+                toggleVigilante(true);
+            } else if (Notification.permission !== "denied") {
+                // No tenemos permiso, pedimos
+                Notification.requestPermission().then(permission => {
+                    if (permission === "granted") {
+                        toggleVigilante(true);
+                    } else {
+                        alert("⚠️ Debes permitir notificaciones en el navegador para usar el Vigilante.");
+                    }
+                });
+            } else {
+                alert("🚫 Las notificaciones están bloqueadas en tu navegador. Habilítalas en la configuración del sitio (candado junto a la URL).");
+            }
+        } else {
+            // DESACTIVAR
+            toggleVigilante(false);
         }
     });
 
-    function updateNotifIcon() {
+    function toggleVigilante(state) {
+        notificationsEnabled = state;
+        localStorage.setItem('vigilante_active', state); // Guardar preferencia
+        updateNotifIcon(state);
+        
+        if (state) {
+            // Sonido de confirmación
+            soundNewOrder.volume = 0.5;
+            soundNewOrder.play().catch(e => console.warn("Audio bloqueado:", e));
+            
+            // Notificación de prueba
+            new Notification("GoAnalisis Vigilante", { 
+                body: "✅ Monitoreo en segundo plano activado.",
+                icon: "/static/img/logo.png"
+            });
+        }
+    }
+
+    function updateNotifIcon(isActive) {
         const icon = btnNotif.querySelector('i');
-        if (notificationsEnabled) {
+        if (isActive) {
+            // ESTADO ACTIVO
             btnNotif.classList.remove('btn-outline-secondary');
-            btnNotif.classList.add('btn-primary');
-            icon.classList.remove('fa-regular', 'fa-bell');
-            icon.classList.add('fa-solid', 'fa-bell-concierge'); // Campana activa
+            btnNotif.classList.add('btn-primary', 'shadow', 'pulse-animation'); // Agrega clase pulse si quieres efecto
+            icon.className = 'fa-solid fa-bell'; 
             badgeNotif.classList.remove('d-none');
         } else {
+            // ESTADO INACTIVO
             btnNotif.classList.add('btn-outline-secondary');
-            btnNotif.classList.remove('btn-primary');
-            icon.classList.remove('fa-solid', 'fa-bell-concierge');
-            icon.classList.add('fa-regular', 'fa-bell-slash');
+            btnNotif.classList.remove('btn-primary', 'shadow', 'pulse-animation');
+            icon.className = 'fa-regular fa-bell-slash';
             badgeNotif.classList.add('d-none');
         }
     }
 
-    // 2. FUNCIÓN DE DISPARO (AGRESIVA)
+    // 3. FUNCIÓN DE DISPARO
     function sendNotification(title, body, type = 'info') {
         if (!notificationsEnabled) return;
 
-        // A. Notificación Visual (Sistema Operativo)
-        // requireInteraction: true -> OBLIGA al usuario a cerrarla (Agresivo)
+        // Visual
         const notif = new Notification(title, {
             body: body,
             icon: '/static/img/logo.png',
-            requireInteraction: true, 
-            tag: title // Evita duplicar la misma alerta
+            requireInteraction: type === 'alert', // Solo alertas requieren click para cerrar
+            tag: title
         });
+        
+        notif.onclick = () => { window.focus(); notif.close(); };
 
-        notif.onclick = function() {
-            window.focus(); // Intenta traer la ventana al frente
-            notif.close();
-        };
-
-        // B. Alerta Sonora
-        if (type === 'alert') {
-            soundAlert.currentTime = 0;
-            soundAlert.play();
-        } else {
-            soundNewOrder.currentTime = 0;
-            soundNewOrder.play();
-        }
-    }
-
-    // 3. LÓGICA DE DETECCIÓN (EL CEREBRO)
-    // Esta función se llama cada vez que llega data nueva del servidor
-    function checkOperationalAnomalies(newOrders) {
-        // Umbrales de Tiempo (Minutos)
-        const LIMITS = {
-            'pending': 10,
-            'processing': 15,
-            'driver_assigned': 15, // Esperando al motorizado
-            'on_the_way': 45
-        };
-
-        const currentIds = new Set();
-
-        newOrders.forEach(o => {
-            currentIds.add(o.id);
-            const prev = ordersMemory[o.id];
-
-            // A. DETECCIÓN: NUEVO PEDIDO
-            if (!prev) {
-                if (!isFirstLoad) {
-                    sendNotification(`💰 Nuevo Pedido #${o.external_id}`, `Cliente: ${o.customer_name} ($${o.total_amount})`, 'info');
-                }
-            } 
-            // B. DETECCIÓN: CAMBIO DE ESTADO
-            else if (prev.status !== o.current_status) {
-                const mapStatus = {
-                    'processing': '🟡 Facturando',
-                    'driver_assigned': '⚫ Motorizado Asignado',
-                    'on_the_way': '🔵 En Camino',
-                    'delivered': '✅ Entregado',
-                    'canceled': '🔴 Cancelado'
-                };
-                
-                // Solo notificamos cambios relevantes
-                if (mapStatus[o.current_status]) {
-                    sendNotification(`Cambio de Estado #${o.external_id}`, `Ahora está: ${mapStatus[o.current_status]}`, 'info');
-                }
-            }
-
-            // C. DETECCIÓN: TIEMPOS EXCEDIDOS (Solo si está vivo)
-            if (o.state_start_at && LIMITS[o.current_status]) {
-                const elapsedMinutes = (new Date() - new Date(o.state_start_at)) / 1000 / 60;
-                
-                // Usamos flags para no spamear cada minuto. Solo avisamos al cruzar el umbral.
-                const keyAlert = `alerted_${o.current_status}`;
-                
-                if (elapsedMinutes > LIMITS[o.current_status] && !o[keyAlert]) {
-                    sendNotification(
-                        `⚠️ RETRASO CRÍTICO #${o.external_id}`,
-                        `Lleva ${Math.floor(elapsedMinutes)} min en ${o.current_status.toUpperCase()}. (Límite: ${LIMITS[o.current_status]}m)`,
-                        'alert'
-                    );
-                    // Marcamos localmente que ya avisamos (esto se reinicia si recargas la página)
-                    // Nota: Para persistencia real necesitaríamos guardar esto en ordersMemory más complejo
-                }
-            }
-
-            // Actualizamos memoria
-            ordersMemory[o.id] = { status: o.current_status, time: new Date() };
-        });
+        // Audio
+        try {
+            if (type === 'alert') {
 
         isFirstLoad = false;
     }
