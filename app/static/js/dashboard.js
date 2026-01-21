@@ -1280,29 +1280,37 @@ window.toggleOrderDetails = function(rowId) {
     btnNotif?.addEventListener('click', () => {
         console.log("👆 Click en Campana. Estado Permiso:", Notification.permission);
 
+        // --- LÓGICA DE DETECCIÓN DE HTTP INSEGURO ---
+        const isSecure = window.isSecureContext; // Navegador dice si es seguro o no
+        
         if (!notificationsEnabled) {
-            // CASO A: Ya concedido (Solo encender lógica interna)
+            // Caso 1: Ya tiene permiso
             if (Notification.permission === "granted") {
                 toggleVigilante(true);
             } 
-            // CASO B: Bloqueado por el usuario (Mostrar Guía Visual)
-            else if (Notification.permission === "denied") {
+            // Caso 2: Bloqueado o Contexto Inseguro (HTTP)
+            else if (Notification.permission === "denied" || !isSecure) {
+                
+                // PREPARAR EL MODAL CON LA IP ACTUAL
+                const inputIp = document.getElementById('inputServerUrl');
+                if (inputIp) {
+                    inputIp.value = window.location.origin; // Pone http://10.10.100.58:8001
+                }
+                
                 const helpModal = new bootstrap.Modal(document.getElementById('modalNotifHelp'));
                 helpModal.show();
             } 
-            // CASO C: Pregunta virgen (Pedir permiso nativo)
+            // Caso 3: Pregunta virgen (HTTPS o Localhost)
             else {
                 Notification.requestPermission().then(permission => {
                     if (permission === "granted") {
                         toggleVigilante(true);
                     } else {
-                        // Si el usuario le da a "Bloquear" en el popup
                         console.warn("Usuario denegó permiso.");
                     }
                 });
             }
         } else {
-            // DESACTIVAR (Apagar lógica interna)
             toggleVigilante(false);
         }
     });
@@ -1433,4 +1441,4 @@ window.toggleOrderDetails = function(rowId) {
     // Inicializar al cargar
     initVigilante();
 
-}); // <--- FINAL DEL ARCHIVO (IMPORTANTE)
+}); // <--- FINAL DEL ARCHIVO (ASEGÚRATE DE QUE ESTÉ)
