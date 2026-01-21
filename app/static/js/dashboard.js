@@ -207,6 +207,10 @@ window.toggleOrderDetails = function(rowId) {
         if (!res) return;
         const data = await res.json();
         
+        // --- CONEXIÓN VIGILANTE ---
+        checkOperationalAnomalies(data);
+        // --------------------------
+        
         // Guardamos data global para el Modal ATC
         currentOrdersData = data;
         
@@ -1239,4 +1243,146 @@ window.toggleOrderDetails = function(rowId) {
             modalBody.innerHTML = `<div class="text-center py-5 text-danger"><h5>Error</h5><p>${e.message}</p></div>`;
         }
     };
+// =========================================================
+    // 🔔 MÓDULO VIGILANTE (NOTIFICACIONES AGRESIVAS)
+    // =========================================================
+    
+    let notificationsEnabled = false;
+    let ordersMemory = {}; // Memoria local para comparar cambios
+    let isFirstLoad = true; // Para no gritar al abrir la página
+
+    // Sonidos (Base64 para no depender de archivos externos)
+    const soundNewOrder = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg"); // Beep corto
+    const soundAlert = new Audio("https://actions.google.com/sounds/v1/alarms/bugle_tune.ogg"); // Alarma fuerte
+
+    // 1. GESTIÓN DEL BOTÓN
+    const btnNotif = document.getElementById('btn-notifications');
+    const badgeNotif = document.getElementById('notif-badge');
+
+    btnNotif?.addEventListener('click', () => {
+        if (!notificationsEnabled) {
+            // Pedir Permiso
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    notificationsEnabled = true;
+                    updateNotifIcon();
+                    // Sonido de prueba para desbloquear el AudioContext del navegador
+                    soundNewOrder.play().catch(e => console.log("Audio autoplay block handled"));
+                    alert("🔔 ¡Modo Vigilante Activado!\nRecibirás alertas en segundo plano.");
+                }
+            });
+        } else {
+            notificationsEnabled = false;
+            updateNotifIcon();
+        }
+    });
+
+    function updateNotifIcon() {
+        const icon = btnNotif.querySelector('i');
+        if (notificationsEnabled) {
+            btnNotif.classList.remove('btn-outline-secondary');
+            btnNotif.classList.add('btn-primary');
+            icon.classList.remove('fa-regular', 'fa-bell');
+            icon.classList.add('fa-solid', 'fa-bell-concierge'); // Campana activa
+            badgeNotif.classList.remove('d-none');
+        } else {
+            btnNotif.classList.add('btn-outline-secondary');
+            btnNotif.classList.remove('btn-primary');
+            icon.classList.remove('fa-solid', 'fa-bell-concierge');
+            icon.classList.add('fa-regular', 'fa-bell-slash');
+            badgeNotif.classList.add('d-none');
+        }
+    }
+
+    // 2. FUNCIÓN DE DISPARO (AGRESIVA)
+    function sendNotification(title, body, type = 'info') {
+        if (!notificationsEnabled) return;
+
+        // A. Notificación Visual (Sistema Operativo)
+        // requireInteraction: true -> OBLIGA al usuario a cerrarla (Agresivo)
+        const notif = new Notification(title, {
+            body: body,
+            icon: '/static/img/logo.png',
+            requireInteraction: true, 
+            tag: title // Evita duplicar la misma alerta
+        });
+
+        notif.onclick = function() {
+            window.focus(); // Intenta traer la ventana al frente
+            notif.close();
+        };
+
+        // B. Alerta Sonora
+        if (type === 'alert') {
+            soundAlert.currentTime = 0;
+            soundAlert.play();
+        } else {
+            soundNewOrder.currentTime = 0;
+            soundNewOrder.play();
+        }
+    }
+
+    // 3. LÓGICA DE DETECCIÓN (EL CEREBRO)
+    // Esta función se llama cada vez que llega data nueva del servidor
+    function checkOperationalAnomalies(newOrders) {
+        // Umbrales de Tiempo (Minutos)
+        const LIMITS = {
+            'pending': 10,
+            'processing': 15,
+            'driver_assigned': 15, // Esperando al motorizado
+            'on_the_way': 45
+        };
+
+        const currentIds = new Set();
+
+        newOrders.forEach(o => {
+            currentIds.add(o.id);
+            const prev = ordersMemory[o.id];
+
+            // A. DETECCIÓN: NUEVO PEDIDO
+            if (!prev) {
+                if (!isFirstLoad) {
+                    sendNotification(`💰 Nuevo Pedido #${o.external_id}`, `Cliente: ${o.customer_name} ($${o.total_amount})`, 'info');
+                }
+            } 
+            // B. DETECCIÓN: CAMBIO DE ESTADO
+            else if (prev.status !== o.current_status) {
+                const mapStatus = {
+                    'processing': '🟡 Facturando',
+                    'driver_assigned': '⚫ Motorizado Asignado',
+                    'on_the_way': '🔵 En Camino',
+                    'delivered': '✅ Entregado',
+                    'canceled': '🔴 Cancelado'
+                };
+                
+                // Solo notificamos cambios relevantes
+                if (mapStatus[o.current_status]) {
+                    sendNotification(`Cambio de Estado #${o.external_id}`, `Ahora está: ${mapStatus[o.current_status]}`, 'info');
+                }
+            }
+
+            // C. DETECCIÓN: TIEMPOS EXCEDIDOS (Solo si está vivo)
+            if (o.state_start_at && LIMITS[o.current_status]) {
+                const elapsedMinutes = (new Date() - new Date(o.state_start_at)) / 1000 / 60;
+                
+                // Usamos flags para no spamear cada minuto. Solo avisamos al cruzar el umbral.
+                const keyAlert = `alerted_${o.current_status}`;
+                
+                if (elapsedMinutes > LIMITS[o.current_status] && !o[keyAlert]) {
+                    sendNotification(
+                        `⚠️ RETRASO CRÍTICO #${o.external_id}`,
+                        `Lleva ${Math.floor(elapsedMinutes)} min en ${o.current_status.toUpperCase()}. (Límite: ${LIMITS[o.current_status]}m)`,
+                        'alert'
+                    );
+                    // Marcamos localmente que ya avisamos (esto se reinicia si recargas la página)
+                    // Nota: Para persistencia real necesitaríamos guardar esto en ordersMemory más complejo
+                }
+            }
+
+            // Actualizamos memoria
+            ordersMemory[o.id] = { status: o.current_status, time: new Date() };
+        });
+
+        isFirstLoad = false;
+    }
 });

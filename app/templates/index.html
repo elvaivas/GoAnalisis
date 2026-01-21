@@ -40,6 +40,13 @@
                 <span class="badge bg-primary-subtle text-primary ms-2 rounded-pill" style="font-size: 0.6rem;">V5.1</span>
             </a>
             <div class="d-flex align-items-center">
+                <!-- BOTÓN NUEVO: NOTIFICACIONES -->
+                <button id="btn-notifications" class="btn btn-sm btn-outline-secondary rounded-circle me-3 position-relative" title="Activar Alertas Operativas">
+                    <i class="fa-regular fa-bell"></i>
+                    <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle d-none" id="notif-badge">
+                        <span class="visually-hidden">Alertas activas</span>
+                    </span>
+                </button>
                 <a href="#" id="btn-open-report" class="btn btn-sm btn-light text-muted border-0 me-3 admin-only">
     <i class="fa-solid fa-file-invoice me-2"></i>Reporte
 </a>
