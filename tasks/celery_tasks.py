@@ -132,26 +132,40 @@ def process_drone_data(db, data: dict):
         external_id = data.get('external_id')
         if not external_id: return
 
-        # Mapeos
-        status_text = data.get('status_text', '').lower()
-        db_status = "pending"
-        if "entregado" in status_text: db_status = "delivered"
-        elif "cancelado" in status_text: db_status = "canceled"
-        elif "entrega" in status_text and "repartidor" in status_text:
-             driver_name = data.get('driver_name', 'N/A')
-             if driver_name and "N/A" not in driver_name and len(driver_name) > 2: db_status = "driver_assigned"
-             else: db_status = "confirmed" # Solicitando
-        elif "asignado" in status_text: db_status = "driver_assigned"
-        elif "camino" in status_text or "ruta" in status_text: db_status = "on_the_way"
-        elif "proceso" in status_text: db_status = "processing"
-        elif "confirmado" in status_text: db_status = "confirmed"
-
-        # Relaciones
+        # --- DIAGNÓSTICO DE ESTATUS (Log visible) ---
+        raw_status = data.get('status_text', '').strip()
+        status_text = raw_status.lower()
+        
+        db_status = "pending" # Default
+        
+        # Lógica de Mapeo Blindada
+        if "entregado" in status_text: 
+            db_status = "delivered"
+        elif "cancelado" in status_text: 
+            db_status = "canceled"
+        elif "asignado" in status_text: 
+            db_status = "driver_assigned"
+        elif "camino" in status_text or "ruta" in status_text: 
+            db_status = "on_the_way"
+        elif "proceso" in status_text: 
+            db_status = "processing"
+        elif "confirmado" in status_text: 
+            db_status = "confirmed"
+        
+        # Log para ver qué decidió el sistema
+        if db_status == "pending" and "pendiente" not in status_text:
+            logger.warning(f"⚠️ Estatus Raro en #{external_id}: '{raw_status}' -> Se quedó como Pending")
+        
+        # --- BUSCAR O CREAR RELACIONES ---
+        # (Tiendas, Clientes, Drivers)
+        
         store = None
         if data.get('store_name'):
             store = db.query(Store).filter(Store.name == data['store_name']).first()
             if not store:
-                store = Store(name=data['store_name'], external_id=f"store_{data['store_name']}"); db.add(store); db.commit(); db.refresh(store)
+                store = Store(name=data['store_name'], external_id=f"store_{data['store_name']}")
+                db.add(store); db.commit(); db.refresh(store)
+            # Actualizar coords tienda si faltan
             if "store_lat" in data and store.latitude is None:
                 store.latitude = data['store_lat']; store.longitude = data['store_lng']
 
@@ -159,122 +173,112 @@ def process_drone_data(db, data: dict):
         if data.get('customer_name'):
             customer = db.query(Customer).filter(Customer.name == data['customer_name']).first()
             if not customer:
-                customer = Customer(name=data['customer_name'], external_id=f"cust_{data['customer_name']}"); db.add(customer); db.commit(); db.refresh(customer)
+                customer = Customer(name=data['customer_name'], external_id=f"cust_{data['customer_name']}")
+                db.add(customer); db.commit(); db.refresh(customer)
             if data.get('customer_phone'): customer.phone = data['customer_phone']
 
         driver = None
         d_name = data.get('driver_name', 'N/A')
         if d_name and "N/A" not in d_name:
             driver = db.query(Driver).filter(Driver.name == d_name).first()
-            if not driver: driver = Driver(name=d_name, external_id=f"driver_{d_name}"); db.add(driver); db.commit(); db.refresh(driver)
+            if not driver: 
+                driver = Driver(name=d_name, external_id=f"driver_{d_name}")
+                db.add(driver); db.commit(); db.refresh(driver)
 
-        # Pedido
+        # --- BUSCAR PEDIDO ---
         order = db.query(Order).filter(Order.external_id == external_id).first()
+        
+        # Fechas y Cálculos
         created_at_dt = parse_spanish_date(data.get('created_at_text', ''))
         minutes_calc = parse_duration_to_minutes(data.get('duration_text', ''))
         
         dist_km = 0.0
         cust_lat, cust_lng = data.get('customer_lat'), data.get('customer_lng')
-        if cust_lat and store and store.latitude: dist_km = calculate_distance_km(store.latitude, store.longitude, cust_lat, cust_lng)
+        if cust_lat and store and store.latitude: 
+            dist_km = calculate_distance_km(store.latitude, store.longitude, cust_lat, cust_lng)
         
-        # --- LÓGICA DE CLASIFICACIÓN LOGÍSTICA ---
-        order_type = "Delivery" # Por defecto
+        # --- LÓGICA DE CLASIFICACIÓN LOGÍSTICA V2 (La que arreglamos antes) ---
+        order_type = "Delivery"
         
-        # 1. Cancelados no tienen tipo activo
-        if db_status == "canceled": 
-            order_type = None
-            
-        # 2. Criterio de Distancia (Cliente en la tienda)
-        # Subimos tolerancia a 0.2km por errores de GPS
-        elif dist_km < 0.2 and dist_km >= 0: 
-            order_type = "Pickup"
-            
-        # 3. CRITERIO DE ORO (Heurística ATC):
-      
-        # 1. Si detectamos un Driver, ES DELIVERY (Mata cualquier otra regla)
-        if driver and driver.name and driver.name not in ["No Asignado", "N/A"]:
+        # 1. Si hay driver, es Delivery seguro
+        if driver and driver.name and "N/A" not in driver.name:
             order_type = "Delivery"
-            
-        # 2. Cancelados no tienen tipo
-        elif db_status == "canceled": 
+        # 2. Cancelado no tiene tipo
+        elif db_status == "canceled":
             order_type = None
-            
-        # 3. Solo es Pickup si la distancia es MUY corta
-        # (Quitamos la regla de "falta de chofer" porque es propensa a errores de scraping)
-        elif dist_km is not None and dist_km < 0.2 and dist_km >= 0: 
+        # 3. Distancia cero = Pickup
+        elif dist_km is not None and dist_km < 0.2 and dist_km >= 0:
             order_type = "Pickup"
-            
-        else:
-            # Ante la duda, mantenemos lo que ya tenía o Delivery por defecto
-            order_type = order_type or "Delivery"
-        # -----------------------------------------
-
+        
         c_reason = normalize_cancellation_reason(data.get('cancellation_reason'))
 
+        # --- GUARDADO ---
         if not order:
+            # CREAR NUEVO
             order = Order(
-                external_id=external_id, created_at=created_at_dt, total_amount=data.get('total_amount',0), delivery_fee=data.get('delivery_fee',0),
-                gross_delivery_fee=data.get('real_delivery_fee',0), service_fee=data.get('service_fee',0), coupon_discount=data.get('coupon_discount',0), tips=data.get('tips',0),
+                external_id=external_id, created_at=created_at_dt, 
+                total_amount=data.get('total_amount',0), 
+                delivery_fee=data.get('delivery_fee',0),
+                gross_delivery_fee=data.get('real_delivery_fee',0), 
+                service_fee=data.get('service_fee',0), 
+                coupon_discount=data.get('coupon_discount',0), 
+                tips=data.get('tips',0),
                 product_price=data.get('product_price',0),
-                current_status=db_status, order_type=order_type, distance_km=dist_km, latitude=cust_lat, longitude=cust_lng,
-                cancellation_reason=c_reason, delivery_time_minutes=minutes_calc, duration=data.get('duration_text'),
-                store_id=store.id if store else None, customer_id=customer.id if customer else None, driver_id=driver.id if driver else None
+                current_status=db_status, 
+                order_type=order_type, 
+                distance_km=dist_km, 
+                latitude=cust_lat, longitude=cust_lng,
+                cancellation_reason=c_reason, 
+                delivery_time_minutes=minutes_calc, 
+                duration=data.get('duration_text'),
+                store_id=store.id if store else None, 
+                customer_id=customer.id if customer else None, 
+                driver_id=driver.id if driver else None
             )
             db.add(order); db.commit(); db.refresh(order)
+            # Log inicial
             db.add(OrderStatusLog(order_id=order.id, status=db_status, timestamp=datetime.utcnow()))
         else:
-            # 1. Actualización de Estatus
+            # ACTUALIZAR EXISTENTE
+            
+            # 1. Cambio de Estatus
             if order.current_status != db_status:
-                logger.info(f"🔄 Cambio #{external_id}: {order.current_status}->{db_status}")
+                logger.info(f"🔄 Cambio #{external_id}: {order.current_status} -> {db_status}")
                 db.add(OrderStatusLog(order_id=order.id, status=db_status, timestamp=datetime.utcnow()))
                 order.current_status = db_status
             
-            # 2. Actualización Financiera
+            # 2. Updates Financieros
             order.total_amount = data.get('total_amount', order.total_amount)
             if data.get('real_delivery_fee'): order.gross_delivery_fee = data['real_delivery_fee']
             if data.get('service_fee'): order.service_fee = data['service_fee']
             if data.get('product_price'): order.product_price = data['product_price']
             if c_reason: order.cancellation_reason = c_reason
             
-            # 3. Actualización Logística (Tiempo, Mapa, Tipo, Chofer)
+            # 3. Logística
             if minutes_calc: order.delivery_time_minutes = minutes_calc
-            
-            # Actualizamos Coordenadas solo si existen en el scrape actual
             if cust_lat: 
-                order.latitude = cust_lat
-                order.longitude = cust_lng
-                order.distance_km = dist_km
+                order.latitude = cust_lat; order.longitude = cust_lng; order.distance_km = dist_km
             
-            # Actualizamos el Tipo SIEMPRE (Para corregir falsos deliveries)
-            if order_type:
-                order.order_type = order_type
-
-            if driver: 
-                order.driver_id = driver.id
-            
-            # 4. Actualización de Cliente (CRÍTICO PARA RESYNC)
-            # Si el Dron trajo un cliente válido, actualizamos la relación
-            if customer: 
-                order.customer_id = customer.id
+            if order_type: order.order_type = order_type
+            if driver: order.driver_id = driver.id
+            if customer: order.customer_id = customer.id
         
-        # 5. PRODUCTOS (Esto va fuera del else/if inicial, o indentado igual que el else)
-        # Nota: En tu código original esto estaba indentado al mismo nivel que el if/else principal
-        # Asegúrate de que esta parte de productos quede alineada con el 'if not order' / 'else'
+        # 4. PRODUCTOS (Siempre actualizar detalle)
         if "items" in data and data["items"]:
             db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
             for item in data["items"]:
                 db.add(OrderItem(
-                    order_id=order.id, 
-                    name=item['name'], 
-                    quantity=item['quantity'], 
-                    unit_price=item['unit_price'], 
-                    total_price=item['total_price'], 
-                    barcode=item.get('barcode')
+                    order_id=order.id, name=item['name'], 
+                    quantity=item['quantity'], unit_price=item['unit_price'], 
+                    total_price=item['total_price'], barcode=item.get('barcode')
                 ))
         
         db.commit()
+        logger.info(f"✅ Procesado #{external_id}: {db_status} | {order_type}")
+
     except Exception as e:
-        logger.error(f"Error save {data.get('external_id')}: {e}"); db.rollback()
+        logger.error(f"Error save {data.get('external_id')}: {e}")
+        db.rollback()
 
 def save_orders_batch(orders_data: list):
     pass
