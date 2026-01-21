@@ -1326,7 +1326,7 @@ window.toggleOrderDetails = function(rowId) {
         if (isActive) {
             // ESTADO ACTIVO
             btnNotif.classList.remove('btn-outline-secondary');
-            btnNotif.classList.add('btn-primary', 'shadow', 'pulse-animation'); // Agrega clase pulse si quieres efecto
+            btnNotif.classList.add('btn-primary', 'shadow', 'pulse-animation'); 
             icon.className = 'fa-solid fa-bell'; 
             badgeNotif.classList.remove('d-none');
         } else {
@@ -1346,7 +1346,7 @@ window.toggleOrderDetails = function(rowId) {
         const notif = new Notification(title, {
             body: body,
             icon: '/static/img/logo.png',
-            requireInteraction: type === 'alert', // Solo alertas requieren click para cerrar
+            requireInteraction: type === 'alert', 
             tag: title
         });
         
@@ -1355,7 +1355,78 @@ window.toggleOrderDetails = function(rowId) {
         // Audio
         try {
             if (type === 'alert') {
+                soundAlert.currentTime = 0;
+                soundAlert.volume = 1.0;
+                soundAlert.play();
+            } else {
+                soundNewOrder.currentTime = 0;
+                soundNewOrder.volume = 0.5;
+                soundNewOrder.play();
+            }
+        } catch(e) { console.warn("Audio error:", e); }
+    }
 
+    // 4. LÓGICA DE DETECCIÓN (EL CEREBRO)
+    function checkOperationalAnomalies(newOrders) {
+        const LIMITS = { 'pending': 10, 'processing': 15, 'confirmed': 15, 'driver_assigned': 15, 'on_the_way': 45 };
+        const currentIds = new Set();
+
+        newOrders.forEach(o => {
+            currentIds.add(o.id);
+            const prev = ordersMemory[o.id];
+
+            // A. NUEVO PEDIDO
+            if (!prev) {
+                if (!isFirstLoad) {
+                    sendNotification(`💰 Nuevo Pedido #${o.external_id}`, `${o.customer_name} ($${o.total_amount})`, 'info');
+                }
+            } 
+            // B. CAMBIO DE ESTADO
+            else if (prev.status !== o.current_status) {
+                const mapStatus = {
+                    'processing': '🟡 Facturando',
+                    'confirmed': '🔵 Solicitando',
+                    'driver_assigned': '⚫ Motorizado Asignado',
+                    'on_the_way': '💠 En Camino',
+                    'delivered': '✅ Entregado',
+                    'canceled': '🔴 Cancelado'
+                };
+                if (mapStatus[o.current_status]) {
+                    sendNotification(`Actualización #${o.external_id}`, `Ahora está: ${mapStatus[o.current_status]}`, 'info');
+                }
+            }
+
+            // C. RETRASOS
+            if (o.state_start_at && LIMITS[o.current_status]) {
+                let stateStr = o.state_start_at;
+                if (!stateStr.endsWith('Z')) stateStr += 'Z'; // Fix Zona Horaria
+                
+                const elapsedMinutes = (new Date() - new Date(stateStr)) / 1000 / 60;
+                const keyAlert = `alerted_${o.current_status}`;
+                
+                // Si la memoria previa existe, recuperamos los flags de alerta
+                const prevFlags = prev || {};
+
+                if (elapsedMinutes > LIMITS[o.current_status] && !prevFlags[keyAlert]) {
+                    sendNotification(
+                        `⚠️ DEMORA CRÍTICA #${o.external_id}`,
+                        `${Math.floor(elapsedMinutes)} min en ${o.current_status.toUpperCase()}`,
+                        'alert'
+                    );
+                    // Marcamos como alertado
+                    if (!ordersMemory[o.id]) ordersMemory[o.id] = {};
+                    ordersMemory[o.id][keyAlert] = true;
+                }
+            }
+            
+            // Actualizar memoria (manteniendo flags)
+            const existing = ordersMemory[o.id] || {};
+            ordersMemory[o.id] = { ...existing, status: o.current_status, time: new Date() };
+        });
         isFirstLoad = false;
     }
-});
+
+    // Inicializar al cargar
+    initVigilante();
+
+}); // <--- FINAL DEL ARCHIVO (IMPORTANTE)
