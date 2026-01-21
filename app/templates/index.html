@@ -311,39 +311,60 @@
             </div>
         </div>
     </div>
-    <!-- MODAL AYUDA NOTIFICACIONES -->
+    <!-- MODAL DE AYUDA TÉCNICA (DESBLOQUEO DE NOTIFICACIONES) -->
     <div class="modal fade" id="modalNotifHelp" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header border-0 pb-0">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-warning bg-opacity-25 border-0">
                     <h5 class="modal-title fw-bold text-dark">
-                        <i class="fa-solid fa-lock text-warning me-2"></i>Permiso Bloqueado
+                        <i class="fa-solid fa-lock text-warning me-2"></i>Desbloquear Alertas
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body text-center pt-2">
-                    <p class="text-muted mb-4">
-                        Para que el <strong>Vigilante</strong> funcione en segundo plano, necesitas habilitar el permiso manualmente para este sitio.
-                    </p>
-                    
-                    <div class="card bg-light border-0 p-3 mb-3 text-start">
-                        <h6 class="fw-bold small text-uppercase text-muted mb-3">Cómo activar en 3 pasos:</h6>
-                        <ol class="mb-0 ps-3 small">
-                            <li class="mb-2">Dale clic al ícono de <strong>Configuración</strong> (el candado 🔒 o los ajustes) a la izquierda de la URL del navegador.</li>
-                            <li class="mb-2">Busca la opción <strong>"Notificaciones"</strong>.</li>
-                            <li>Cambia el interruptor a <strong>"Permitir"</strong> (Allow).</li>
-                        </ol>
+                <div class="modal-body text-start pb-4">
+                    <div class="alert alert-light border border-warning d-flex align-items-center mb-3">
+                        <i class="fa-solid fa-triangle-exclamation text-warning fs-3 me-3"></i>
+                        <div class="small lh-sm">
+                            Tu navegador bloquea las alertas porque este sistema es interno (sin HTTPS). 
+                            <strong>Sigue estos 3 pasos para autorizarlo:</strong>
+                        </div>
                     </div>
-                    
-                    <div class="alert alert-info d-flex align-items-center small py-2">
-                        <i class="fa-solid fa-circle-info me-2"></i>
-                        <div>Solo recibirás alertas de <strong>GoAnalisis</strong>, no de otros sitios.</div>
+
+                    <!-- PASO 1 -->
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-primary mb-1">PASO 1: Copia y abre esta dirección</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control bg-light font-monospace small" id="inputFlagUrl" readonly>
+                            <button class="btn btn-primary" onclick="copyToClipboard('inputFlagUrl')">
+                                <i class="fa-regular fa-copy"></i> Copiar
+                            </button>
+                        </div>
+                        <div class="form-text x-small text-muted"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Abre una nueva pestaña, pega esa dirección y entra.</div>
                     </div>
-                </div>
-                <div class="modal-footer border-0 pt-0 justify-content-center">
-                    <button type="button" class="btn btn-primary px-4 rounded-pill" onclick="location.reload()">
-                        Ya lo hice, Recargar Página
-                    </button>
+
+                    <!-- PASO 2 -->
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-primary mb-1">PASO 2: Habilita y Pega la IP</label>
+                        <div class="d-flex align-items-center bg-light p-2 rounded border mb-2">
+                            <div class="me-2 text-muted small">1. Busca:</div>
+                            <span class="badge bg-warning text-dark me-2">Insecure origins...</span>
+                            <div class="me-2 text-muted small">Cambia a:</div>
+                            <span class="badge bg-success">Enabled</span>
+                        </div>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white small">2. Pega esto:</span>
+                            <input type="text" class="form-control bg-light font-monospace fw-bold text-dark" id="inputServerUrl" readonly>
+                            <button class="btn btn-dark" onclick="copyToClipboard('inputServerUrl')">
+                                <i class="fa-regular fa-copy"></i> Copiar IP
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- PASO 3 -->
+                    <div class="text-center mt-4">
+                        <label class="form-label small fw-bold text-primary mb-1">PASO 3: Finalizar</label>
+                        <p class="small text-muted mb-0">Haz clic en el botón <strong class="text-primary">Relaunch</strong> (Reiniciar) que aparecerá abajo en tu navegador.</p>
+                    </div>
                 </div>
             </div>
         </div>

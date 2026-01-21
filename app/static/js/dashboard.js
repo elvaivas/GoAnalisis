@@ -1278,34 +1278,46 @@ window.toggleOrderDetails = function(rowId) {
 
     // 2. GESTIÓN DEL BOTÓN
     btnNotif?.addEventListener('click', () => {
-        console.log("👆 Click en Campana. Estado Permiso:", Notification.permission);
+        console.log("👆 Click en Campana. Permiso:", Notification.permission);
 
-        // --- LÓGICA DE DETECCIÓN DE HTTP INSEGURO ---
-        const isSecure = window.isSecureContext; // Navegador dice si es seguro o no
+        const isSecure = window.isSecureContext; 
         
         if (!notificationsEnabled) {
-            // Caso 1: Ya tiene permiso
+            // A. YA TIENE PERMISO -> ACTIVAR
             if (Notification.permission === "granted") {
                 toggleVigilante(true);
             } 
-            // Caso 2: Bloqueado o Contexto Inseguro (HTTP)
+            // B. BLOQUEADO O NO SEGURO -> MOSTRAR AYUDA INTELIGENTE
             else if (Notification.permission === "denied" || !isSecure) {
                 
-                // PREPARAR EL MODAL CON LA IP ACTUAL
-                const inputIp = document.getElementById('inputServerUrl');
-                if (inputIp) {
-                    inputIp.value = window.location.origin; // Pone http://10.10.100.58:8001
-                }
+                // 1. Detectar Navegador para dar la URL correcta
+                const userAgent = navigator.userAgent.toLowerCase();
+                let flagsUrl = "chrome://flags/#unsafely-treat-insecure-origin-as-secure"; // Default (Chrome/Brave)
                 
+                if (userAgent.indexOf("edg") > -1) {
+                    flagsUrl = "edge://flags/#unsafely-treat-insecure-origin-as-secure"; // Microsoft Edge
+                } else if (userAgent.indexOf("opera") > -1 || userAgent.indexOf("opr") > -1) {
+                    flagsUrl = "opera://flags/#unsafely-treat-insecure-origin-as-secure"; // Opera
+                }
+
+                // 2. Rellenar los inputs del Modal
+                const inputFlag = document.getElementById('inputFlagUrl');
+                const inputIp = document.getElementById('inputServerUrl');
+                
+                if (inputFlag) inputFlag.value = flagsUrl;
+                if (inputIp) inputIp.value = window.location.origin; // IP Automática (ej: http://10.10.100.58:8001)
+                
+                // 3. Mostrar Modal
                 const helpModal = new bootstrap.Modal(document.getElementById('modalNotifHelp'));
                 helpModal.show();
             } 
-            // Caso 3: Pregunta virgen (HTTPS o Localhost)
+            // C. PRIMERA VEZ -> PEDIR PERMISO
             else {
                 Notification.requestPermission().then(permission => {
                     if (permission === "granted") {
                         toggleVigilante(true);
                     } else {
+                        // Si niega, la próxima vez caerá en el Caso B
                         console.warn("Usuario denegó permiso.");
                     }
                 });
