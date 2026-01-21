@@ -143,6 +143,8 @@ def process_drone_data(db, data: dict):
             db_status = "delivered"
         elif "cancelado" in status_text: 
             db_status = "canceled"
+        elif "creado" in status_text:
+            db_status = "pending"
         elif "asignado" in status_text: 
             db_status = "driver_assigned"
         elif "camino" in status_text or "ruta" in status_text: 
