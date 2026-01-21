@@ -138,19 +138,37 @@ def process_drone_data(db, data: dict):
         
         db_status = "pending" # Default
         
-        # Lógica de Mapeo Blindada
+        # 1. Finales (Prioridad Absoluta)
         if "entregado" in status_text: 
             db_status = "delivered"
         elif "cancelado" in status_text: 
             db_status = "canceled"
+        
+        # 2. Inicial
         elif "creado" in status_text:
-            db_status = "pending"
-        elif "asignado" in status_text: 
-            db_status = "driver_assigned"
+            db_status = "created"
+            
+        # 3. Operativos
         elif "camino" in status_text or "ruta" in status_text: 
             db_status = "on_the_way"
-        elif "proceso" in status_text: 
+            
+        # --- CASO ESPECIAL DEL HTML ---
+        elif "entrega" in status_text and "repartidor" in status_text:
+            # "Entrega al repartidor"
+            # Decidimos si es 'Solicitando' o 'Asignado' según si ya tiene nombre
+            has_driver_name = data.get('driver_name') and "N/A" not in data.get('driver_name')
+            if has_driver_name:
+                db_status = "driver_assigned" # Tiene chofer -> Asignado
+            else:
+                db_status = "confirmed"       # No tiene -> Solicitando
+        # -----------------------------
+
+        elif "asignado" in status_text: 
+            db_status = "driver_assigned"
+            
+        elif "proceso" in status_text: # El HTML Legacy usa "Procesos"
             db_status = "processing"
+            
         elif "confirmado" in status_text: 
             db_status = "confirmed"
         
