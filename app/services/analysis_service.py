@@ -176,17 +176,22 @@ def calculate_bottlenecks(db: Session, start_date: Optional[date] = None, end_da
 
         # 2. Cancelados (Separados)
         if o_status == 'canceled':
-            # Buscamos cuándo ocurrió la cancelación
             cancel_log = next((l for l in reversed(o_logs) if l.status == 'canceled'), None)
             if cancel_log:
-                life = (cancel_log.timestamp - o_created).total_seconds()
+                # CORRECCIÓN DE ZONA HORARIA:
+                # o_created viene del Scraper (Hora VET, ej: 09:00).
+                # cancel_log viene del Servidor (Hora UTC, ej: 13:00).
+                # Para compararlos, debemos sumar 4 horas a la fecha de creación.
                 
-                # FILTRO DE OUTLIERS (Datos Atípicos):
-                # 1. Ignoramos tiempos negativos o cero.
-                # 2. Ignoramos tiempos > 8 horas (28800 seg). 
-                #    Si un pedido tardó 8 horas en cancelarse, fue un error administrativo/zombie, 
-                #    no un flujo operativo real, y ensucia el promedio.
-                if 60 < life < 28800: 
+                # Ajuste VET -> UTC (Sumar 4 horas)
+                created_at_utc = o_created + timedelta(hours=4)
+                
+                life = (cancel_log.timestamp - created_at_utc).total_seconds()
+                
+                # FILTRO DE OUTLIERS:
+                # 1. Ignoramos negativos (errores de reloj)
+                # 2. Ignoramos > 8 horas (zombies administrativos)
+                if 0 < life < 28800: 
                     target['canceled_life_time'].append(life)
             continue
 
