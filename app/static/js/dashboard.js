@@ -505,13 +505,13 @@ window.toggleOrderDetails = function(rowId) {
             const data = await res.json();
             
             // 1. CONFIGURACIÓN VISUAL
-            // Definimos el orden estricto en que queremos ver las barras
             const localStatusOrder = [
-                'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 
+                'created', 'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 
                 'delivered', 'canceled'
             ];
             
             const localTranslations = {
+                'created': 'Creado',
                 'pending': 'Pendiente', 
                 'processing': 'Facturando', 
                 'confirmed': 'Solicitando',
@@ -524,61 +524,96 @@ window.toggleOrderDetails = function(rowId) {
             const processData = (list) => {
                 if (!Array.isArray(list)) return { labels: [], values: [], colors: [] };
                 
-                // Ordenamos según la lista maestra
                 const sorted = list
                     .filter(d => d.avg_duration_seconds > 0)
                     .sort((a, b) => localStatusOrder.indexOf(a.status) - localStatusOrder.indexOf(b.status));
 
                 const labels = sorted.map(d => localTranslations[d.status] || d.status);
-                const values = sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)); // Minutos
+                // Convertimos a minutos con 1 decimal
+                const values = sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)); 
                 
-                // Colores Semánticos
                 const colors = sorted.map(d => {
-                    if (d.status === 'canceled') return '#ef4444'; // Rojo Cancelado
-                    if (d.status === 'delivered') return '#10b981'; // Verde Total
-                    return ctxPickup ? '#3b82f6' : '#f59e0b'; // Azul o Naranja para pasos
+                    if (d.status === 'canceled') return '#ef4444'; 
+                    if (d.status === 'delivered') return '#10b981'; 
+                    if (d.status === 'on_the_way') return '#0dcaf0'; // Info
+                    if (d.status === 'processing') return '#ffc107'; // Warning
+                    return ctxPickup ? '#3b82f6' : '#f59e0b'; 
                 });
 
                 return { labels, values, colors };
             };
 
+            // CONFIGURACIÓN COMÚN (DATALABELS)
+            const chartOptions = {
+                indexAxis: 'y', 
+                maintainAspectRatio: false, 
+                plugins: { 
+                    legend: { display: false },
+                    // AQUÍ ESTÁ LA MAGIA DE LOS NÚMEROS
+                    datalabels: {
+                        anchor: 'end', // Al final de la barra
+                        align: 'end',  // Por fuera (a la derecha)
+                        color: '#4b5563',
+                        font: { weight: 'bold', size: 11 },
+                        formatter: function(value) {
+                            return value + ' m'; // Ej: "15.2 m"
+                        }
+                    }
+                }, 
+                scales: { 
+                    x: { display: false, max: undefined }, // Dejar que se autoajuste para que quepan los números
+                    y: { grid: { display: false } }
+                },
+                layout: {
+                    padding: { right: 40 } // Espacio extra a la derecha para que no se corte el texto
+                }
+            };
+
             // 2. RENDER DELIVERY
             if (ctxDelivery) {
                 const dData = processData(data.delivery);
-                const dColors = dData.labels.map((l, i) => {
-                     if (l.includes('Cancelado')) return '#ef4444';
-                     if (l.includes('Entregado')) return '#10b981';
-                     return '#f59e0b'; 
-                });
-
+                
+                // Si ya existe, destruirlo para limpiar plugins viejos
                 if (bottleneckChart) bottleneckChart.destroy();
+                
+                // ACTIVAR PLUGIN
+                Chart.register(ChartDataLabels);
+
                 bottleneckChart = new Chart(ctxDelivery, {
                     type: 'bar', 
                     data: { 
                         labels: dData.labels, 
-                        datasets: [{ label: 'Minutos', data: dData.values, backgroundColor: dColors, borderRadius: 4 }] 
+                        datasets: [{ 
+                            label: 'Minutos', 
+                            data: dData.values, 
+                            backgroundColor: dData.colors, 
+                            borderRadius: 4,
+                            barPercentage: 0.6
+                        }] 
                     },
-                    options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
+                    options: chartOptions
                 });
             }
 
             // 3. RENDER PICKUP
             if (ctxPickup) {
                 const pData = processData(data.pickup);
-                const pColors = pData.labels.map((l, i) => {
-                     if (l.includes('Cancelado')) return '#ef4444';
-                     if (l.includes('Entregado')) return '#10b981';
-                     return '#3b82f6'; 
-                });
-
+                
                 if (bottleneckPickupChart) bottleneckPickupChart.destroy();
+                
                 bottleneckPickupChart = new Chart(ctxPickup, {
                     type: 'bar', 
                     data: { 
                         labels: pData.labels, 
-                        datasets: [{ label: 'Minutos', data: pData.values, backgroundColor: pColors, borderRadius: 4 }] 
+                        datasets: [{ 
+                            label: 'Minutos', 
+                            data: pData.values, 
+                            backgroundColor: pData.colors, 
+                            borderRadius: 4,
+                            barPercentage: 0.6
+                        }] 
                     },
-                    options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false } } }
+                    options: chartOptions
                 });
             }
         } catch (error) {
