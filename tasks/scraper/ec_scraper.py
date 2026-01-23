@@ -151,7 +151,7 @@ class ECScraper:
             # --- PASO 3: CAMBIAR A PASSWORD ---
             # Coordenadas nuevas proporcionadas: 690, 650
             logger.info("🔀 Paso 3: Cambiando a modo 'Usuario/Contraseña'...")
-            self._click_debug(690, 650, "Link Cambiar Metodo")
+            self._click_debug(600, 700', "Link Cambiar Metodo")
             
             # Esperamos un poco para que el formulario cambie de forma
             logger.info("⏳ Esperando 3s a que el formulario se actualice...")
