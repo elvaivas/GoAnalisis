@@ -173,8 +173,8 @@ class ECScraper:
             
             # 🎯 COORDENADAS RECALCULADAS SEGÚN TU FOTO
             # Análisis: La X está entre la linea 350 y 400, y debajo de la linea 100.
-            TARGET_X = 365
-            TARGET_Y = 125
+            TARGET_X = 480
+            TARGET_Y = 72
             
             # Hacemos el click y mostramos el resultado
             self._click_debug(TARGET_X, TARGET_Y, "Boton Cierre (X)")
