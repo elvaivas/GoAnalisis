@@ -168,7 +168,7 @@ class ECScraper:
             self._inject_calibration_grid()
             
             # 🎯 TUS COORDENADAS PERFECTAS
-            TARGET_X = 504
+            TARGET_X = 501
             TARGET_Y = 85
             
             # Primer intento
