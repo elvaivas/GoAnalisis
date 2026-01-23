@@ -25,7 +25,8 @@ class ECScraper:
         
         # --- CONFIGURACIÓN DE PANTALLA CRÍTICA ---
         # Debe ser EXACTAMENTE la resolución donde tomaste las coordenadas
-        options.add_argument("--window-size=1366,768")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--start-maximized")
         
         if headless:
             options.add_argument("--headless=new")
@@ -43,22 +44,32 @@ class ECScraper:
 
     def _click_at(self, x, y, desc="Elemento"):
         """
-        Mueve el mouse a X,Y y hace clic.
+        Hace clic en X,Y usando JavaScript (Inmune a 'out of bounds').
         """
         try:
-            logger.info(f"🖱️ Click en: {desc} ({x}, {y})")
+            logger.info(f"🖱️ Click JS en: {desc} ({x}, {y})")
             
-            # Resetear posición a la esquina superior izquierda (0,0) del Body
-            # Esto es vital para que las coordenadas sean absolutas
-            body = self.driver.find_element(By.TAG_NAME, "body")
+            # MAGIA: Creamos un punto virtual y le damos click
+            script = f"""
+                var el = document.elementFromPoint({x}, {y});
+                if(el) {{
+                    el.click();
+                    // También disparamos eventos de mouse por si acaso
+                    var evt = new MouseEvent('click', {{
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: {x},
+                        clientY: {y}
+                    }});
+                    el.dispatchEvent(evt);
+                }} else {{
+                    throw new Error("No hay elemento en esas coordenadas");
+                }}
+            """
+            self.driver.execute_script(script)
             
-            actions = ActionChains(self.driver)
-            actions.move_to_element_with_offset(body, 0, 0)
-            actions.move_by_offset(x, y)
-            actions.click()
-            actions.perform()
-            
-            time.sleep(1.5) # Pausa para que Flutter reaccione
+            time.sleep(1.5)
             return True
         except Exception as e:
             logger.error(f"❌ Falló click en {desc}: {e}")
