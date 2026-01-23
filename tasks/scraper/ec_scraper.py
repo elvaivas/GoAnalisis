@@ -168,8 +168,8 @@ class ECScraper:
             self._inject_calibration_grid()
             
             # 🎯 TUS COORDENADAS PERFECTAS
-            TARGET_X = 366
-            TARGET_Y = 132
+            TARGET_X = 500
+            TARGET_Y = 90
             
             # Primer intento
             self._click_debug(TARGET_X, TARGET_Y, "Boton X (Intento 1)")
