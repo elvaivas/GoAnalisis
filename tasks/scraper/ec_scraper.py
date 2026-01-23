@@ -20,7 +20,7 @@ class ECScraper:
 
     def setup_driver(self, headless=True):
         options = Options()
-        # Mantenemos 1366x768 (Tu lienzo de batalla)
+        # Lienzo fijo 1366x768
         options.add_argument("--window-size=1366,768")
         
         if headless:
@@ -38,7 +38,7 @@ class ECScraper:
             self.driver.quit()
 
     def _inject_calibration_grid(self):
-        """Grilla visual para referencia"""
+        """Mantenemos la grilla para verificar visualmente los clicks"""
         script = """
         (function() {
             if (document.getElementById('debug-grid')) return;
@@ -74,14 +74,14 @@ class ECScraper:
         self.driver.execute_script(script)
 
     def _click_debug(self, x, y, desc="Elemento"):
-        """Nuestra arma maestra que atraviesa dibujos y fuerza el click"""
+        """Disparo de precisión con trazador visual"""
         try:
             logger.info(f"🎯 Disparando a: {desc} -> ({x}, {y})")
             
             js_script = f"""
             var x = {x}; var y = {y};
 
-            // Dibujar mira (Intangible)
+            // Mira visual (Intangible)
             var cross = document.createElement('div');
             cross.style.position = 'absolute'; cross.style.left = (x - 10) + 'px'; cross.style.top = (y - 10) + 'px';
             cross.style.width = '20px'; cross.style.height = '20px'; cross.style.border = '2px solid lime'; 
@@ -94,7 +94,7 @@ class ECScraper:
             point.style.zIndex = '10000001'; point.style.pointerEvents = 'none';
             document.body.appendChild(point);
 
-            // Disparo JS + Pointer Events
+            // Disparo Lógico
             var target = document.elementFromPoint(x, y);
             var info = "NADA";
             if(target) {{
@@ -103,12 +103,10 @@ class ECScraper:
                 target.dispatchEvent(new MouseEvent('mousedown', opts));
                 target.dispatchEvent(new MouseEvent('mouseup', opts));
                 target.dispatchEvent(new MouseEvent('click', opts));
-                
                 try {{
                     target.dispatchEvent(new PointerEvent('pointerdown', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
                     target.dispatchEvent(new PointerEvent('pointerup', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
                 }} catch(e) {{}}
-
                 if (typeof target.click === 'function') target.click();
             }}
             return info;
@@ -116,11 +114,11 @@ class ECScraper:
             element_hit = self.driver.execute_script(js_script)
             logger.info(f"💥 IMPACTO JS: [{element_hit}]")
             
-            # Refuerzo Físico con ActionChains
+            # Disparo Físico (ActionChains)
             try:
                 actions = ActionChains(self.driver)
                 actions.move_by_offset(x, y).click().perform()
-                actions.move_by_offset(-x, -y).perform() # Volver a origen
+                actions.move_by_offset(-x, -y).perform() 
             except:
                 pass
 
@@ -133,38 +131,39 @@ class ECScraper:
         self.setup_driver(headless=True) 
         
         try:
-            logger.info("🚀 StoreBot: Iniciando Secuencia de Login...")
+            logger.info("🚀 StoreBot: Iniciando Secuencia Completa...")
             self.driver.get(self.BASE_URL)
-            logger.info("⏳ Cargando página (15s)...")
+            logger.info("⏳ Esperando carga inicial (15s)...")
             time.sleep(15)
 
-            # Inyectar grilla (opcional, pero útil para seguir viendo en la foto)
             self._inject_calibration_grid()
             
-            # --- PASO 1: MATAR EL MODAL ---
-            # Tus coordenadas perfectas que funcionaron:
-            logger.info("⚔️ Paso 1: Cerrando Publicidad...")
-            self._click_debug(501, 85, "Cerrar Modal")
-
-            # Esperar a que la animación del modal desaparezca
-            logger.info("⏳ Esperando 3s para que la pantalla se limpie...")
-            time.sleep(3)
+            # --- PASO 1: CERRAR PUBLICIDAD ---
+            logger.info("⚔️ Paso 1: Cerrando Modal Publicidad...")
+            self._click_debug(501, 85, "Cerrar Modal X")
+            time.sleep(3) # Esperar que se vaya
             
-            # --- PASO 2: CLICK EN INGRESAR ---
-            # Tus nuevas coordenadas calculadas (¡Perfectas!):
+            # --- PASO 2: ABRIR LOGIN ---
             logger.info("🔑 Paso 2: Click en botón 'Ingresar'...")
             self._click_debug(1160, 78, "Botón Ingresar")
-
-            # Esperar a que abra el formulario de login lateral o página de login
-            logger.info("⏳ Esperando 4s para que aparezca el formulario de Login...")
-            time.sleep(4)
+            time.sleep(4) # Esperar que aparezca el formulario OTP
             
-            # --- FOTO FINAL DE VERIFICACIÓN ---
+            # --- PASO 3: CAMBIAR A PASSWORD ---
+            # Coordenadas nuevas proporcionadas: 690, 650
+            logger.info("🔀 Paso 3: Cambiando a modo 'Usuario/Contraseña'...")
+            self._click_debug(690, 650, "Link Cambiar Metodo")
+            
+            # Esperamos un poco para que el formulario cambie de forma
+            logger.info("⏳ Esperando 3s a que el formulario se actualice...")
+            time.sleep(3)
+            
+            # --- FOTO FINAL ---
             output_path = "/tmp/debug_final.png"
             self.driver.save_screenshot(output_path)
             
             if os.path.exists(output_path):
-                logger.info(f"📸 ¡LISTO! Revisa si se abrió el login: {output_path}")
+                logger.info(f"📸 FOTO LISTA: {output_path}")
+                logger.info("👉 Revisa si ahora se ven los campos de 'Correo' y 'Contraseña'.")
             
             return True
 
