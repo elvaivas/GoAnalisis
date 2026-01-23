@@ -88,33 +88,43 @@ class ECScraper:
             logger.error(f"❌ Error escribiendo texto: {e}")
 
     def login(self):
-        # Iniciamos (Si estás probando local, pon headless=False para ver la magia)
-        # En servidor Docker, siempre headless=True
         self.setup_driver(headless=True) 
         
         try:
             logger.info("🚀 StoreBot: Iniciando secuencia de Login...")
             self.driver.get(self.BASE_URL)
             
-            # Espera inicial para carga de Flutter
-            logger.info("⏳ Esperando carga del motor Flutter (10s)...")
-            time.sleep(10)
+            logger.info("⏳ Esperando carga del motor Flutter (15s)...")
+            time.sleep(15) # Damos más tiempo para que el anuncio termine de animar
 
-            # --- SECUENCIA DE COORDENADAS (TU MAPA) ---
+            # --- TÁCTICA 1: TECLA ESCAPE (El mata-popups) ---
+            logger.info("🎹 Enviando ESC para cerrar publicidad...")
+            actions = ActionChains(self.driver)
+            actions.send_keys(Keys.ESCAPE).perform()
+            time.sleep(1)
+            actions.send_keys(Keys.ESCAPE).perform() # Doble tap por si acaso
+            time.sleep(2)
 
-            # 1. Cerrar Publicidad
-            self._click_at(460, 111, "Cerrar Publicidad")
+            # --- TÁCTICA 2: CLIC EN LA X (Respaldo) ---
+            # Si el ESC no funcionó, intentamos la coordenada que mediste
+            self._click_at(460, 111, "Cerrar Publicidad (Backup)")
+            time.sleep(2)
 
+            # --- SECUENCIA DE LOGIN ---
+            
             # 2. Botón Inicio Sesión
             self._click_at(1174, 86, "Botón Login (Header)")
-            time.sleep(2) # Esperar que abra el modal
+            time.sleep(3) # Esperar que abra el modal de login
 
             # 3. Cambiar a modo Usuario/Contraseña
             self._click_at(688, 698, "Switch a Password")
 
             # 4. Campo Usuario
             self._click_at(719, 309, "Input Usuario")
-            logger.info(f"⌨️ Escribiendo usuario: {self.username}")
+            # Borrar por si acaso tiene algo escrito
+            ActionChains(self.driver).send_keys(Keys.CONTROL + "a").send_keys(Keys.DELETE).perform()
+            
+            logger.info(f"⌨️ Escribiendo usuario...")
             self._type_text(self.username)
 
             # 5. Campo Contraseña
@@ -122,25 +132,19 @@ class ECScraper:
             logger.info("⌨️ Escribiendo contraseña...")
             self._type_text(self.password)
 
-            # 6. Recordar Clave (Opcional)
-            self._click_at(484, 473, "Check Recordar")
-
-            # 7. Botón Ingresar
+            # 6. Botón Ingresar
             self._click_at(610, 534, "BTN INGRESAR")
             
             # Esperar redirección
-            time.sleep(5)
+            time.sleep(8)
             
-            ## FOTO DE VERIFICACIÓN (EN TMP PARA GARANTIZAR PERMISOS)
+            # FOTO DE VERIFICACIÓN
             output_path = "/tmp/debug_ec_login.png"
             self.driver.save_screenshot(output_path)
             
-            # Verificación inmediata
             import os
             if os.path.exists(output_path):
                 logger.info(f"📸 ÉXITO: Screenshot guardado en: {output_path}")
-            else:
-                logger.error("❌ ERROR: El archivo no aparece en el disco.")
             
             return True
 
