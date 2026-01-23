@@ -116,8 +116,8 @@ class ECScraper:
             # Haremos 3 disparos estratégicos para asegurar el cierre
             
             # 2. Disparo a la X del Modal (Recalibrado)
-            # Estaba en 482, 72 (letra 'd'). Subimos y vamos a la izquierda.
-            self._click_at(482, 72, "Clic en X (Modal)", 1)
+            # Estaba en 481, 72 (letra 'd'). Subimos y vamos a la izquierda.
+            self._click_at(480, 72, "Clic en X (Modal)", 1)
 
             # Pausa para ver si se fue
             time.sleep(3)
