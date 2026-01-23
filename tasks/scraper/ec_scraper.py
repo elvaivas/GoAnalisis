@@ -45,30 +45,52 @@ class ECScraper:
 
     def _click_at(self, x, y, desc="Elemento"):
         """
-        Hace clic en X,Y usando JavaScript (Inmune a 'out of bounds').
+        Dibuja un punto rojo y hace un clic avanzado (Pointer Events) para Flutter.
         """
         try:
             logger.info(f"🖱️ Click JS en: {desc} ({x}, {y})")
             
-            # MAGIA: Creamos un punto virtual y le damos click
-            script = f"""
-                var el = document.elementFromPoint({x}, {y});
-                if(el) {{
-                    el.click();
-                    // También disparamos eventos de mouse por si acaso
-                    var evt = new MouseEvent('click', {{
+            # 1. DIBUJAR EL PUNTO ROJO (Para depuración visual)
+            debug_script = f"""
+                var dot = document.createElement('div');
+                dot.style.position = 'absolute';
+                dot.style.left = '{x}px';
+                dot.style.top = '{y}px';
+                dot.style.width = '20px';
+                dot.style.height = '20px';
+                dot.style.backgroundColor = 'red';
+                dot.style.borderRadius = '50%';
+                dot.style.zIndex = '999999';
+                dot.style.pointerEvents = 'none'; // Para no bloquear el click real
+                dot.style.border = '2px solid white';
+                document.body.appendChild(dot);
+            """
+            self.driver.execute_script(debug_script)
+            
+            # 2. CLICK AVANZADO (Pointer Events para pantallas táctiles/Flutter)
+            # Flutter web a veces ignora 'click' y escucha 'pointerdown/up'
+            click_script = f"""
+                var target = document.elementFromPoint({x}, {y});
+                if(target) {{
+                    // Simular toque/click completo
+                    var opts = {{
                         bubbles: true,
                         cancelable: true,
                         view: window,
                         clientX: {x},
-                        clientY: {y}
-                    }});
-                    el.dispatchEvent(evt);
-                }} else {{
-                    throw new Error("No hay elemento en esas coordenadas");
+                        clientY: {y},
+                        screenX: {x},
+                        screenY: {y}
+                    }};
+                    
+                    target.dispatchEvent(new PointerEvent('pointerdown', opts));
+                    target.dispatchEvent(new PointerEvent('mousedown', opts));
+                    target.dispatchEvent(new PointerEvent('pointerup', opts));
+                    target.dispatchEvent(new PointerEvent('mouseup', opts));
+                    target.dispatchEvent(new PointerEvent('click', opts));
                 }}
             """
-            self.driver.execute_script(script)
+            self.driver.execute_script(click_script)
             
             time.sleep(1.5)
             return True
