@@ -117,10 +117,10 @@ class ECScraper:
             
             # 2. Disparo a la X del Modal (Recalibrado)
             # Estaba en 465, 106 (letra 'd'). Subimos y vamos a la izquierda.
-            self._click_at(484, 72, "Clic en X (Modal)", 2)
+            self._click_at(489, 72, "Clic en X (Modal)", 1)
 
             # Pausa para ver si se fue
-            time.sleep(2)
+            time.sleep(3)
             
             # FOTO
             output_path = "/tmp/debug_ec_login.png"
