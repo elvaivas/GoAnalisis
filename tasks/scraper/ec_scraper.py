@@ -134,32 +134,35 @@ class ECScraper:
             logger.info("🚀 StoreBot: Iniciando Secuencia Completa...")
             self.driver.get(self.BASE_URL)
             logger.info("⏳ Esperando carga inicial (15s)...")
-            time.sleep(15)
+            time.sleep(10)
 
             self._inject_calibration_grid()
             
             # --- PASO 1: CERRAR PUBLICIDAD ---
+            # TUS COORDENADAS (Intactas)
             logger.info("⚔️ Paso 1: Cerrando Modal Publicidad...")
             self._click_debug(501, 85, "Cerrar Modal X")
-            time.sleep(3) # Esperar que se vaya
+            time.sleep(3) 
             
             # --- PASO 2: ABRIR LOGIN ---
+            # TUS COORDENADAS (Intactas)
             logger.info("🔑 Paso 2: Click en botón 'Ingresar'...")
             self._click_debug(1160, 78, "Botón Ingresar")
-            time.sleep(3) # Esperar que aparezca el formulario OTP
+            time.sleep(3) 
             
-            # --- PASO 3: QUITAR PUP POP ---
-            logger.info ("🔀 Paso 3: Quitando banner 'Banner'...")
-            self._click_debug(600, 1200, "Botón Ingresar")
-            time.sleep(3) # Esperar que aparezca el formulario OTP
+            # --- PASO 3: ACEPTAR COOKIES ---
+            # CAMBIO: Usamos 895, 645 para darle al botón verde "Sí, acepto".
+            # Esto quita la barra negra que tapa el formulario.
+            logger.info("🍪 Paso 3: Aceptando cookies para limpiar pantalla...")
+            self._click_debug(895, 645, "Botón Aceptar Cookies")
+            time.sleep(2) 
 
-            # --- PASO 4: METODO USARIO Y CLAVE ---
-            # Coordenadas nuevas proporcionadas: 600, 1200
+            # --- PASO 4: METODO USUARIO Y CLAVE ---
+            # CAMBIO: Usamos 683, 630. 
+            # 683 es el centro del modal. 630 es justo debajo del botón amarillo.
             logger.info("🔀 Paso 4: Cambiando a modo 'Usuario/Contraseña'...")
-            self._click_debug(650, 680, "Link Cambiar Metodo")
-            time.sleep(3)
-
-            # Esperamos un poco para que el formulario cambie de forma
+            self._click_debug(683, 630, "Link Cambiar Metodo")
+            
             logger.info("⏳ Esperando 3s a que el formulario se actualice...")
             time.sleep(3)
             
@@ -169,7 +172,7 @@ class ECScraper:
             
             if os.path.exists(output_path):
                 logger.info(f"📸 FOTO LISTA: {output_path}")
-                logger.info("👉 Revisa si ahora se ven los campos de 'Correo' y 'Contraseña'.")
+                logger.info("👉 Ahora deberías ver 4 puntos verdes y el formulario de correo abierto.")
             
             return True
 
