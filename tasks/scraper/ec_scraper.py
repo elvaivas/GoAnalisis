@@ -162,39 +162,38 @@ class ECScraper:
         self.setup_driver(headless=True) 
         
         try:
-            logger.info("🚀 StoreBot: Iniciando modo calibración...")
+            logger.info("🚀 StoreBot: Iniciando login con coordenadas calibradas...")
             self.driver.get(self.BASE_URL)
             
-            logger.info("⏳ Esperando carga inicial (15s)...")
+            logger.info("⏳ Esperando carga (15s)...")
             time.sleep(15)
 
-            # 1. Poner la Grilla
+            # --- MANTENEMOS LA GRILLA PARA VERIFICAR ESTE TIRO ---
             self._inject_calibration_grid()
             
-            # 2. INTENTO DE CLICK
-            # Coordenada actual a probar: 480, 72
-            # Sugerencia: Si 480 abre la imagen, intenta subir Y o mover X.
-            # Prueba cambiar a 495, 65 si esta falla.
-            TARGET_X = 480
-            TARGET_Y = 72
+            # 🎯 COORDENADAS RECALCULADAS SEGÚN TU FOTO
+            # Análisis: La X está entre la linea 350 y 400, y debajo de la linea 100.
+            TARGET_X = 365
+            TARGET_Y = 125
             
-            self._click_debug(TARGET_X, TARGET_Y, "Boton Cierre")
+            # Hacemos el click y mostramos el resultado
+            self._click_debug(TARGET_X, TARGET_Y, "Boton Cierre (X)")
 
-            # Esperar reacción visual
+            # Pausa para ver si se cerró
             time.sleep(3)
             
-            # 3. FOTO DE DIAGNÓSTICO
-            output_path = "/tmp/debug_calibracion.png"
+            # FOTO DE CONFIRMACIÓN
+            output_path = "/tmp/debug_tiro_certero.png"
             self.driver.save_screenshot(output_path)
             
             if os.path.exists(output_path):
                 logger.info(f"📸 FOTO GUARDADA: {output_path}")
-                logger.info("👉 Abre la foto. Busca la MIRA VERDE (tu click) y compárala con las líneas ROJAS/AZULES.")
+                logger.info("👉 Revisa la foto. El punto verde debería estar justo encima de la X blanca.")
             
             return True
 
         except Exception as e:
-            logger.error(f"❌ Crash: {e}")
+            logger.error(f"❌ Crash crítico: {e}")
             return False
         finally:
             self.close()
