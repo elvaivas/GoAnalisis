@@ -148,10 +148,19 @@ class ECScraper:
             self._click_debug(1160, 78, "Botón Ingresar")
             time.sleep(4) # Esperar que aparezca el formulario OTP
             
-            # --- PASO 3: CAMBIAR A PASSWORD ---
-            # Coordenadas nuevas proporcionadas: 690, 650
+            # --- PASO 3: QUITAR PUP POP ---
+            # Coordenadas nuevas proporcionadas: 600, 1200
             logger.info("🔀 Paso 3: Cambiando a modo 'Usuario/Contraseña'...")
-            self._click_debug(600, 700, "Link Cambiar Metodo")
+            self._click_debug(600, 1200, "Quitar pup pop")
+            
+            # Esperamos un poco para que el formulario cambie de forma
+            logger.info("⏳ Esperando 3s a que el formulario se actualice...")
+            time.sleep(3)
+
+            # --- PASO 4: METODO USARIO Y CLAVE ---
+            # Coordenadas nuevas proporcionadas: 600, 1200
+            logger.info("🔀 Paso 4: Cambiando a modo 'Usuario/Contraseña'...")
+            self._click_debug(650, 680, "Link Cambiar Metodo")
             
             # Esperamos un poco para que el formulario cambie de forma
             logger.info("⏳ Esperando 3s a que el formulario se actualice...")
