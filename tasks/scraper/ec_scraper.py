@@ -20,7 +20,7 @@ class ECScraper:
 
     def setup_driver(self, headless=True):
         options = Options()
-        # Resolución fija crucial para coordenadas
+        # Mantenemos 1366x768 (Tu lienzo de batalla)
         options.add_argument("--window-size=1366,768")
         
         if headless:
@@ -38,7 +38,7 @@ class ECScraper:
             self.driver.quit()
 
     def _inject_calibration_grid(self):
-        """Dibuja la grilla de referencia (roja/azul)"""
+        """Grilla visual para referencia"""
         script = """
         (function() {
             if (document.getElementById('debug-grid')) return;
@@ -48,7 +48,6 @@ class ECScraper:
             grid.style.width = '100%'; grid.style.height = '100%';
             grid.style.pointerEvents = 'none'; grid.style.zIndex = '9999999';
             document.body.appendChild(grid);
-            
             function createLine(x, y, isVert, labelNum) {
                 var d = document.createElement('div');
                 d.style.position = 'absolute';
@@ -75,109 +74,97 @@ class ECScraper:
         self.driver.execute_script(script)
 
     def _click_debug(self, x, y, desc="Elemento"):
-        """
-        Dispara eventos JS (Mouse + Pointer) e intenta click físico.
-        """
+        """Nuestra arma maestra que atraviesa dibujos y fuerza el click"""
         try:
-            logger.info(f"🎯 INTENTO: Click en {desc} -> Coordenadas ({x}, {y})")
+            logger.info(f"🎯 Disparando a: {desc} -> ({x}, {y})")
             
-            # 1. VISUAL: Mira Verde (Intangible)
-            # 2. LÓGICA: Inyección masiva de eventos (PointerEvents son clave para cerrar modales modernos)
             js_script = f"""
-            var x = {x};
-            var y = {y};
+            var x = {x}; var y = {y};
 
-            // --- DIBUJO ---
+            // Dibujar mira (Intangible)
             var cross = document.createElement('div');
-            cross.style.position = 'absolute';
-            cross.style.left = (x - 10) + 'px'; cross.style.top = (y - 10) + 'px';
-            cross.style.width = '20px'; cross.style.height = '20px';
-            cross.style.border = '2px solid lime'; cross.style.borderRadius = '50%';
-            cross.style.zIndex = '10000000'; cross.style.pointerEvents = 'none';
+            cross.style.position = 'absolute'; cross.style.left = (x - 10) + 'px'; cross.style.top = (y - 10) + 'px';
+            cross.style.width = '20px'; cross.style.height = '20px'; cross.style.border = '2px solid lime'; 
+            cross.style.borderRadius = '50%'; cross.style.zIndex = '10000000'; cross.style.pointerEvents = 'none';
             document.body.appendChild(cross);
             
             var point = document.createElement('div');
-            point.style.position = 'absolute';
-            point.style.left = (x - 2) + 'px'; point.style.top = (y - 2) + 'px';
-            point.style.width = '4px'; point.style.height = '4px';
-            point.style.backgroundColor = 'lime';
+            point.style.position = 'absolute'; point.style.left = (x - 2) + 'px'; point.style.top = (y - 2) + 'px';
+            point.style.width = '4px'; point.style.height = '4px'; point.style.backgroundColor = 'lime';
             point.style.zIndex = '10000001'; point.style.pointerEvents = 'none';
             document.body.appendChild(point);
 
-            // --- DETECCIÓN Y DISPARO ---
+            // Disparo JS + Pointer Events
             var target = document.elementFromPoint(x, y);
             var info = "NADA";
-            
             if(target) {{
                 info = target.tagName + '.' + target.className;
-                
-                // Opción A: Eventos de Mouse Clásicos
                 var opts = {{bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y}};
                 target.dispatchEvent(new MouseEvent('mousedown', opts));
                 target.dispatchEvent(new MouseEvent('mouseup', opts));
                 target.dispatchEvent(new MouseEvent('click', opts));
                 
-                // Opción B: Eventos de Puntero Modernos (CRÍTICO para modales reactivos)
                 try {{
                     target.dispatchEvent(new PointerEvent('pointerdown', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
                     target.dispatchEvent(new PointerEvent('pointerup', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
-                    target.dispatchEvent(new PointerEvent('pointercancel', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
-                }} catch(e) {{ console.log('Pointer events no soportados'); }}
+                }} catch(e) {{}}
 
-                // Opción C: Click nativo JS
                 if (typeof target.click === 'function') target.click();
             }}
             return info;
             """
             element_hit = self.driver.execute_script(js_script)
-            logger.info(f"💥 JS IMPACTO: [{element_hit}]")
+            logger.info(f"💥 IMPACTO JS: [{element_hit}]")
             
-            # 3. FUERZA BRUTA: ActionChains (Click físico de Selenium)
-            # Esto mueve el mouse "real" del navegador a esa posición y hace click
-            # Es útil si el JS es ignorado por seguridad ("isTrusted: false")
+            # Refuerzo Físico con ActionChains
             try:
                 actions = ActionChains(self.driver)
-                # Resetear a 0,0 luego mover a coordenadas
                 actions.move_by_offset(x, y).click().perform()
-                # Importante: Regresar el mouse para no afectar futuros clicks relativos
-                actions.move_by_offset(-x, -y).perform()
-                logger.info("🔨 ACTIONCHAINS: Click físico enviado.")
-            except Exception as ac_e:
-                logger.warning(f"⚠️ ActionChains falló (común en headless si no hay foco): {ac_e}")
+                actions.move_by_offset(-x, -y).perform() # Volver a origen
+            except:
+                pass
 
             return True
         except Exception as e:
-            logger.error(f"❌ Error en click: {e}")
+            logger.error(f"❌ Error en disparo: {e}")
             return False
 
     def login(self):
         self.setup_driver(headless=True) 
+        
         try:
-            logger.info("🚀 StoreBot: Iniciando proceso...")
+            logger.info("🚀 StoreBot: Iniciando Secuencia de Login...")
             self.driver.get(self.BASE_URL)
-            logger.info("⏳ Esperando carga (15s)...")
+            logger.info("⏳ Cargando página (15s)...")
             time.sleep(15)
 
+            # Inyectar grilla (opcional, pero útil para seguir viendo en la foto)
             self._inject_calibration_grid()
             
-            # --- COORDENADA GANADORA ---
-            # En tu foto exitosa, la X está en 366, 132. 
-            # (Ignoré el 501, 85 de tu código pegado porque ese punto está vacío en la foto)
-            TARGET_X = 501
-            TARGET_Y = 85
-            
-            # Doble ataque: JS injection + ActionChains
-            self._click_debug(TARGET_X, TARGET_Y, "Boton X")
+            # --- PASO 1: MATAR EL MODAL ---
+            # Tus coordenadas perfectas que funcionaron:
+            logger.info("⚔️ Paso 1: Cerrando Publicidad...")
+            self._click_debug(501, 85, "Cerrar Modal")
 
-            logger.info("⏳ Esperando 5s para cierre de modal...")
-            time.sleep(5)
+            # Esperar a que la animación del modal desaparezca
+            logger.info("⏳ Esperando 3s para que la pantalla se limpie...")
+            time.sleep(3)
             
-            # Mantenemos EL MISMO NOMBRE de archivo
+            # --- PASO 2: CLICK EN INGRESAR ---
+            # Tus nuevas coordenadas calculadas (¡Perfectas!):
+            logger.info("🔑 Paso 2: Click en botón 'Ingresar'...")
+            self._click_debug(1160, 78, "Botón Ingresar")
+
+            # Esperar a que abra el formulario de login lateral o página de login
+            logger.info("⏳ Esperando 4s para que aparezca el formulario de Login...")
+            time.sleep(4)
+            
+            # --- FOTO FINAL DE VERIFICACIÓN ---
             output_path = "/tmp/debug_final.png"
             self.driver.save_screenshot(output_path)
             
             if os.path.exists(output_path):
-                logger.info(f"📸 FOTO GUARDADA: {output_path}")
+                logger.info(f"📸 ¡LISTO! Revisa si se abrió el login: {output_path}")
             
             return True
 
