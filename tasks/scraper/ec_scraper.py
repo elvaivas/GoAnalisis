@@ -117,7 +117,7 @@ class ECScraper:
             
             # 2. Disparo a la X del Modal (Recalibrado)
             # Estaba en 465, 106 (letra 'd'). Subimos y vamos a la izquierda.
-            self._click_at(445, 65, "Clic en X (Modal)", 2)
+            self._click_at(455, 69, "Clic en X (Modal)", 2)
 
             # Pausa para ver si se fue
             time.sleep(2)
