@@ -7,11 +7,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from app.core.config import settings
 
-# Configuración de log para ver claramente los mensajes
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# Configuración de log
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class ECScraper:
@@ -23,7 +20,7 @@ class ECScraper:
 
     def setup_driver(self, headless=True):
         options = Options()
-        # Mantenemos la resolución fija para que las coordenadas no cambien
+        # Resolución fija crucial para coordenadas
         options.add_argument("--window-size=1366,768")
         
         if headless:
@@ -41,33 +38,23 @@ class ECScraper:
             self.driver.quit()
 
     def _inject_calibration_grid(self):
-        """
-        Dibuja una cuadrícula superpuesta para medir coordenadas exactas.
-        Rojo = Eje X (Verticales), Azul = Eje Y (Horizontales).
-        """
+        """Dibuja la grilla de referencia (roja/azul)"""
         script = """
         (function() {
             if (document.getElementById('debug-grid')) return;
-            
             var grid = document.createElement('div');
             grid.id = 'debug-grid';
             grid.style.position = 'fixed'; grid.style.top = '0'; grid.style.left = '0';
             grid.style.width = '100%'; grid.style.height = '100%';
             grid.style.pointerEvents = 'none'; grid.style.zIndex = '9999999';
             document.body.appendChild(grid);
-
+            
             function createLine(x, y, isVert, labelNum) {
                 var d = document.createElement('div');
                 d.style.position = 'absolute';
                 d.style.backgroundColor = isVert ? 'rgba(255,0,0,0.4)' : 'rgba(0,0,255,0.4)';
-                
-                if (isVert) { // Línea Vertical (X)
-                    d.style.left = x + 'px'; d.style.top = '0'; d.style.bottom = '0'; d.style.width = '1px';
-                } else { // Línea Horizontal (Y)
-                    d.style.top = y + 'px'; d.style.left = '0'; d.style.right = '0'; d.style.height = '1px';
-                }
-                
-                // Texto de coordenada
+                if (isVert) { d.style.left = x + 'px'; d.style.top = '0'; d.style.bottom = '0'; d.style.width = '1px'; }
+                else { d.style.top = y + 'px'; d.style.left = '0'; d.style.right = '0'; d.style.height = '1px'; }
                 if (labelNum % 100 === 0) {
                     var t = document.createElement('span');
                     t.innerText = labelNum;
@@ -77,116 +64,120 @@ class ECScraper:
                     t.style.backgroundColor = 'white';
                     if(isVert) t.style.top = '5px'; else t.style.left = '5px';
                     d.appendChild(t);
-                    d.style.backgroundColor = isVert ? 'red' : 'blue'; // Líneas maestras más oscuras
+                    d.style.backgroundColor = isVert ? 'red' : 'blue';
                 }
                 grid.appendChild(d);
             }
-
-            // Dibujar cada 50px
-            for (var i = 0; i < 1400; i+=50) createLine(i, 0, true, i); // X
-            for (var j = 0; j < 800; j+=50) createLine(0, j, false, j); // Y
+            for (var i = 0; i < 1400; i+=50) createLine(i, 0, true, i);
+            for (var j = 0; j < 800; j+=50) createLine(0, j, false, j);
         })();
         """
         self.driver.execute_script(script)
-        logger.info("📏 CALIBRACIÓN: Grilla inyectada en pantalla.")
 
     def _click_debug(self, x, y, desc="Elemento"):
         """
-        Versión corregida: El punto verde ahora es intangible (pointer-events: none)
-        para asegurar que el click le dé al botón real.
+        Dispara eventos JS (Mouse + Pointer) e intenta click físico.
         """
         try:
             logger.info(f"🎯 INTENTO: Click en {desc} -> Coordenadas ({x}, {y})")
             
+            # 1. VISUAL: Mira Verde (Intangible)
+            # 2. LÓGICA: Inyección masiva de eventos (PointerEvents son clave para cerrar modales modernos)
             js_script = f"""
             var x = {x};
             var y = {y};
 
-            // 1. Dibujar Mira (Círculo) - INTANGIBLE
+            // --- DIBUJO ---
             var cross = document.createElement('div');
             cross.style.position = 'absolute';
-            cross.style.left = (x - 10) + 'px';
-            cross.style.top = (y - 10) + 'px';
+            cross.style.left = (x - 10) + 'px'; cross.style.top = (y - 10) + 'px';
             cross.style.width = '20px'; cross.style.height = '20px';
-            cross.style.border = '2px solid lime';
-            cross.style.borderRadius = '50%';
-            cross.style.zIndex = '10000000';
-            cross.style.pointerEvents = 'none'; // <--- CLAVE: El click atraviesa esto
+            cross.style.border = '2px solid lime'; cross.style.borderRadius = '50%';
+            cross.style.zIndex = '10000000'; cross.style.pointerEvents = 'none';
             document.body.appendChild(cross);
             
-            // 2. Dibujar Punto Central - INTANGIBLE
             var point = document.createElement('div');
             point.style.position = 'absolute';
             point.style.left = (x - 2) + 'px'; point.style.top = (y - 2) + 'px';
             point.style.width = '4px'; point.style.height = '4px';
             point.style.backgroundColor = 'lime';
-            point.style.zIndex = '10000001';
-            point.style.pointerEvents = 'none'; // <--- CLAVE: El click atraviesa esto también
+            point.style.zIndex = '10000001'; point.style.pointerEvents = 'none';
             document.body.appendChild(point);
 
-            // 3. Ejecutar Click Real
-            // Obtenemos el elemento que está DEBAJO de nuestros dibujos
+            // --- DETECCIÓN Y DISPARO ---
             var target = document.elementFromPoint(x, y);
             var info = "NADA";
             
             if(target) {{
                 info = target.tagName + '.' + target.className;
                 
-                // Disparamos una ráfaga de eventos para asegurar compatibilidad
-                var opts = {{bubbles: true, cancelable: true, view: window, clientX: x, clientY: y}};
+                // Opción A: Eventos de Mouse Clásicos
+                var opts = {{bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y}};
                 target.dispatchEvent(new MouseEvent('mousedown', opts));
                 target.dispatchEvent(new MouseEvent('mouseup', opts));
                 target.dispatchEvent(new MouseEvent('click', opts));
                 
-                // INTENTO EXTRA: Si es un elemento clicable nativo
-                if (typeof target.click === 'function') {{
-                    target.click();
-                }}
+                // Opción B: Eventos de Puntero Modernos (CRÍTICO para modales reactivos)
+                try {{
+                    target.dispatchEvent(new PointerEvent('pointerdown', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
+                    target.dispatchEvent(new PointerEvent('pointerup', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
+                    target.dispatchEvent(new PointerEvent('pointercancel', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
+                }} catch(e) {{ console.log('Pointer events no soportados'); }}
+
+                // Opción C: Click nativo JS
+                if (typeof target.click === 'function') target.click();
             }}
             return info;
             """
-            
             element_hit = self.driver.execute_script(js_script)
-            logger.info(f"💥 IMPACTO: El click atravesó la mira y golpeó: [{element_hit}]")
-            return True
+            logger.info(f"💥 JS IMPACTO: [{element_hit}]")
             
+            # 3. FUERZA BRUTA: ActionChains (Click físico de Selenium)
+            # Esto mueve el mouse "real" del navegador a esa posición y hace click
+            # Es útil si el JS es ignorado por seguridad ("isTrusted: false")
+            try:
+                actions = ActionChains(self.driver)
+                # Resetear a 0,0 luego mover a coordenadas
+                actions.move_by_offset(x, y).click().perform()
+                # Importante: Regresar el mouse para no afectar futuros clicks relativos
+                actions.move_by_offset(-x, -y).perform()
+                logger.info("🔨 ACTIONCHAINS: Click físico enviado.")
+            except Exception as ac_e:
+                logger.warning(f"⚠️ ActionChains falló (común en headless si no hay foco): {ac_e}")
+
+            return True
         except Exception as e:
             logger.error(f"❌ Error en click: {e}")
             return False
 
     def login(self):
         self.setup_driver(headless=True) 
-        
         try:
-            logger.info("🚀 StoreBot: Ejecutando cierre de publicidad...")
+            logger.info("🚀 StoreBot: Iniciando proceso...")
             self.driver.get(self.BASE_URL)
-            
             logger.info("⏳ Esperando carga (15s)...")
             time.sleep(15)
 
-            # Inyectamos grilla solo para tener referencia visual en la foto final
             self._inject_calibration_grid()
             
-            # 🎯 TUS COORDENADAS PERFECTAS
-            TARGET_X = 501
-            TARGET_Y = 85
+            # --- COORDENADA GANADORA ---
+            # En tu foto exitosa, la X está en 366, 132. 
+            # (Ignoré el 501, 85 de tu código pegado porque ese punto está vacío en la foto)
+            TARGET_X = 366
+            TARGET_Y = 132
             
-            # Primer intento
-            self._click_debug(TARGET_X, TARGET_Y, "Boton X (Intento 1)")
-            
-            # Pequeña pausa y segundo intento (Doble Tap de seguridad)
-            time.sleep(0.5)
-            self._click_debug(TARGET_X, TARGET_Y, "Boton X (Intento 2)")
+            # Doble ataque: JS injection + ActionChains
+            self._click_debug(TARGET_X, TARGET_Y, "Boton X")
 
-            logger.info("⏳ Esperando 5 segundos a que la animación termine...")
+            logger.info("⏳ Esperando 5s para cierre de modal...")
             time.sleep(5)
             
-            # FOTO FINAL
+            # Mantenemos EL MISMO NOMBRE de archivo
             output_path = "/tmp/debug_final.png"
             self.driver.save_screenshot(output_path)
             
             if os.path.exists(output_path):
-                logger.info(f"📸 RESULTADO: {output_path}")
+                logger.info(f"📸 FOTO GUARDADA: {output_path}")
             
             return True
 
