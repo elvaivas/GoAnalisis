@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     GOPHARMA_PASSWORD: str = os.getenv("GOPHARMA_PASSWORD", "GoPharma2024.")
     SCRAPER_HEADLESS: bool = True 
 
+    # --- NUEVAS CREDENCIALES E-COMMERCE ---
+    EC_USER: str = os.getenv("EC_USER", "usuario_por_defecto@test.com")
+    EC_PASSWORD: str = os.getenv("EC_PASSWORD", "clave_por_defecto")
+
     @property
     def DATABASE_URL(self) -> str:
         # Construcción robusta de la URL
