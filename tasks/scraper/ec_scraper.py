@@ -149,7 +149,7 @@ class ECScraper:
             time.sleep(3) # Esperar que aparezca el formulario OTP
             
             # --- PASO 3: QUITAR PUP POP ---
-            logger.info🔀 Paso 3: Quitando banner 'Banner'...")
+            logger.info ("🔀 Paso 3: Quitando banner 'Banner'...")
             self._click_debug(600, 1200, "Botón Ingresar")
             time.sleep(3) # Esperar que aparezca el formulario OTP
 
