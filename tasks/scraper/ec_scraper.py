@@ -92,66 +92,62 @@ class ECScraper:
 
     def _click_debug(self, x, y, desc="Elemento"):
         """
-        Hace click, dibuja una MIRA VERDE donde hizo click e identifica qué tocó.
+        Versión corregida: El punto verde ahora es intangible (pointer-events: none)
+        para asegurar que el click le dé al botón real.
         """
         try:
             logger.info(f"🎯 INTENTO: Click en {desc} -> Coordenadas ({x}, {y})")
             
             js_script = f"""
-            // 1. Dibujar Mira de Francotirador (Crosshair)
+            var x = {x};
+            var y = {y};
+
+            // 1. Dibujar Mira (Círculo) - INTANGIBLE
             var cross = document.createElement('div');
             cross.style.position = 'absolute';
-            cross.style.left = ({x} - 10) + 'px';
-            cross.style.top = ({y} - 10) + 'px';
+            cross.style.left = (x - 10) + 'px';
+            cross.style.top = (y - 10) + 'px';
             cross.style.width = '20px'; cross.style.height = '20px';
-            cross.style.border = '2px solid lime'; // Verde brillante
+            cross.style.border = '2px solid lime';
             cross.style.borderRadius = '50%';
             cross.style.zIndex = '10000000';
-            cross.style.pointerEvents = 'none';
+            cross.style.pointerEvents = 'none'; // <--- CLAVE: El click atraviesa esto
+            document.body.appendChild(cross);
             
+            // 2. Dibujar Punto Central - INTANGIBLE
             var point = document.createElement('div');
             point.style.position = 'absolute';
-            point.style.left = ({x} - 2) + 'px'; point.style.top = ({y} - 2) + 'px';
+            point.style.left = (x - 2) + 'px'; point.style.top = (y - 2) + 'px';
             point.style.width = '4px'; point.style.height = '4px';
             point.style.backgroundColor = 'lime';
             point.style.zIndex = '10000001';
-            
-            document.body.appendChild(cross);
+            point.style.pointerEvents = 'none'; // <--- CLAVE: El click atraviesa esto también
             document.body.appendChild(point);
 
-            // 2. Ejecutar Click y Detectar Elemento
-            var target = document.elementFromPoint({x}, {y});
-            var info = "NADA (null)";
+            // 3. Ejecutar Click Real
+            // Obtenemos el elemento que está DEBAJO de nuestros dibujos
+            var target = document.elementFromPoint(x, y);
+            var info = "NADA";
+            
             if(target) {{
-                // Obtener info útil para el programador
-                var tag = target.tagName;
-                var cls = target.className;
-                var src = target.src ? target.src.substring(0, 30) + '...' : 'sin-src';
-                info = tag + " | Class: " + cls + " | Src: " + src;
-
-                // Forzar eventos de click
-                var opts = {{bubbles: true, cancelable: true, view: window, clientX: {x}, clientY: {y}}};
+                info = target.tagName + '.' + target.className;
+                
+                // Disparamos una ráfaga de eventos para asegurar compatibilidad
+                var opts = {{bubbles: true, cancelable: true, view: window, clientX: x, clientY: y}};
                 target.dispatchEvent(new MouseEvent('mousedown', opts));
                 target.dispatchEvent(new MouseEvent('mouseup', opts));
                 target.dispatchEvent(new MouseEvent('click', opts));
+                
+                // INTENTO EXTRA: Si es un elemento clicable nativo
+                if (typeof target.click === 'function') {{
+                    target.click();
+                }}
             }}
             return info;
             """
             
-            # Ejecutamos y obtenemos qué tocamos
             element_hit = self.driver.execute_script(js_script)
-            
-            logger.info(f"💥 RESULTADO IMPACTO: El click cayó sobre: [{element_hit}]")
-            
-            # Análisis rápido para log
-            if "IMG" in element_hit:
-                logger.warning("⚠️ ALERTA: Le diste a una IMAGEN. Probablemente abriste la publicidad en vez de cerrarla.")
-            elif "button" in element_hit.lower() or "close" in element_hit.lower() or "modal" in element_hit.lower():
-                logger.info("✅ PINTA BIEN: Parece que le diste a un botón o elemento de cierre.")
-            else:
-                logger.info("ℹ️ INFO: Le diste a un elemento genérico. Revisa la foto.")
-
-            time.sleep(2)
+            logger.info(f"💥 IMPACTO: El click atravesó la mira y golpeó: [{element_hit}]")
             return True
             
         except Exception as e:
@@ -162,38 +158,40 @@ class ECScraper:
         self.setup_driver(headless=True) 
         
         try:
-            logger.info("🚀 StoreBot: Iniciando login con coordenadas calibradas...")
+            logger.info("🚀 StoreBot: Ejecutando cierre de publicidad...")
             self.driver.get(self.BASE_URL)
             
             logger.info("⏳ Esperando carga (15s)...")
             time.sleep(15)
 
-            # --- MANTENEMOS LA GRILLA PARA VERIFICAR ESTE TIRO ---
+            # Inyectamos grilla solo para tener referencia visual en la foto final
             self._inject_calibration_grid()
             
-            # 🎯 COORDENADAS RECALCULADAS SEGÚN TU FOTO
-            # Análisis: La X está entre la linea 350 y 400, y debajo de la linea 100.
-            TARGET_X = 500
-            TARGET_Y = 90
+            # 🎯 TUS COORDENADAS PERFECTAS
+            TARGET_X = 366
+            TARGET_Y = 132
             
-            # Hacemos el click y mostramos el resultado
-            self._click_debug(TARGET_X, TARGET_Y, "Boton Cierre (X)")
+            # Primer intento
+            self._click_debug(TARGET_X, TARGET_Y, "Boton X (Intento 1)")
+            
+            # Pequeña pausa y segundo intento (Doble Tap de seguridad)
+            time.sleep(0.5)
+            self._click_debug(TARGET_X, TARGET_Y, "Boton X (Intento 2)")
 
-            # Pausa para ver si se cerró
-            time.sleep(3)
+            logger.info("⏳ Esperando 5 segundos a que la animación termine...")
+            time.sleep(5)
             
-            # FOTO DE CONFIRMACIÓN
-            output_path = "/tmp/debug_tiro_certero.png"
+            # FOTO FINAL
+            output_path = "/tmp/debug_final.png"
             self.driver.save_screenshot(output_path)
             
             if os.path.exists(output_path):
-                logger.info(f"📸 FOTO GUARDADA: {output_path}")
-                logger.info("👉 Revisa la foto. El punto verde debería estar justo encima de la X blanca.")
+                logger.info(f"📸 RESULTADO: {output_path}")
             
             return True
 
         except Exception as e:
-            logger.error(f"❌ Crash crítico: {e}")
+            logger.error(f"❌ Crash: {e}")
             return False
         finally:
             self.close()
