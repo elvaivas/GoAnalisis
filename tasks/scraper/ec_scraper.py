@@ -131,10 +131,16 @@ class ECScraper:
             # Esperar redirección
             time.sleep(5)
             
-            # FOTO DE VERIFICACIÓN
-            # Guardamos un screenshot para que valides si entró
-            self.driver.save_screenshot("/app/static/debug_ec_login.png")
-            logger.info("📸 Screenshot guardado en: /static/debug_ec_login.png")
+            ## FOTO DE VERIFICACIÓN (EN TMP PARA GARANTIZAR PERMISOS)
+            output_path = "/tmp/debug_ec_login.png"
+            self.driver.save_screenshot(output_path)
+            
+            # Verificación inmediata
+            import os
+            if os.path.exists(output_path):
+                logger.info(f"📸 ÉXITO: Screenshot guardado en: {output_path}")
+            else:
+                logger.error("❌ ERROR: El archivo no aparece en el disco.")
             
             return True
 
