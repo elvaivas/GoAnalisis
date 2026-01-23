@@ -163,8 +163,8 @@ class ECScraper:
             # --- COORDENADA GANADORA ---
             # En tu foto exitosa, la X está en 366, 132. 
             # (Ignoré el 501, 85 de tu código pegado porque ese punto está vacío en la foto)
-            TARGET_X = 366
-            TARGET_Y = 132
+            TARGET_X = 501
+            TARGET_Y = 85
             
             # Doble ataque: JS injection + ActionChains
             self._click_debug(TARGET_X, TARGET_Y, "Boton X")
