@@ -115,42 +115,11 @@ class ECScraper:
             # --- OPERACIÓN: MATAR PUBLICIDAD ---
             # Haremos 3 disparos estratégicos para asegurar el cierre
 
-            # 1. Disparo al Cielo (Borde superior fuera del modal)
-            # Si es un modal centrado, hacer clic en Y=10 debería cerrarlo por ser el "backdrop"
-            self._click_at(683, 10, "Clic en Fondo (Arriba)", 1)
-            
-            # 2. Disparo a la X del Modal (Recalibrado)
-            # Estaba en 465, 106 (letra 'd'). Subimos y vamos a la izquierda.
-            self._click_at(415, 60, "Clic en X (Modal)", 2)
-
             # 3. Disparo a la X de la Barra (Minimizada)
             self._click_at(20, 30, "Clic en X (Minimizada)", 3)
 
             # Pausa para ver si se fue
             time.sleep(2)
-
-            # --- SECUENCIA DE LOGIN ---
-            
-            # 4. Botón Inicio Sesión
-            self._click_at(1174, 86, "Botón Login", 4)
-            time.sleep(3) 
-
-            # 5. Cambiar a modo Usuario/Contraseña
-            self._click_at(688, 698, "Switch a Password", 5)
-
-            # 6. Campo Usuario
-            self._click_at(719, 309, "Input Usuario", 6)
-            ActionChains(self.driver).send_keys(Keys.CONTROL + "a").send_keys(Keys.DELETE).perform()
-            self._type_text(self.username)
-
-            # 7. Campo Contraseña
-            self._click_at(628, 400, "Input Password", 7)
-            self._type_text(self.password)
-
-            # 8. Botón Ingresar
-            self._click_at(610, 534, "BTN INGRESAR", 8)
-            
-            time.sleep(8)
             
             # FOTO
             output_path = "/tmp/debug_ec_login.png"
