@@ -161,14 +161,14 @@ class ECScraper:
 
             # 5. Campo Usuario (Centrado en la caja de texto)
             logger.info("✍️ Paso 5: Escribiendo Usuario...")
-            self._click_debug(600, 420, "Input Usuario")
+            self._click_debug(600, 250, "Input Usuario")
             time.sleep(0.5)
             self._type_text_at_coords(self.username)
             time.sleep(1)
 
             # 6. Campo Contraseña (Centrado en la caja de texto)
             logger.info("✍️ Paso 6: Escribiendo Contraseña...")
-            self._click_debug(600, 530, "Input Password")
+            self._click_debug(600, 350, "Input Password")
             time.sleep(0.5)
             self._type_text_at_coords(self.password)
             time.sleep(1)
