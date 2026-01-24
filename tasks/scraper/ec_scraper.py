@@ -161,7 +161,7 @@ class ECScraper:
             # CAMBIO: Usamos 683, 630. 
             # 683 es el centro del modal. 630 es justo debajo del botón amarillo.
             logger.info("🔀 Paso 4: Cambiando a modo 'Usuario/Contraseña'...")
-            self._click_debug(683, 640, "Link Cambiar Metodo")
+            self._click_debug(683, 620, "Link Cambiar Metodo")
             
             logger.info("⏳ Esperando 3s a que el formulario se actualice...")
             time.sleep(3)
