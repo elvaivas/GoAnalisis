@@ -180,7 +180,7 @@ class ECScraper:
             
             # 8. Botón INGRESAR (Alineado al botón verde)
             logger.info("👆 Paso 7: Click Ingresar...")
-            self._click_debug(450, 500, "Boton Ingresar (Verde)")
+            self._click_debug(500, 450, "Boton Ingresar (Verde)")
             
             logger.info("⏳ Esperando 5s login...")
             time.sleep(3)
