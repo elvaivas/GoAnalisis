@@ -174,11 +174,11 @@ class ECScraper:
             time.sleep(1)
 
             # 7. Botón INGRESAR (Alineado al botón verde)
-            logger.info("👆 Paso 7: Click Ingresar...")
-            self._click_debug(430, 670, "Boton Ingresar (Verde)")
+            #logger.info("👆 Paso 7: Click Ingresar...")
+            #self._click_debug(430, 670, "Boton Ingresar (Verde)")
             
             logger.info("⏳ Esperando 5s login...")
-            time.sleep(5)
+            time.sleep(3)
             
             output_path = "/tmp/debug_final.png"
             self.driver.save_screenshot(output_path)
