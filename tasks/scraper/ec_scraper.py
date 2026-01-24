@@ -173,9 +173,14 @@ class ECScraper:
             self._type_text_at_coords(self.password)
             time.sleep(1)
 
-            # 7. Botón INGRESAR (Alineado al botón verde)
-            #logger.info("👆 Paso 7: Click Ingresar...")
-            #self._click_debug(430, 670, "Boton Ingresar (Verde)")
+            # 7. Botón Recuerdame
+            logger.info("👆 Paso 7: Click Ingresar...")
+            self._click_debug(490, 400, "Boton recuerdame")
+            time.sleep(1)            
+            
+            # 8. Botón INGRESAR (Alineado al botón verde)
+            logger.info("👆 Paso 7: Click Ingresar...")
+            self._click_debug(450, 500, "Boton Ingresar (Verde)")
             
             logger.info("⏳ Esperando 5s login...")
             time.sleep(3)
