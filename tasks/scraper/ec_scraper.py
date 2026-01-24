@@ -131,40 +131,53 @@ class ECScraper:
         self.setup_driver(headless=True) 
         
         try:
-            logger.info("🚀 StoreBot: Iniciando Secuencia Completa...")
+            logger.info("🚀 StoreBot: Iniciando Secuencia...")
             self.driver.get(self.BASE_URL)
-            logger.info("⏳ Esperando carga inicial (15s)...")
+            logger.info("⏳ Esperando carga (10s)...")
             time.sleep(10)
 
             self._inject_calibration_grid()
             
-            # --- PASO 1: CERRAR PUBLICIDAD ---
-            # TUS COORDENADAS (Intactas)
-            logger.info("⚔️ Paso 1: Cerrando Modal Publicidad...")
-            self._click_debug(501, 85, "Cerrar Modal X")
-            time.sleep(3) 
+            # --- FASE 1: PREPARACIÓN (Coordenadas verificadas) ---
             
-            # --- PASO 2: ABRIR LOGIN ---
-            # TUS COORDENADAS (Intactas)
-            logger.info("🔑 Paso 2: Click en botón 'Ingresar'...")
-            self._click_debug(1160, 78, "Botón Ingresar")
-            time.sleep(3) 
+            # 1. Cerrar Publicidad
+            self._click_debug(501, 85, "1. Cerrar Modal X")
+            time.sleep(2)
             
-            # --- PASO 3: ACEPTAR COOKIES ---
-            # CAMBIO: Usamos 895, 645 para darle al botón verde "Sí, acepto".
-            # Esto quita la barra negra que tapa el formulario.
-            logger.info("🍪 Paso 3: Aceptando cookies para limpiar pantalla...")
-            self._click_debug(1200, 600, "Botón Aceptar Cookies")
-            time.sleep(2) 
+            # 2. Botón Ingresar
+            self._click_debug(1160, 78, "2. Botón Ingresar")
+            time.sleep(2)
+            
+            # 3. Aceptar Cookies (Limpiar pantalla)
+            self._click_debug(1200, 600, "3. Aceptar Cookies")
+            time.sleep(2)
+            
+            # 4. Cambiar a Contraseña
+            self._click_debug(683, 627, "4. Cambiar a Contraseña")
+            time.sleep(2)
 
-            # --- PASO 4: METODO USUARIO Y CLAVE ---
-            # CAMBIO: Usamos 683, 630. 
-            # 683 es el centro del modal. 630 es justo debajo del botón amarillo.
-            logger.info("🔀 Paso 4: Cambiando a modo 'Usuario/Contraseña'...")
-            self._click_debug(683, 627, "Link Cambiar Metodo")
+            # --- FASE 2: TUS COORDENADAS PARA DATOS ---
             
-            logger.info("⏳ Esperando 3s a que el formulario se actualice...")
-            time.sleep(3)
+            # 5. Campo Usuario (Tu coord: 250, 600)
+            logger.info("✍️ Paso 5: Escribiendo Usuario...")
+            self._click_debug(250, 600, "Input Usuario")
+            time.sleep(0.5)
+            self._type_text_at_coords(self.username)
+            time.sleep(1)
+
+            # 6. Campo Contraseña (Tu coord: 350, 600)
+            logger.info("✍️ Paso 6: Escribiendo Contraseña...")
+            self._click_debug(350, 600, "Input Password")
+            time.sleep(0.5)
+            self._type_text_at_coords(self.password)
+            time.sleep(1)
+
+            # 7. Botón INGRESAR (Tu coord: 450, 600)
+            logger.info("👆 Paso 7: Click Ingresar...")
+            self._click_debug(450, 600, "Boton Ingresar")
+            
+            logger.info("⏳ Esperando 5s proceso login...")
+            time.sleep(5)
             
             # --- FOTO FINAL ---
             output_path = "/tmp/debug_final.png"
@@ -172,7 +185,6 @@ class ECScraper:
             
             if os.path.exists(output_path):
                 logger.info(f"📸 FOTO LISTA: {output_path}")
-                logger.info("👉 Ahora deberías ver 4 puntos verdes y el formulario de correo abierto.")
             
             return True
 
