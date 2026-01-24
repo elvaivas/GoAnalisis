@@ -131,14 +131,14 @@ class ECScraper:
         self.setup_driver(headless=True) 
         
         try:
-            logger.info("🚀 StoreBot: Iniciando Secuencia...")
+            logger.info("🚀 StoreBot: Iniciando Secuencia Completa (Coordenadas Corregidas)...")
             self.driver.get(self.BASE_URL)
             logger.info("⏳ Esperando carga (10s)...")
             time.sleep(10)
 
             self._inject_calibration_grid()
             
-            # --- FASE 1: PREPARACIÓN (Coordenadas verificadas) ---
+            # --- FASE 1: PREPARACIÓN ---
             
             # 1. Cerrar Publicidad
             self._click_debug(501, 85, "1. Cerrar Modal X")
@@ -156,25 +156,28 @@ class ECScraper:
             self._click_debug(683, 627, "4. Cambiar a Contraseña")
             time.sleep(2)
 
-            # --- FASE 2: TUS COORDENADAS PARA DATOS ---
+            # --- FASE 2: LLENADO DE DATOS (Coordenadas Centradas) ---
             
-            # 5. Campo Usuario (Tu coord: 250, 600)
+            # 5. Campo Usuario 
+            # X=600 (Centro del formulario), Y=420 (Altura del primer campo)
             logger.info("✍️ Paso 5: Escribiendo Usuario...")
-            self._click_debug(250, 600, "Input Usuario")
+            self._click_debug(600, 420, "Input Usuario")
             time.sleep(0.5)
             self._type_text_at_coords(self.username)
             time.sleep(1)
 
-            # 6. Campo Contraseña (Tu coord: 350, 600)
+            # 6. Campo Contraseña
+            # X=600 (Centro del formulario), Y=530 (Altura del segundo campo)
             logger.info("✍️ Paso 6: Escribiendo Contraseña...")
-            self._click_debug(350, 600, "Input Password")
+            self._click_debug(600, 530, "Input Password")
             time.sleep(0.5)
             self._type_text_at_coords(self.password)
             time.sleep(1)
 
-            # 7. Botón INGRESAR (Tu coord: 450, 600)
+            # 7. Botón INGRESAR (Verde)
+            # X=430 (Centro del botón verde izquierdo), Y=670 (Altura segura)
             logger.info("👆 Paso 7: Click Ingresar...")
-            self._click_debug(450, 600, "Boton Ingresar")
+            self._click_debug(430, 670, "Boton Ingresar (Verde)")
             
             logger.info("⏳ Esperando 5s proceso login...")
             time.sleep(5)
