@@ -154,7 +154,7 @@ class ECScraper:
             # CAMBIO: Usamos 895, 645 para darle al botón verde "Sí, acepto".
             # Esto quita la barra negra que tapa el formulario.
             logger.info("🍪 Paso 3: Aceptando cookies para limpiar pantalla...")
-            self._click_debug(1160, 600, "Botón Aceptar Cookies")
+            self._click_debug(1200, 600, "Botón Aceptar Cookies")
             time.sleep(2) 
 
             # --- PASO 4: METODO USUARIO Y CLAVE ---
