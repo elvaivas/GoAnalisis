@@ -175,7 +175,7 @@ class ECScraper:
 
             # 7. Botón Recuerdame
             logger.info("👆 Paso 7: Click Ingresar...")
-            self._click_debug(490, 400, "Boton recuerdame")
+            self._click_debug(485, 400, "Boton recuerdame")
             time.sleep(1)            
             
             # 8. Botón INGRESAR (Alineado al botón verde)

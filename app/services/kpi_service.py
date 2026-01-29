@@ -122,7 +122,8 @@ def get_main_kpis(
     total_users_historic = db.query(Customer).count()
     unique_customers = {o.customer_id for o in orders if o.customer_id}
     
-    local_joined_at = func.date(func.timezone('America/Caracas', func.timezone('UTC', Customer.joined_at)))
+    # FIX: Las fechas de registro vienen planas (00:00:00), no aplicar timezone
+    local_joined_at = func.date(Customer.joined_at)
     new_users_q = db.query(Customer)
     if start_date: new_users_q = new_users_q.filter(local_joined_at >= start_date)
     if end_date: new_users_q = new_users_q.filter(local_joined_at <= end_date)

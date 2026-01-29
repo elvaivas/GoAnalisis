@@ -64,3 +64,6 @@ dump.rdb
 # Archivos temporales de Selenium/Chrome (si se generan en el proyecto)
 .wdm/
 chromedriver*
+.env
+__pycache__/
+venv/
