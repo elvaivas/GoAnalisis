@@ -125,13 +125,13 @@ class ECScraper:
             logger.error(f"❌ Error disparo: {e}")
             return False
 
-    def _type_text_at_coords(self, text, x, y):
+    def _type_text_at_coords(self, text, x, y, submit=False):
         """
-        Combina Movimiento + Click + Escritura en una sola acción atómica.
-        Garantiza que el foco esté en el lugar correcto.
+        Combina Movimiento + Click + Escritura.
+        Si submit=True, presiona ENTER al final.
         """
         try:
-            logger.info(f"⌨️ Escribiendo en ({x},{y}): {text}")
+            logger.info(f"⌨️ Escribiendo en ({x},{y})...")
 
             # 1. Mover y Click Físico para asegurar foco
             body = self.driver.find_element(By.TAG_NAME, "body")
@@ -143,10 +143,16 @@ class ECScraper:
 
             time.sleep(0.5)
 
-            # 2. Limpiar y Escribir
+            # 2. Limpiar, Escribir y (Opcional) Enter
+            actions = ActionChains(self.driver)  # Reiniciamos actions
             actions.send_keys(Keys.CONTROL + "a")
             actions.send_keys(Keys.DELETE)
             actions.send_keys(text)
+
+            if submit:
+                logger.info("🚀 Enviando tecla ENTER...")
+                actions.send_keys(Keys.ENTER)
+
             actions.perform()
 
             return True
@@ -186,20 +192,27 @@ class ECScraper:
             self._type_text_at_coords(self.username, 600, 250)
             time.sleep(1)
 
-            # 6. Campo Contraseña (Con función integrada)
-            self._type_text_at_coords(self.password, 600, 350)
+            # 6. Campo Usuario
+            # Usamos coordenadas ajustadas a tu última foto
+            # Nota: Si funcionaron las anteriores, usa esas. Aquí pongo las centradas del último intento.
+            self._type_text_at_coords(self.username, 683, 395)
             time.sleep(1)
 
-            # 7. Botón Recuerdame
-            self._click_debug(485, 400, "Boton recuerdame")
-            time.sleep(1)
+            # 7. Campo Contraseña + ENTER
+            # Enviamos submit=True para que lance el Enter automático
+            self._type_text_at_coords(self.password, 683, 490, submit=True)
 
-            # 8. Botón INGRESAR (Verde)
-            logger.info("👆 Paso 8: Click Ingresar...")
-            self._click_debug(500, 450, "Boton Ingresar")
+            # No hacemos click en el botón verde inmediatamente, esperamos a ver si el Enter funcionó
+            logger.info("⏳ Esperando reacción al ENTER (5s)...")
+            time.sleep(5)
 
-            logger.info("⏳ Esperando 8s login...")
-            time.sleep(8)
+            # 8. Botón INGRESAR (Solo por seguridad/respaldo si el Enter falla)
+            # Si ya entró, este click no hará daño o fallará silenciosamente
+            logger.info("👆 Click de respaldo en botón Ingresar...")
+            self._click_debug(683, 580, "Boton Ingresar")
+
+            logger.info("⏳ Esperando carga final del Dashboard (10s)...")
+            time.sleep(10)
 
             # FOTO DE CONFIRMACIÓN
             output_path = "/tmp/debug_ec_login.png"
