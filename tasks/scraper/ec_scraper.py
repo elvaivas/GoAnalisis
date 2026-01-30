@@ -6,6 +6,11 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
+
+# --- ESTA ES LA QUE TE FALTA ---
+from selenium.webdriver.common.by import By
+
+# -------------------------------
 from app.core.config import settings
 
 logging.basicConfig(
@@ -24,15 +29,15 @@ class ECScraper:
     def setup_driver(self, headless=True):
         options = Options()
         # Mantenemos el argumento base para el contenedor
-        options.add_argument("--window-size=1366,768") 
-        
+        options.add_argument("--window-size=1366,768")
+
         if headless:
             options.add_argument("--headless=new")
-        
+
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        
+
         service = Service()
         self.driver = webdriver.Chrome(service=service, options=options)
 
@@ -42,13 +47,16 @@ class ECScraper:
         # Esto le dice a Chrome: "No me importa el tamaño de tu ventana,
         # dibuja el sitio web en un lienzo de exactamente 1366x768".
         # Así, tus coordenadas (X, Y) serán perfectas en Local y Servidor.
-        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
-            "width": 1366,
-            "height": 768,
-            "deviceScaleFactor": 1,
-            "mobile": False,
-            "fitWindow": True
-        })
+        self.driver.execute_cdp_cmd(
+            "Emulation.setDeviceMetricsOverride",
+            {
+                "width": 1366,
+                "height": 768,
+                "deviceScaleFactor": 1,
+                "mobile": False,
+                "fitWindow": True,
+            },
+        )
         logger.info("🔒 Resolución interna forzada a: 1366x768 (Viewport)")
         # ============================================================
 
