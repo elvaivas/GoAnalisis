@@ -23,42 +23,34 @@ class ECScraper:
 
     def setup_driver(self, headless=True):
         options = Options()
-
-        # Tamaño de ventana base (contenedor)
-        options.add_argument("--window-size=1366,768")
-
+        # Mantenemos el argumento base para el contenedor
+        options.add_argument("--window-size=1366,768") 
+        
         if headless:
             options.add_argument("--headless=new")
-
+        
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
-
+        
         service = Service()
         self.driver = webdriver.Chrome(service=service, options=options)
 
-        # --- MAGIA DE CALIBRACIÓN: FORZAR RESOLUCIÓN INTERNA ---
-        # Esto obliga al navegador a comportarse como una pantalla de 1366x768
-        # sin importar si tiene bordes, barras o si está en modo headless.
-        width = 1366
-        height = 768
-
-        self.driver.execute_cdp_cmd(
-            "Emulation.setDeviceMetricsOverride",
-            {
-                "width": width,
-                "height": height,
-                "deviceScaleFactor": 1,
-                "mobile": False,
-                "fitWindow": True,  # Ajusta el contenido a la ventana visible
-            },
-        )
-
-        # Verificar tamaño real (para debug)
-        size = self.driver.execute_script(
-            "return [window.innerWidth, window.innerHeight];"
-        )
-        logger.info(f"📏 Viewport Calibrado: {size[0]}x{size[1]}")
+        # ============================================================
+        # 🔒 FORZAR RESOLUCIÓN INTERNA (La Jaula de Cristal)
+        # ============================================================
+        # Esto le dice a Chrome: "No me importa el tamaño de tu ventana,
+        # dibuja el sitio web en un lienzo de exactamente 1366x768".
+        # Así, tus coordenadas (X, Y) serán perfectas en Local y Servidor.
+        self.driver.execute_cdp_cmd("Emulation.setDeviceMetricsOverride", {
+            "width": 1366,
+            "height": 768,
+            "deviceScaleFactor": 1,
+            "mobile": False,
+            "fitWindow": True
+        })
+        logger.info("🔒 Resolución interna forzada a: 1366x768 (Viewport)")
+        # ============================================================
 
     def close(self):
         if self.driver:
