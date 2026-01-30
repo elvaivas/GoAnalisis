@@ -23,7 +23,8 @@ class ECScraper:
 
     def setup_driver(self, headless=True):
         options = Options()
-        # Mantenemos 1366x768 (La verdad del servidor)
+
+        # Tamaño de ventana base (contenedor)
         options.add_argument("--window-size=1366,768")
 
         if headless:
@@ -35,6 +36,29 @@ class ECScraper:
 
         service = Service()
         self.driver = webdriver.Chrome(service=service, options=options)
+
+        # --- MAGIA DE CALIBRACIÓN: FORZAR RESOLUCIÓN INTERNA ---
+        # Esto obliga al navegador a comportarse como una pantalla de 1366x768
+        # sin importar si tiene bordes, barras o si está en modo headless.
+        width = 1366
+        height = 768
+
+        self.driver.execute_cdp_cmd(
+            "Emulation.setDeviceMetricsOverride",
+            {
+                "width": width,
+                "height": height,
+                "deviceScaleFactor": 1,
+                "mobile": False,
+                "fitWindow": True,  # Ajusta el contenido a la ventana visible
+            },
+        )
+
+        # Verificar tamaño real (para debug)
+        size = self.driver.execute_script(
+            "return [window.innerWidth, window.innerHeight];"
+        )
+        logger.info(f"📏 Viewport Calibrado: {size[0]}x{size[1]}")
 
     def close(self):
         if self.driver:
@@ -232,4 +256,5 @@ class ECScraper:
 
 if __name__ == "__main__":
     bot = ECScraper()
+    # DENTRO DE DOCKER SIEMPRE DEBE SER TRUE
     bot.login()
