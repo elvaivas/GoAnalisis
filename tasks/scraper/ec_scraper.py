@@ -1,30 +1,38 @@
 import logging
 import time
+import os
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.keys import Keys  # <--- IMPORTANTE: No borrar
+from selenium.webdriver.common.keys import Keys
 from app.core.config import settings
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
+
 
 class ECScraper:
     def __init__(self):
         self.BASE_URL = "https://ec.gopharma.com.ve/?from-splash=false"
         self.driver = None
-        self.username = settings.EC_USER 
+        self.username = settings.EC_USER
         self.password = settings.EC_PASSWORD
 
     def setup_driver(self, headless=True):
         options = Options()
+        # Mantenemos 1366x768 (La verdad del servidor)
         options.add_argument("--window-size=1366,768")
+
         if headless:
             options.add_argument("--headless=new")
+
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        
+
         service = Service()
         self.driver = webdriver.Chrome(service=service, options=options)
 
@@ -33,6 +41,7 @@ class ECScraper:
             self.driver.quit()
 
     def _inject_calibration_grid(self):
+        """Dibuja cuadrícula para verificar alineación en la foto"""
         script = """
         (function() {
             if (document.getElementById('debug-grid')) return;
@@ -65,13 +74,16 @@ class ECScraper:
             for (var j = 0; j < 800; j+=50) createLine(0, j, false, j);
         })();
         """
-        self.driver.execute_script(script)
+        try:
+            self.driver.execute_script(script)
+        except:
+            pass
 
     def _click_debug(self, x, y, desc="Elemento"):
         try:
             logger.info(f"🎯 Disparando a: {desc} -> ({x}, {y})")
-            
-            # Dibujar marca
+
+            # 1. Marca visual (Punto verde)
             js_mark = f"""
             var d = document.createElement('div');
             d.style.position='absolute'; d.style.left='{x-5}px'; d.style.top='{y-5}px';
@@ -82,11 +94,10 @@ class ECScraper:
             """
             self.driver.execute_script(js_mark)
 
+            # 2. Click JS Avanzado (Pointer Events)
             js_script = f"""
             var target = document.elementFromPoint({x}, {y});
-            var info = "NADA";
             if(target) {{
-                info = target.tagName + '.' + target.className;
                 var opts = {{bubbles: true, cancelable: true, view: window, clientX: {x}, clientY: {y}}};
                 target.dispatchEvent(new MouseEvent('mousedown', opts));
                 target.dispatchEvent(new MouseEvent('mouseup', opts));
@@ -96,99 +107,107 @@ class ECScraper:
                     target.dispatchEvent(new PointerEvent('pointerup', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
                 }} catch(e) {{}}
             }}
-            return info;
             """
-            element_hit = self.driver.execute_script(js_script)
-            logger.info(f"💥 IMPACTO JS: [{element_hit}]")
-            
+            self.driver.execute_script(js_script)
+
+            # 3. Respaldo: Click Físico (ActionChains)
+            # Esto ayuda a mover el foco real del navegador si JS falla
             try:
                 actions = ActionChains(self.driver)
+                body = self.driver.find_element(By.TAG_NAME, "body")
+                actions.move_to_element_with_offset(body, 0, 0)
                 actions.move_by_offset(x, y).click().perform()
-                actions.move_by_offset(-x, -y).perform() 
             except:
                 pass
+
             return True
         except Exception as e:
             logger.error(f"❌ Error disparo: {e}")
             return False
 
-    # --- ESTA ES LA FUNCIÓN QUE TE FALTABA ---
-    def _type_text_at_coords(self, text):
-        """Escribe texto limpiando el campo primero (Ctrl+A -> Del)"""
+    def _type_text_at_coords(self, text, x, y):
+        """
+        Combina Movimiento + Click + Escritura en una sola acción atómica.
+        Garantiza que el foco esté en el lugar correcto.
+        """
         try:
+            logger.info(f"⌨️ Escribiendo en ({x},{y}): {text}")
+
+            # 1. Mover y Click Físico para asegurar foco
+            body = self.driver.find_element(By.TAG_NAME, "body")
             actions = ActionChains(self.driver)
-            # Limpiar campo
+            actions.move_to_element_with_offset(body, 0, 0)
+            actions.move_by_offset(x, y)
+            actions.click()
+            actions.perform()
+
+            time.sleep(0.5)
+
+            # 2. Limpiar y Escribir
             actions.send_keys(Keys.CONTROL + "a")
             actions.send_keys(Keys.DELETE)
-            # Escribir
             actions.send_keys(text)
             actions.perform()
-            logger.info(f"⌨️ Texto escrito: {text}")
+
             return True
         except Exception as e:
             logger.error(f"❌ Error escribiendo: {e}")
             return False
-    # ------------------------------------------
 
     def login(self):
-        self.setup_driver(headless=True) 
-        
+        self.setup_driver(headless=True)
+
         try:
-            logger.info("🚀 StoreBot: Iniciando Secuencia Completa...")
+            logger.info("🚀 StoreBot: Iniciando Secuencia Login (Server Scale)...")
             self.driver.get(self.BASE_URL)
-            logger.info("⏳ Esperando carga (10s)...")
-            time.sleep(10)
+            logger.info("⏳ Esperando carga (15s)...")
+            time.sleep(15)
 
             self._inject_calibration_grid()
-            
+
             # 1. Cerrar Publicidad
             self._click_debug(501, 85, "1. Cerrar Modal X")
             time.sleep(2)
-            
+
             # 2. Botón Ingresar
             self._click_debug(1160, 78, "2. Botón Ingresar")
             time.sleep(2)
-            
-            # 3. Aceptar Cookies
+
+            # 3. Aceptar Cookies (Si sale)
             self._click_debug(1200, 600, "3. Aceptar Cookies")
-            time.sleep(2)
-            
+            time.sleep(1)
+
             # 4. Cambiar a Contraseña
             self._click_debug(683, 627, "4. Cambiar a Contraseña")
             time.sleep(2)
 
-            # 5. Campo Usuario (Centrado en la caja de texto)
-            logger.info("✍️ Paso 5: Escribiendo Usuario...")
-            self._click_debug(600, 250, "Input Usuario")
-            time.sleep(0.5)
-            self._type_text_at_coords(self.username)
+            # 5. Campo Usuario (Con función integrada)
+            # Usamos _type_text_at_coords que incluye el click y movimiento
+            self._type_text_at_coords(self.username, 600, 250)
             time.sleep(1)
 
-            # 6. Campo Contraseña (Centrado en la caja de texto)
-            logger.info("✍️ Paso 6: Escribiendo Contraseña...")
-            self._click_debug(600, 350, "Input Password")
-            time.sleep(0.5)
-            self._type_text_at_coords(self.password)
+            # 6. Campo Contraseña (Con función integrada)
+            self._type_text_at_coords(self.password, 600, 350)
             time.sleep(1)
 
             # 7. Botón Recuerdame
-            logger.info("👆 Paso 7: Click Ingresar...")
             self._click_debug(485, 400, "Boton recuerdame")
-            time.sleep(1)            
-            
-            # 8. Botón INGRESAR (Alineado al botón verde)
-            logger.info("👆 Paso 7: Click Ingresar...")
-            self._click_debug(500, 450, "Boton Ingresar (Verde)")
-            
-            logger.info("⏳ Esperando 5s login...")
-            time.sleep(3)
-            
-            output_path = "/tmp/debug_final.png"
+            time.sleep(1)
+
+            # 8. Botón INGRESAR (Verde)
+            logger.info("👆 Paso 8: Click Ingresar...")
+            self._click_debug(500, 450, "Boton Ingresar")
+
+            logger.info("⏳ Esperando 8s login...")
+            time.sleep(8)
+
+            # FOTO DE CONFIRMACIÓN
+            output_path = "/tmp/debug_ec_login.png"
             self.driver.save_screenshot(output_path)
-            
+
             if os.path.exists(output_path):
                 logger.info(f"📸 FOTO LISTA: {output_path}")
-            
+
             return True
 
         except Exception as e:
@@ -196,6 +215,7 @@ class ECScraper:
             return False
         finally:
             self.close()
+
 
 if __name__ == "__main__":
     bot = ECScraper()
