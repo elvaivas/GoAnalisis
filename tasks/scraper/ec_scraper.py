@@ -6,11 +6,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
-
-# --- ESTA ES LA QUE TE FALTA ---
 from selenium.webdriver.common.by import By
-
-# -------------------------------
 from app.core.config import settings
 
 logging.basicConfig(
@@ -28,12 +24,9 @@ class ECScraper:
 
     def setup_driver(self, headless=True):
         options = Options()
-        # Mantenemos el argumento base para el contenedor
         options.add_argument("--window-size=1366,768")
-
         if headless:
             options.add_argument("--headless=new")
-
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
@@ -41,12 +34,7 @@ class ECScraper:
         service = Service()
         self.driver = webdriver.Chrome(service=service, options=options)
 
-        # ============================================================
-        # 🔒 FORZAR RESOLUCIÓN INTERNA (La Jaula de Cristal)
-        # ============================================================
-        # Esto le dice a Chrome: "No me importa el tamaño de tu ventana,
-        # dibuja el sitio web en un lienzo de exactamente 1366x768".
-        # Así, tus coordenadas (X, Y) serán perfectas en Local y Servidor.
+        # JAULA DE CRISTAL
         self.driver.execute_cdp_cmd(
             "Emulation.setDeviceMetricsOverride",
             {
@@ -57,45 +45,38 @@ class ECScraper:
                 "fitWindow": True,
             },
         )
-        logger.info("🔒 Resolución interna forzada a: 1366x768 (Viewport)")
-        # ============================================================
+        logger.info("🔒 Resolución forzada a: 1366x768")
 
     def close(self):
         if self.driver:
             self.driver.quit()
 
+    def set_gps_location(self, lat, lng):
+        """Teletransporta el navegador"""
+        logger.info(f"🌍 GPS Spoofing: {lat}, {lng}")
+        self.driver.execute_cdp_cmd(
+            "Emulation.setGeolocationOverride",
+            {"latitude": lat, "longitude": lng, "accuracy": 100},
+        )
+        time.sleep(1)
+
     def _inject_calibration_grid(self):
-        """Dibuja cuadrícula para verificar alineación en la foto"""
         script = """
         (function() {
             if (document.getElementById('debug-grid')) return;
             var grid = document.createElement('div');
             grid.id = 'debug-grid';
-            grid.style.position = 'fixed'; grid.style.top = '0'; grid.style.left = '0';
-            grid.style.width = '100%'; grid.style.height = '100%';
             grid.style.pointerEvents = 'none'; grid.style.zIndex = '9999999';
+            grid.style.position = 'fixed'; grid.style.top = '0'; grid.style.left = '0';
             document.body.appendChild(grid);
-            function createLine(x, y, isVert, labelNum) {
-                var d = document.createElement('div');
-                d.style.position = 'absolute';
-                d.style.backgroundColor = isVert ? 'rgba(255,0,0,0.4)' : 'rgba(0,0,255,0.4)';
-                if (isVert) { d.style.left = x + 'px'; d.style.top = '0'; d.style.bottom = '0'; d.style.width = '1px'; }
-                else { d.style.top = y + 'px'; d.style.left = '0'; d.style.right = '0'; d.style.height = '1px'; }
-                if (labelNum % 100 === 0) {
-                    var t = document.createElement('span');
-                    t.innerText = labelNum;
-                    t.style.position = 'absolute';
-                    t.style.fontSize = '10px'; t.style.fontWeight = 'bold';
-                    t.style.color = isVert ? 'red' : 'blue';
-                    t.style.backgroundColor = 'white';
-                    if(isVert) t.style.top = '5px'; else t.style.left = '5px';
-                    d.appendChild(t);
-                    d.style.backgroundColor = isVert ? 'red' : 'blue';
-                }
+            function line(x,y,v){
+                var d=document.createElement('div'); d.style.position='absolute'; d.style.background=v?'rgba(255,0,0,0.5)':'rgba(0,0,255,0.5)';
+                if(v){d.style.left=x+'px';d.style.top='0';d.style.width='1px';d.style.height='768px';}
+                else{d.style.top=y+'px';d.style.left='0';d.style.height='1px';d.style.width='1366px';}
                 grid.appendChild(d);
             }
-            for (var i = 0; i < 1400; i+=50) createLine(i, 0, true, i);
-            for (var j = 0; j < 800; j+=50) createLine(0, j, false, j);
+            for(var i=0;i<=1400;i+=100) line(i,0,1);
+            for(var j=0;j<=800;j+=100) line(0,j,0);
         })();
         """
         try:
@@ -103,147 +84,133 @@ class ECScraper:
         except:
             pass
 
-    def _click_debug(self, x, y, desc="Elemento"):
+    def _super_click(self, x, y, desc="Elemento", step=0):
         try:
-            logger.info(f"🎯 Disparando a: {desc} -> ({x}, {y})")
+            logger.info(f"📍 [{step}] Click: {desc} ({x}, {y})")
 
-            # 1. Marca visual (Punto verde)
+            # Marcador Rojo
             js_mark = f"""
-            var d = document.createElement('div');
-            d.style.position='absolute'; d.style.left='{x-5}px'; d.style.top='{y-5}px';
-            d.style.width='10px'; d.style.height='10px'; d.style.background='lime';
-            d.style.borderRadius='50%'; d.style.zIndex='10000000'; d.style.pointerEvents='none';
-            d.style.border='2px solid black';
+            var d = document.createElement('div'); d.style.position='absolute'; d.style.left='{x}px'; d.style.top='{y}px';
+            d.style.width='15px'; d.style.height='15px'; d.style.background='red'; d.style.borderRadius='50%'; 
+            d.style.zIndex='9999999'; d.innerText='{step}'; d.style.color='white'; d.style.fontSize='10px'; d.style.textAlign='center';
             document.body.appendChild(d);
             """
             self.driver.execute_script(js_mark)
 
-            # 2. Click JS Avanzado (Pointer Events)
-            js_script = f"""
-            var target = document.elementFromPoint({x}, {y});
-            if(target) {{
-                var opts = {{bubbles: true, cancelable: true, view: window, clientX: {x}, clientY: {y}}};
-                target.dispatchEvent(new MouseEvent('mousedown', opts));
+            # 1. Disparo JS (Pointer Events)
+            js_click = f"""
+            var target = document.elementFromPoint({x}, {y}) || document.body;
+            var opts = {{bubbles:true, cancelable:true, view:window, clientX:{x}, clientY:{y}, pointerId:1, pointerType:'mouse', button:0, buttons:1}};
+            target.dispatchEvent(new PointerEvent('pointerdown', opts));
+            target.dispatchEvent(new MouseEvent('mousedown', opts));
+            setTimeout(()=>{{
+                target.dispatchEvent(new PointerEvent('pointerup', opts));
                 target.dispatchEvent(new MouseEvent('mouseup', opts));
                 target.dispatchEvent(new MouseEvent('click', opts));
-                try {{
-                    target.dispatchEvent(new PointerEvent('pointerdown', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
-                    target.dispatchEvent(new PointerEvent('pointerup', {{...opts, pointerId: 1, pointerType: 'mouse'}}));
-                }} catch(e) {{}}
-            }}
+            }}, 100);
             """
-            self.driver.execute_script(js_script)
+            self.driver.execute_script(js_click)
 
-            # 3. Respaldo: Click Físico (ActionChains)
-            # Esto ayuda a mover el foco real del navegador si JS falla
+            # 2. Respaldo ActionChains
             try:
                 actions = ActionChains(self.driver)
-                body = self.driver.find_element(By.TAG_NAME, "body")
-                actions.move_to_element_with_offset(body, 0, 0)
                 actions.move_by_offset(x, y).click().perform()
+                actions.move_by_offset(-x, -y).perform()
             except:
                 pass
 
+            time.sleep(1.5)
             return True
         except Exception as e:
-            logger.error(f"❌ Error disparo: {e}")
+            logger.error(f"❌ Error click {step}: {e}")
             return False
 
-    def _type_text_at_coords(self, text, x, y, submit=False):
-        """
-        Combina Movimiento + Click + Escritura.
-        Si submit=True, presiona ENTER al final.
-        """
+    def _type_text_at_coords(self, text, x, y, step=0, submit=False):
+        """Escribe texto. Si submit=True, presiona ENTER."""
         try:
-            logger.info(f"⌨️ Escribiendo en ({x},{y})...")
-
-            # 1. Mover y Click Físico para asegurar foco
-            body = self.driver.find_element(By.TAG_NAME, "body")
-            actions = ActionChains(self.driver)
-            actions.move_to_element_with_offset(body, 0, 0)
-            actions.move_by_offset(x, y)
-            actions.click()
-            actions.perform()
-
+            logger.info(f"⌨️ [{step}] Escribiendo: {text}")
+            self._super_click(x, y, "Foco Texto", step)
             time.sleep(0.5)
 
-            # 2. Limpiar, Escribir y (Opcional) Enter
-            actions = ActionChains(self.driver)  # Reiniciamos actions
+            actions = ActionChains(self.driver)
             actions.send_keys(Keys.CONTROL + "a")
             actions.send_keys(Keys.DELETE)
             actions.send_keys(text)
 
             if submit:
-                logger.info("🚀 Enviando tecla ENTER...")
+                logger.info("🚀 Enviando ENTER...")
                 actions.send_keys(Keys.ENTER)
 
             actions.perform()
-
+            time.sleep(1.0)
             return True
         except Exception as e:
             logger.error(f"❌ Error escribiendo: {e}")
             return False
 
-    def login(self):
-        self.setup_driver(headless=True)
+    def login_and_search(self):
+        self.setup_driver(headless=True)  # Siempre headless en server
 
         try:
-            logger.info("🚀 StoreBot: Iniciando Secuencia Login (Server Scale)...")
+            logger.info("🚀 StoreBot: Iniciando Secuencia...")
             self.driver.get(self.BASE_URL)
-            logger.info("⏳ Esperando carga (15s)...")
-            time.sleep(15)
+            time.sleep(15)  # Espera carga inicial
 
             self._inject_calibration_grid()
 
-            # 1. Cerrar Publicidad
-            self._click_debug(501, 85, "1. Cerrar Modal X")
+            # --- 1. LOGIN ---
+            self._super_click(455, 90, "Cerrar Publicidad", 1)
+            time.sleep(2)
+            self._super_click(1210, 730, "Cookies", 2)
+            time.sleep(1)
+            self._super_click(455, 90, "Cerrar Publicidad (Intento 2)", 3)
+            time.sleep(1)
+            self._super_click(1160, 58, "Botón Login", 4)
+            time.sleep(3)
+            self._super_click(680, 665, "Switch Password", 5)
             time.sleep(2)
 
-            # 2. Botón Ingresar
-            self._click_debug(1160, 78, "2. Botón Ingresar")
+            self._type_text_at_coords(self.username, 683, 300, 6)
+            self._type_text_at_coords(self.password, 683, 400, 7)
+
+            self._super_click(550, 500, "Ingresar Verde", 8)
+
+            logger.info("⏳ Esperando Login (8s)...")
+            time.sleep(8)
+
+            # --- 2. UBICACIÓN (GPS) ---
+            # Inyectamos coordenadas de una Farmacia (Ej: Las Mercedes)
+            # Esto debe hacerse ANTES de darle a "Estoy Aquí"
+            self.set_gps_location(10.4806, -66.9036)
+
+            self._super_click(455, 10, "Abrir Selector Dirección", 9)
             time.sleep(2)
 
-            # 3. Aceptar Cookies (Si sale)
-            self._click_debug(1200, 600, "3. Aceptar Cookies")
-            time.sleep(1)
+            # Click en la Mira (Usar mi ubicación)
+            self._super_click(683, 400, "Boton 'Estoy Aquí' (GPS)", 10)
+            time.sleep(5)  # Esperar a que cargue el inventario de la tienda
 
-            # 4. Cambiar a Contraseña
-            self._click_debug(683, 627, "4. Cambiar a Contraseña")
+            # --- 3. BÚSQUEDA ---
+            self._super_click(960, 60, "Lupa Buscar", 11)
             time.sleep(2)
 
-            # 5. Campo Usuario (Con función integrada)
-            # Usamos _type_text_at_coords que incluye el click y movimiento
-            self._type_text_at_coords(self.username, 600, 250)
-            time.sleep(1)
+            # Escribir producto (Ej: Atamel) + ENTER
+            PRODUCTO_PRUEBA = "Atamel"  # Cambia esto si quieres probar otro
+            self._type_text_at_coords(PRODUCTO_PRUEBA, 160, 160, 12, submit=True)
 
-            # 6. Campo Usuario
-            # Usamos coordenadas ajustadas a tu última foto
-            # Nota: Si funcionaron las anteriores, usa esas. Aquí pongo las centradas del último intento.
-            self._type_text_at_coords(self.username, 683, 395)
-            time.sleep(1)
-
-            # 7. Campo Contraseña + ENTER
-            # Enviamos submit=True para que lance el Enter automático
-            self._type_text_at_coords(self.password, 683, 490, submit=True)
-
-            # No hacemos click en el botón verde inmediatamente, esperamos a ver si el Enter funcionó
-            logger.info("⏳ Esperando reacción al ENTER (5s)...")
+            logger.info("⏳ Esperando resultados de búsqueda (5s)...")
             time.sleep(5)
 
-            # 8. Botón INGRESAR (Solo por seguridad/respaldo si el Enter falla)
-            # Si ya entró, este click no hará daño o fallará silenciosamente
-            logger.info("👆 Click de respaldo en botón Ingresar...")
-            self._click_debug(683, 580, "Boton Ingresar")
+            # --- 4. SELECCIÓN ---
+            # Clic en el primer resultado (Coordenada aproximada de la lista)
+            self._super_click(150, 250, "Primer Producto", 13)
+            time.sleep(5)
 
-            logger.info("⏳ Esperando carga final del Dashboard (10s)...")
-            time.sleep(10)
-
-            # FOTO DE CONFIRMACIÓN
-            output_path = "/tmp/debug_ec_login.png"
+            # FOTO FINAL
+            output_path = "/tmp/debug_ec_search.png"
             self.driver.save_screenshot(output_path)
-
             if os.path.exists(output_path):
-                logger.info(f"📸 FOTO LISTA: {output_path}")
+                logger.info(f"📸 FOTO FINAL: {output_path}")
 
             return True
 
@@ -256,5 +223,4 @@ class ECScraper:
 
 if __name__ == "__main__":
     bot = ECScraper()
-    # DENTRO DE DOCKER SIEMPRE DEBE SER TRUE
-    bot.login()
+    bot.login_and_search()
