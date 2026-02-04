@@ -33,15 +33,20 @@ class OrderScraper:
         self.download_dir = "/tmp/downloads"
 
     def setup_driver(self):
+        # Importaciones locales para no ensuciar el resto del archivo
+        from selenium.webdriver.chrome.service import Service
+        from selenium.webdriver.chrome.options import Options
+        from webdriver_manager.chrome import ChromeDriverManager
+        import logging
+
         chrome_options = Options()
-        # Opciones vitales para Docker
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
 
-        # --- CONFIGURACIÓN DE DESCARGAS ---
+        # Configuración de descargas
         self.download_dir = "/tmp/downloads"
         if not os.path.exists(self.download_dir):
             os.makedirs(self.download_dir, mode=0o777)
@@ -49,22 +54,28 @@ class OrderScraper:
         prefs = {
             "download.default_directory": self.download_dir,
             "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
             "safebrowsing.enabled": True,
-            "profile.default_content_settings.popups": 0,
         }
         chrome_options.add_experimental_option("prefs", prefs)
 
-        # --- FIX CRÍTICO: RUTA EXPLÍCITA DEL DRIVER ---
-        # Buscamos dónde está instalado chromedriver en el sistema Linux
-        driver_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
+        # --- INSTALACIÓN AUTOMÁTICA DEL DRIVER ---
+        try:
+            logger.info("🔧 Instalando ChromeDriver compatible...")
+            # Esto descarga la versión exacta para el Chrome que tienes instalado
+            driver_path = ChromeDriverManager().install()
 
-        # Le decimos a Selenium: "USA ESTE, NO DESCARGUES NADA"
-        service = Service(executable_path=driver_path)
+            # Corrección de permisos (a veces baja sin permisos de ejecución)
+            os.chmod(driver_path, 0o755)
 
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            service = Service(executable_path=driver_path)
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            logger.info(f"✅ Driver iniciado correctamente desde: {driver_path}")
 
-        # Comandos CDP
+        except Exception as e:
+            logger.error(f"❌ Error fatal iniciando driver: {e}")
+            raise e
+
+        # Comandos CDP finales
         try:
             params = {"behavior": "allow", "downloadPath": self.download_dir}
             self.driver.execute_cdp_cmd("Page.setDownloadBehavior", params)
