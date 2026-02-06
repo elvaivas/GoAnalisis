@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (role !== 'admin') {
         document.body.classList.add('role-viewer');
         console.log("🔒 Modo Visualizador (Datos financieros ocultos)");
-        
+
         const style = document.createElement('style');
         // AÑADÍ .admin-only AQUÍ ABAJO PARA GARANTIZAR QUE SE OCULTE
         style.innerHTML = `
@@ -26,8 +26,8 @@ document.addEventListener('DOMContentLoaded', function () {
         localStorage.clear(); window.location.href = '/login';
     });
 
-    Chart.defaults.color = '#4b5563'; 
-    Chart.defaults.borderColor = '#f3f4f6'; 
+    Chart.defaults.color = '#4b5563';
+    Chart.defaults.borderColor = '#f3f4f6';
     Chart.defaults.font.family = "'Segoe UI', sans-serif";
 
     let datePicker, driverLeaderboardChart, bottleneckChart, orderTypeChart, trendsChart, cancellationChartInstance;
@@ -41,76 +41,147 @@ document.addEventListener('DOMContentLoaded', function () {
     const statusOrder = ['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 'delivered', 'canceled'];
 
     // Función para descargar Excel Oficial SIN recargar y CON Token
-window.downloadOfficialExcel = async function(btn, orderId) {
-    // 1. Feedback Visual (Loading)
-    const originalContent = btn.innerHTML;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Generando...';
-    btn.disabled = true;
+    window.downloadOfficialExcel = async function (btn, orderId) {
+        // 1. Feedback Visual (Loading)
+        const originalContent = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-2"></i>Generando...';
+        btn.disabled = true;
 
-    try {
-        // 2. Petición Segura (Usa authFetch para incluir el Token)
-        const res = await authFetch(`/api/data/download-legacy-excel/${orderId}`);
-        
-        if (res && res.ok) {
-            // 3. Convertir respuesta a archivo descargable (Blob)
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            
-            // 4. Crear enlace fantasma y clicarlo
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Orden_Oficial_${orderId}.xlsx`; // Nombre del archivo
-            document.body.appendChild(a);
-            a.click();
-            
-            // 5. Limpieza
-            window.URL.revokeObjectURL(url);
-            a.remove();
-        } else {
-            alert("⚠️ No se pudo descargar el archivo. Verifique que el pedido exista en el sistema Legacy.");
+        try {
+            // 2. Petición Segura (Usa authFetch para incluir el Token)
+            const res = await authFetch(`/api/data/download-legacy-excel/${orderId}`);
+
+            if (res && res.ok) {
+                // 3. Convertir respuesta a archivo descargable (Blob)
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+
+                // 4. Crear enlace fantasma y clicarlo
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Orden_Oficial_${orderId}.xlsx`; // Nombre del archivo
+                document.body.appendChild(a);
+                a.click();
+
+                // 5. Limpieza
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } else {
+                alert("⚠️ No se pudo descargar el archivo. Verifique que el pedido exista en el sistema Legacy.");
+            }
+        } catch (e) {
+            console.error("Error descarga:", e);
+            alert("Error de conexión al intentar descargar.");
+        } finally {
+            // 6. Restaurar botón
+            btn.innerHTML = originalContent;
+            btn.disabled = false;
         }
-    } catch (e) {
-        console.error("Error descarga:", e);
-        alert("Error de conexión al intentar descargar.");
-    } finally {
-        // 6. Restaurar botón
-        btn.innerHTML = originalContent;
-        btn.disabled = false;
-    }
-};
+    };
 
-    // Función para abrir/cerrar el acordeón
-window.toggleOrderDetails = function(rowId) {
-    const detailRow = document.getElementById(`detail-${rowId}`);
-    const icon = document.getElementById(`icon-${rowId}`);
-    const mainRow = document.getElementById(`row-${rowId}`);
-    
-    if (detailRow.classList.contains('d-none')) {
-        detailRow.classList.remove('d-none');
-        icon.classList.remove('fa-chevron-right');
-        icon.classList.add('fa-chevron-down');
-        mainRow.classList.add('table-active'); 
-    } else {
-        detailRow.classList.add('d-none');
-        icon.classList.remove('fa-chevron-down');
-        icon.classList.add('fa-chevron-right');
-        mainRow.classList.remove('table-active');
-    }
-};
-    
+    // Variable para guardar instancias de gráficas y no duplicarlas
+    let timelineCharts = {};
+
+    window.toggleOrderDetails = async function (rowId) {
+        const detailRow = document.getElementById(`detail-${rowId}`);
+        const icon = document.getElementById(`icon-${rowId}`);
+        const mainRow = document.getElementById(`row-${rowId}`);
+
+        if (detailRow.classList.contains('d-none')) {
+            // ABRIR
+            detailRow.classList.remove('d-none');
+            icon.classList.remove('fa-chevron-right');
+            icon.classList.add('fa-chevron-down');
+            mainRow.classList.add('table-active');
+
+            // --- AQUÍ LA MAGIA: DIBUJAR GRÁFICA ---
+            const ctx = document.getElementById(`timeline-chart-${rowId}`)?.getContext('2d');
+            const loader = document.getElementById(`timeline-loading-${rowId}`);
+
+            // Si ya existe la gráfica, no la volvemos a cargar
+            if (timelineCharts[rowId]) return;
+
+            if (ctx) {
+                if (loader) loader.classList.remove('d-none'); // Mostrar loading
+
+                try {
+                    // Fetch datos del backend
+                    const res = await authFetch(`/api/analysis/order/${rowId}/timeline`);
+                    const data = await res.json();
+
+                    if (loader) loader.classList.add('d-none'); // Ocultar loading
+
+                    if (data.labels.length === 0) {
+                        // No hay logs suficientes
+                        return;
+                    }
+
+                    // Crear Gráfica
+                    timelineCharts[rowId] = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: data.labels,
+                            datasets: [{
+                                data: data.data,
+                                backgroundColor: data.colors,
+                                borderRadius: 4,
+                                barThickness: 20
+                            }]
+                        },
+                        options: {
+                            indexAxis: 'y', // Horizontal
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: { label: (c) => `${c.raw} min` }
+                                },
+                                datalabels: {
+                                    color: '#000',
+                                    anchor: 'end',
+                                    align: 'right',
+                                    formatter: (val) => Math.round(val) + "m",
+                                    font: { weight: 'bold', size: 10 }
+                                }
+                            },
+                            scales: {
+                                x: { display: false }, // Ocultar eje X
+                                y: { grid: { display: false } } // Limpiar eje Y
+                            },
+                            layout: { padding: { right: 30 } }
+                        },
+                        plugins: [ChartDataLabels] // Usamos el plugin que ya instalamos
+                    });
+
+                } catch (e) {
+                    console.error("Error timeline:", e);
+                    if (loader) loader.innerText = "Sin datos de tiempo";
+                }
+            }
+
+        } else {
+            // CERRAR
+            detailRow.classList.add('d-none');
+            icon.classList.remove('fa-chevron-down');
+            icon.classList.add('fa-chevron-right');
+            mainRow.classList.remove('table-active');
+        }
+    };
+
     // --- REPARACIÓN BOTÓN REPORTE ---
     const btnReport = document.getElementById('btn-open-report');
     if (btnReport) {
         // Eliminamos listeners anteriores (clonando) para evitar duplicados si se recarga
         const newBtn = btnReport.cloneNode(true);
         btnReport.parentNode.replaceChild(newBtn, btnReport);
-        
+
         newBtn.addEventListener('click', (e) => {
             e.preventDefault();
             // Construimos la URL base sin parámetros primero
             let url = '/report';
             // Obtenemos los parámetros actuales del filtro usando la función helper
-            const params = buildUrl('').search; 
+            const params = buildUrl('').search;
             // Abrimos en nueva pestaña
             window.open(url + params, '_blank');
         });
@@ -119,7 +190,7 @@ window.toggleOrderDetails = function(rowId) {
     async function authFetch(url, options = {}) { // <--- Recibe URL y Opciones
         try {
             // Combinamos los headers de autenticación con las opciones que enviamos (POST, etc)
-            const defaultHeaders = { 
+            const defaultHeaders = {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             };
@@ -134,16 +205,16 @@ window.toggleOrderDetails = function(rowId) {
             };
 
             const response = await fetch(url, finalOptions); // <--- Ahora sí pasa el POST
-            
-            if (response.status === 401) { 
-                localStorage.clear(); 
-                window.location.href = '/login'; 
-                return null; 
+
+            if (response.status === 401) {
+                localStorage.clear();
+                window.location.href = '/login';
+                return null;
             }
             return response;
-        } catch (error) { 
-            console.error("Error en authFetch:", error); 
-            return null; 
+        } catch (error) {
+            console.error("Error en authFetch:", error);
+            return null;
         }
     }
 
@@ -157,12 +228,12 @@ window.toggleOrderDetails = function(rowId) {
 
     function buildUrl(endpoint) {
         const url = new URL(window.location.origin + endpoint);
-        
+
         // --- CAMBIO AQUÍ: USAR formatDateLocal ---
         if (datePicker && datePicker.selectedDates.length > 0) {
             // Usamos nuestra función segura en lugar de .toISOString() directo
             url.searchParams.append('start_date', formatDateLocal(datePicker.selectedDates[0]));
-            
+
             if (datePicker.selectedDates.length > 1) {
                 url.searchParams.append('end_date', formatDateLocal(datePicker.selectedDates[1]));
             } else {
@@ -172,7 +243,7 @@ window.toggleOrderDetails = function(rowId) {
             }
         }
         // ----------------------------------------
-        
+
         const storeSelect = document.getElementById('store-filter');
         if (storeSelect && storeSelect.value) url.searchParams.append('store_name', storeSelect.value);
         const searchInput = document.getElementById('search-input');
@@ -195,9 +266,9 @@ window.toggleOrderDetails = function(rowId) {
         setVal('kpi-deliveries', data.total_deliveries);
         setVal('kpi-pickups', data.total_pickups);
         setVal('kpi-new-users', data.new_users_registered ?? 0);
-        
+
         const cancelEl = document.getElementById('kpi-canceled');
-        if (cancelEl) cancelEl.innerHTML = `${data.total_canceled} <span class="text-danger opacity-75 small" style="font-size:0.7em;">(-$${(data.lost_revenue||0).toFixed(2)})</span>`;
+        if (cancelEl) cancelEl.innerHTML = `${data.total_canceled} <span class="text-danger opacity-75 small" style="font-size:0.7em;">(-$${(data.lost_revenue || 0).toFixed(2)})</span>`;
         setVal('kpi-avg-time', `${data.avg_delivery_minutes || 0} min`);
         updateOrderTypeChart(data.total_deliveries, data.total_pickups);
     }
@@ -206,17 +277,17 @@ window.toggleOrderDetails = function(rowId) {
         const res = await authFetch(buildUrl('/api/data/orders'));
         if (!res) return;
         const data = await res.json();
-        
+
         // --- CONEXIÓN VIGILANTE ---
         checkOperationalAnomalies(data);
         // --------------------------
-        
+
         // Guardamos data global para el Modal ATC
         currentOrdersData = data;
-        
+
         const tableBody = document.getElementById('recent-orders-table-body');
         if (!tableBody) return;
-        
+
         const cleanFinalTime = (text) => {
             if (!text) return "--";
             try {
@@ -228,7 +299,7 @@ window.toggleOrderDetails = function(rowId) {
         };
 
         let html = '';
-        
+
         data.forEach(o => {
             // =========================================================
             // 1. DEFINICIÓN DE VARIABLES
@@ -242,13 +313,13 @@ window.toggleOrderDetails = function(rowId) {
 
             // Configuración Visual por Estado
             const statusConfig = {
-                'pending':         { color: 'secondary', icon: 'fa-clock',               label: 'Pendiente' },
-                'processing':      { color: 'warning',   icon: 'fa-file-invoice-dollar', label: 'Facturando' },
-                'confirmed':       { color: 'primary',   icon: 'fa-tower-broadcast',     label: 'Solicitando' },
-                'driver_assigned': { color: 'dark',      icon: 'fa-user-check',          label: 'Asignado' },
-                'on_the_way':      { color: 'info',      icon: 'fa-motorcycle',          label: 'En Camino' },
-                'delivered':       { color: 'success',   icon: 'fa-check',               label: 'ENTREGADO' },
-                'canceled':        { color: 'danger',    icon: 'fa-ban',                 label: 'CANCELADO' }
+                'pending': { color: 'secondary', icon: 'fa-clock', label: 'Pendiente' },
+                'processing': { color: 'warning', icon: 'fa-file-invoice-dollar', label: 'Facturando' },
+                'confirmed': { color: 'primary', icon: 'fa-tower-broadcast', label: 'Solicitando' },
+                'driver_assigned': { color: 'dark', icon: 'fa-user-check', label: 'Asignado' },
+                'on_the_way': { color: 'info', icon: 'fa-motorcycle', label: 'En Camino' },
+                'delivered': { color: 'success', icon: 'fa-check', label: 'ENTREGADO' },
+                'canceled': { color: 'danger', icon: 'fa-ban', label: 'CANCELADO' }
             };
 
             // Obtener config o default
@@ -269,7 +340,7 @@ window.toggleOrderDetails = function(rowId) {
                 // Estilo Moderno (Fondo suave + Borde)
                 // text-warning-emphasis es para que el amarillo se lea bien sobre blanco
                 const textColor = st.color === 'warning' ? 'text-warning-emphasis' : `text-${st.color}`;
-                
+
                 statusBadge = `<span class="badge bg-${st.color} bg-opacity-10 ${textColor} border border-${st.color} border-opacity-25">
                                 <i class="fa-solid ${st.icon} me-1"></i>${st.label}
                                </span>`;
@@ -284,7 +355,7 @@ window.toggleOrderDetails = function(rowId) {
             // C. Botón Resync (SOLO ADMIN)
             const userRole = localStorage.getItem('role');
             let resyncButtonHtml = '';
-            
+
             if (userRole === 'admin') {
                 resyncButtonHtml = `
                     <button class="btn btn-link p-0 text-muted btn-resync ms-2" 
@@ -310,11 +381,11 @@ window.toggleOrderDetails = function(rowId) {
             }
 
             // E. Logística
-            const typeBadge = o.order_type === 'Delivery' 
+            const typeBadge = o.order_type === 'Delivery'
                 ? '<span class="badge bg-primary bg-opacity-10 text-primary mb-1"><i class="fa-solid fa-motorcycle me-1"></i>Delivery</span>'
                 : '<span class="badge bg-warning bg-opacity-10 text-warning mb-1"><i class="fa-solid fa-person-walking me-1"></i>Pickup</span>';
-            
-            const driverHtml = o.driver && o.driver.name !== 'No Asignado' 
+
+            const driverHtml = o.driver && o.driver.name !== 'No Asignado'
                 ? `<div class="d-flex align-items-center small text-dark"><i class="fa-solid fa-helmet-safety me-2 text-muted"></i>${o.driver.name}</div>`
                 : `<div class="small text-muted fst-italic">--</div>`;
 
@@ -361,7 +432,7 @@ window.toggleOrderDetails = function(rowId) {
                         <div class="fw-bold text-dark" style="font-size: 0.95rem;">${o.customer_name}</div>
                         <div class="d-flex align-items-center mt-1 gap-2">
                             ${tierBadge}
-                            ${o.customer_phone ? `<a href="https://wa.me/${o.customer_phone.replace(/\D/g,'')}" target="_blank" onclick="event.stopPropagation()" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
+                            ${o.customer_phone ? `<a href="https://wa.me/${o.customer_phone.replace(/\D/g, '')}" target="_blank" onclick="event.stopPropagation()" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
                         </div>
                     </td>
                     <td>
@@ -375,7 +446,7 @@ window.toggleOrderDetails = function(rowId) {
                         </div>
                     </td>
                     <td class="text-end pe-4">
-                        <div class="fw-bold text-dark fs-6">$${(o.total_amount||0).toFixed(2)}</div>
+                        <div class="fw-bold text-dark fs-6">$${(o.total_amount || 0).toFixed(2)}</div>
                     </td>
                 </tr>
             `;
@@ -385,24 +456,35 @@ window.toggleOrderDetails = function(rowId) {
                 <tr id="detail-${o.id}" class="d-none bg-light shadow-inner">
                     <td colspan="5" class="p-0">
                         <div class="p-3 border-start border-4 border-primary">
-                            <div class="row">
-                                <div class="col-md-7 border-end">
+                            <div class="row g-3">
+                                <!-- COL 1: PRODUCTOS -->
+                                <div class="col-md-5 border-end">
                                     <h6 class="fw-bold small text-muted mb-2 text-uppercase"><i class="fa-solid fa-pills me-2"></i>Detalle del Pedido</h6>
                                     ${itemsTable}
                                 </div>
-                                <div class="col-md-5 d-flex flex-column justify-content-center align-items-start ps-4">
-                                    <h6 class="fw-bold small text-muted mb-3 text-uppercase">⚡ Acciones Operativas</h6>
+                                
+                                <!-- COL 2: GRÁFICA DE TIEMPOS (NUEVO) -->
+                                <div class="col-md-4 border-end d-flex flex-column">
+                                    <h6 class="fw-bold small text-muted mb-2 text-uppercase"><i class="fa-solid fa-stopwatch me-2"></i>Cronología (Mins)</h6>
+                                    <div style="flex-grow: 1; position: relative; min-height: 150px;">
+                                        <canvas id="timeline-chart-${o.id}"></canvas>
+                                        <div id="timeline-loading-${o.id}" class="text-center text-muted mt-5 small d-none">Cargando tiempos...</div>
+                                    </div>
+                                </div>
+
+                                <!-- COL 3: ACCIONES -->
+                                <div class="col-md-3 d-flex flex-column justify-content-center ps-4">
+                                    <h6 class="fw-bold small text-muted mb-3 text-uppercase">⚡ Acciones</h6>
                                     
-                                    <!-- BOTÓN FICHA ATC (NUEVO) -->
                                     <button onclick="event.stopPropagation(); openATCModal('${o.id}', '${o.external_id}')" 
                                             class="btn btn-primary btn-sm w-100 mb-2 text-start shadow-sm">
-                                        <i class="fa-solid fa-file-invoice me-2"></i>Ver Ficha ATC (En Vivo)
+                                        <i class="fa-solid fa-file-invoice me-2"></i>Ficha ATC
                                     </button>
 
                                     <a href="https://ecosistema.gopharma.com.ve/admin/order/list/all?search=${o.external_id}" target="_blank" 
                                        onclick="event.stopPropagation()"
                                        class="btn btn-white border btn-sm w-100 text-start">
-                                        <i class="fa-solid fa-external-link-alt me-2 text-muted"></i>Ver en Panel Legacy
+                                        <i class="fa-solid fa-external-link-alt me-2 text-muted"></i>Ver Legacy
                                     </a>
                                 </div>
                             </div>
@@ -411,7 +493,7 @@ window.toggleOrderDetails = function(rowId) {
                 </tr>
             `;
         });
-        
+
         tableBody.innerHTML = html;
         startLiveTimers();
     }
@@ -419,7 +501,7 @@ window.toggleOrderDetails = function(rowId) {
 
     function startLiveTimers() {
         if (ordersInterval) clearInterval(ordersInterval);
-        
+
         const formatTime = (seconds) => {
             if (seconds < 0) return "0s";
             const h = Math.floor(seconds / 3600);
@@ -431,34 +513,34 @@ window.toggleOrderDetails = function(rowId) {
 
         ordersInterval = setInterval(() => {
             const now = new Date();
-            
+
             document.querySelectorAll('.live-timer-container').forEach(el => {
                 // 1. TIEMPO TOTAL (Viene en Local, se usa directo)
                 // data-created="2026-01-14T11:19:00" -> Navegador asume Local
                 const createdDate = new Date(el.dataset.created);
                 const totalSeconds = Math.floor((now - createdDate) / 1000);
-                
+
                 const totalEl = el.querySelector('.timer-total');
                 if (totalEl) totalEl.textContent = formatTime(totalSeconds);
 
                 // 2. TIEMPO DE FASE (Viene en UTC, forzamos conversión)
                 // data-state-start="2026-01-14T15:57..." -> Es UTC, hay que decirle al navegador
                 let stateStr = el.dataset.stateStart;
-                
+
                 if (stateStr) {
                     // TRUCO: Si no termina en 'Z', se la ponemos.
                     // Esto obliga a JS a tratarlo como UTC y restarle las 4 horas de VET
                     if (!stateStr.endsWith('Z')) stateStr += 'Z';
-                    
+
                     const stateStartDate = new Date(stateStr);
                     const phaseEl = el.querySelector('.timer-state');
-                    
+
                     if (phaseEl && !isNaN(stateStartDate)) {
                         const phaseSeconds = Math.floor((now - stateStartDate) / 1000);
                         phaseEl.textContent = formatTime(phaseSeconds);
-                        
+
                         // Alerta Roja > 20 min
-                        if (phaseSeconds > 1200) { 
+                        if (phaseSeconds > 1200) {
                             phaseEl.classList.remove('text-primary');
                             phaseEl.classList.add('text-danger', 'fw-bold');
                         } else {
@@ -470,24 +552,24 @@ window.toggleOrderDetails = function(rowId) {
             });
         }, 1000);
     }
-    
+
     function updateOrderTypeChart(d, p) {
         const ctx = document.getElementById('orderTypeChart')?.getContext('2d');
-        if(!ctx) return;
+        if (!ctx) return;
         if (orderTypeChart) orderTypeChart.destroy();
         orderTypeChart = new Chart(ctx, {
-            type: 'doughnut', 
-            data: { 
-                labels: ['Delivery', 'Retiro'], 
-                datasets: [{ 
-                    data: [d, p], 
-                    backgroundColor: ['#3b82f6', '#f59e0b'], 
-                    borderWidth: 0 
-                }] 
+            type: 'doughnut',
+            data: {
+                labels: ['Delivery', 'Retiro'],
+                datasets: [{
+                    data: [d, p],
+                    backgroundColor: ['#3b82f6', '#f59e0b'],
+                    borderWidth: 0
+                }]
             },
-            options: { 
-                cutout: '70%', 
-                maintainAspectRatio: false, 
+            options: {
+                cutout: '70%',
+                maintainAspectRatio: false,
                 plugins: { legend: { display: false } } // Oculto leyenda por espacio
             }
         });
@@ -498,46 +580,46 @@ window.toggleOrderDetails = function(rowId) {
             const ctxDelivery = document.getElementById('bottleneckChart')?.getContext('2d');
             const ctxPickup = document.getElementById('bottleneckPickupChart')?.getContext('2d');
 
-            if (!ctxDelivery && !ctxPickup) return; 
+            if (!ctxDelivery && !ctxPickup) return;
 
             const res = await authFetch(buildUrl('/api/analysis/bottlenecks'));
             if (!res) return;
             const data = await res.json();
-            
+
             // 1. CONFIGURACIÓN VISUAL
             const localStatusOrder = [
-                'created', 'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way', 
+                'created', 'pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way',
                 'delivered', 'canceled'
             ];
-            
+
             const localTranslations = {
                 'created': 'Creado',
-                'pending': 'Pendiente', 
-                'processing': 'Facturando', 
+                'pending': 'Pendiente',
+                'processing': 'Facturando',
                 'confirmed': 'Solicitando',
-                'driver_assigned': 'Asignado', 
-                'on_the_way': 'En Camino', 
-                'delivered': 'Entregado (Total)', 
+                'driver_assigned': 'Asignado',
+                'on_the_way': 'En Camino',
+                'delivered': 'Entregado (Total)',
                 'canceled': 'Cancelado (Promedio)'
             };
 
             const processData = (list) => {
                 if (!Array.isArray(list)) return { labels: [], values: [], colors: [] };
-                
+
                 const sorted = list
                     .filter(d => d.avg_duration_seconds > 0)
                     .sort((a, b) => localStatusOrder.indexOf(a.status) - localStatusOrder.indexOf(b.status));
 
                 const labels = sorted.map(d => localTranslations[d.status] || d.status);
                 // Convertimos a minutos con 1 decimal
-                const values = sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1)); 
-                
+                const values = sorted.map(d => (d.avg_duration_seconds / 60).toFixed(1));
+
                 const colors = sorted.map(d => {
-                    if (d.status === 'canceled') return '#ef4444'; 
-                    if (d.status === 'delivered') return '#10b981'; 
+                    if (d.status === 'canceled') return '#ef4444';
+                    if (d.status === 'delivered') return '#10b981';
                     if (d.status === 'on_the_way') return '#0dcaf0'; // Info
                     if (d.status === 'processing') return '#ffc107'; // Warning
-                    return ctxPickup ? '#3b82f6' : '#f59e0b'; 
+                    return ctxPickup ? '#3b82f6' : '#f59e0b';
                 });
 
                 return { labels, values, colors };
@@ -545,9 +627,9 @@ window.toggleOrderDetails = function(rowId) {
 
             // CONFIGURACIÓN COMÚN (DATALABELS)
             const chartOptions = {
-                indexAxis: 'y', 
-                maintainAspectRatio: false, 
-                plugins: { 
+                indexAxis: 'y',
+                maintainAspectRatio: false,
+                plugins: {
                     legend: { display: false },
                     // AQUÍ ESTÁ LA MAGIA DE LOS NÚMEROS
                     datalabels: {
@@ -555,12 +637,12 @@ window.toggleOrderDetails = function(rowId) {
                         align: 'end',  // Por fuera (a la derecha)
                         color: '#4b5563',
                         font: { weight: 'bold', size: 11 },
-                        formatter: function(value) {
+                        formatter: function (value) {
                             return value + ' m'; // Ej: "15.2 m"
                         }
                     }
-                }, 
-                scales: { 
+                },
+                scales: {
                     x: { display: false, max: undefined }, // Dejar que se autoajuste para que quepan los números
                     y: { grid: { display: false } }
                 },
@@ -572,24 +654,24 @@ window.toggleOrderDetails = function(rowId) {
             // 2. RENDER DELIVERY
             if (ctxDelivery) {
                 const dData = processData(data.delivery);
-                
+
                 // Si ya existe, destruirlo para limpiar plugins viejos
                 if (bottleneckChart) bottleneckChart.destroy();
-                
+
                 // ACTIVAR PLUGIN
                 Chart.register(ChartDataLabels);
 
                 bottleneckChart = new Chart(ctxDelivery, {
-                    type: 'bar', 
-                    data: { 
-                        labels: dData.labels, 
-                        datasets: [{ 
-                            label: 'Minutos', 
-                            data: dData.values, 
-                            backgroundColor: dData.colors, 
+                    type: 'bar',
+                    data: {
+                        labels: dData.labels,
+                        datasets: [{
+                            label: 'Minutos',
+                            data: dData.values,
+                            backgroundColor: dData.colors,
                             borderRadius: 4,
                             barPercentage: 0.6
-                        }] 
+                        }]
                     },
                     options: chartOptions
                 });
@@ -598,20 +680,20 @@ window.toggleOrderDetails = function(rowId) {
             // 3. RENDER PICKUP
             if (ctxPickup) {
                 const pData = processData(data.pickup);
-                
+
                 if (bottleneckPickupChart) bottleneckPickupChart.destroy();
-                
+
                 bottleneckPickupChart = new Chart(ctxPickup, {
-                    type: 'bar', 
-                    data: { 
-                        labels: pData.labels, 
-                        datasets: [{ 
-                            label: 'Minutos', 
-                            data: pData.values, 
-                            backgroundColor: pData.colors, 
+                    type: 'bar',
+                    data: {
+                        labels: pData.labels,
+                        datasets: [{
+                            label: 'Minutos',
+                            data: pData.values,
+                            backgroundColor: pData.colors,
                             borderRadius: 4,
                             barPercentage: 0.6
-                        }] 
+                        }]
                     },
                     options: chartOptions
                 });
@@ -628,7 +710,7 @@ window.toggleOrderDetails = function(rowId) {
         const res = await authFetch(buildUrl('/api/analysis/cancellations'));
         if (!res) return;
         const data = await res.json();
-        
+
         let labels = data.length ? data.map(d => d.reason || 'Sin motivo') : ['Sin datos'];
         let values = data.length ? data.map(d => d.count) : [0];
 
@@ -646,11 +728,11 @@ window.toggleOrderDetails = function(rowId) {
         const res = await authFetch(buildUrl('/api/data/top-customers'));
         if (!res) return;
         const data = await res.json();
-        
+
         tbody.innerHTML = '';
         data.forEach(c => {
-            let rank = `#${c.rank}`; if(c.rank===1) rank='🥇'; if(c.rank===2) rank='🥈'; if(c.rank===3) rank='🥉';
-            tbody.innerHTML += `<tr><td class="ps-4 fw-bold text-warning">${rank}</td><td class="fw-bold">${c.name}</td><td class="text-center"><span class="badge bg-primary">${c.count}</span></td><td class="text-end fw-bold text-success">$${c.total_amount.toFixed(2)}</td><td class="text-end pe-4 text-muted">$${(c.total_amount/c.count).toFixed(2)}</td></tr>`;
+            let rank = `#${c.rank}`; if (c.rank === 1) rank = '🥇'; if (c.rank === 2) rank = '🥈'; if (c.rank === 3) rank = '🥉';
+            tbody.innerHTML += `<tr><td class="ps-4 fw-bold text-warning">${rank}</td><td class="fw-bold">${c.name}</td><td class="text-center"><span class="badge bg-primary">${c.count}</span></td><td class="text-end fw-bold text-success">$${c.total_amount.toFixed(2)}</td><td class="text-end pe-4 text-muted">$${(c.total_amount / c.count).toFixed(2)}</td></tr>`;
         });
     }
 
@@ -662,7 +744,7 @@ window.toggleOrderDetails = function(rowId) {
         const data = await res.json();
         tbody.innerHTML = '';
         data.forEach((p, i) => {
-            let icon = i===0?'🥇':(i===1?'🥈':(i===2?'🥉':'📦'));
+            let icon = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '📦'));
             tbody.innerHTML += `<tr><td class="ps-4"><span>${icon}</span> <b>${p.name}</b></td><td class="text-center"><span class="badge bg-soft-primary text-primary border">${p.quantity}</span></td><td class="text-end pe-4 text-success fw-bold">$${p.revenue.toFixed(2)}</td></tr>`;
         });
     }
@@ -670,68 +752,68 @@ window.toggleOrderDetails = function(rowId) {
     // --- 4. TENDENCIAS (Gráfico Mixto: $ + Pedidos + Tiempo) ---
     async function updateTrendsChart() {
         const ctx = document.getElementById('trendsChart')?.getContext('2d');
-        if(!ctx) return;
+        if (!ctx) return;
 
         const res = await authFetch(buildUrl('/api/data/trends'));
         if (!res) return;
         const data = await res.json();
 
         if (trendsChart) trendsChart.destroy();
-        
+
         trendsChart = new Chart(ctx, {
             type: 'bar',
-            data: { 
-                labels: data.labels, 
+            data: {
+                labels: data.labels,
                 datasets: [
-                    { 
+                    {
                         type: 'line',
-                        label: 'Ingresos ($)', 
-                        data: data.revenue, 
+                        label: 'Ingresos ($)',
+                        data: data.revenue,
                         borderColor: '#10b981', // Verde
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)', 
-                        yAxisID: 'y', 
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        yAxisID: 'y',
                         fill: true,
                         tension: 0.3,
                         order: 1
-                    }, 
-                    { 
+                    },
+                    {
                         type: 'bar',
-                        label: 'Pedidos', 
-                        data: data.orders, 
+                        label: 'Pedidos',
+                        data: data.orders,
                         backgroundColor: 'rgba(59, 130, 246, 0.6)', // Azul
-                        borderColor: '#3b82f6', 
-                        borderWidth: 1, 
-                        yAxisID: 'y1', 
-                        order: 2 
-                    }, 
-                    { 
+                        borderColor: '#3b82f6',
+                        borderWidth: 1,
+                        yAxisID: 'y1',
+                        order: 2
+                    },
+                    {
                         type: 'line',
-                        label: 'Tiempo (min)', 
-                        data: data.avg_times, 
+                        label: 'Tiempo (min)',
+                        data: data.avg_times,
                         borderColor: '#ef4444', // Rojo
-                        backgroundColor: 'transparent', 
-                        yAxisID: 'y1', 
-                        borderDash: [5,5], 
+                        backgroundColor: 'transparent',
+                        yAxisID: 'y1',
+                        borderDash: [5, 5],
                         pointRadius: 0,
-                        order: 0 
+                        order: 0
                     }
-                ] 
+                ]
             },
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: false, 
-                interaction: { mode: 'index', intersect: false }, 
-                scales: { 
-                    y: { 
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: {
                         display: true, position: 'left', grid: { color: '#e5e7eb' },
                         title: { display: true, text: 'Facturación ($)' }
-                    }, 
-                    y1: { 
+                    },
+                    y1: {
                         display: true, position: 'right', grid: { display: false },
                         title: { display: true, text: 'Pedidos / Minutos' }
-                    } 
-                }, 
-                plugins: { legend: { labels: { usePointStyle: true } } } 
+                    }
+                },
+                plugins: { legend: { labels: { usePointStyle: true } } }
             }
         });
     }
@@ -739,14 +821,14 @@ window.toggleOrderDetails = function(rowId) {
     // --- 5. TOP REPARTIDORES (Leaderboard) ---
     async function updateDriverLeaderboard() {
         const ctx = document.getElementById('driverLeaderboardChart')?.getContext('2d');
-        if(!ctx) return;
+        if (!ctx) return;
 
         const res = await authFetch(buildUrl('/api/data/driver-leaderboard'));
         if (!res) return;
         const data = await res.json();
 
         if (driverLeaderboardChart) driverLeaderboardChart.destroy();
-        
+
         // Lógica de colores según estado
         const bgColors = data.map(d => {
             if (d.status === 'new') return '#3b82f6';    // Azul (Nuevo)
@@ -762,21 +844,21 @@ window.toggleOrderDetails = function(rowId) {
         });
 
         driverLeaderboardChart = new Chart(ctx, {
-            type: 'bar', 
-            data: { 
-                labels: labels, 
-                datasets: [{ 
-                    label: 'Entregas', 
-                    data: data.map(d => d.orders), 
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Entregas',
+                    data: data.map(d => d.orders),
                     backgroundColor: bgColors,
                     borderRadius: 4
-                }] 
+                }]
             },
-            options: { 
-                indexAxis: 'y', 
-                maintainAspectRatio: false, 
-                scales: { x: { grid: { color: '#e5e7eb' } } }, 
-                plugins: { legend: { display: false } } 
+            options: {
+                indexAxis: 'y',
+                maintainAspectRatio: false,
+                scales: { x: { grid: { color: '#e5e7eb' } } },
+                plugins: { legend: { display: false } }
             }
         });
     }
@@ -784,14 +866,14 @@ window.toggleOrderDetails = function(rowId) {
     // --- 6. TOP TIENDAS (Lista HTML) ---
     async function updateTopStoresList() {
         const list = document.getElementById('top-stores-list');
-        if(!list) return;
+        if (!list) return;
 
         const res = await authFetch(buildUrl('/api/data/top-stores'));
         if (!res) return;
         const data = await res.json();
-        
+
         list.innerHTML = '';
-        data.slice(0, 10).forEach(s => { 
+        data.slice(0, 10).forEach(s => {
             list.innerHTML += `
                 <li class="list-group-item d-flex justify-content-between align-items-center px-3 py-2">
                     <div class="d-flex flex-column">
@@ -805,7 +887,7 @@ window.toggleOrderDetails = function(rowId) {
                     <span class="badge bg-success bg-opacity-10 text-success rounded-pill border border-success border-opacity-25">
                         ${s.orders}
                     </span>
-                </li>`; 
+                </li>`;
         });
     }
 
@@ -822,20 +904,20 @@ window.toggleOrderDetails = function(rowId) {
         // 2. CHECK DE SEGURIDAD (Si está oculto/colapsado)
         if (mapDiv.clientHeight === 0 || mapDiv.clientWidth === 0) {
             console.warn("⚠️ Mapa oculto: Limpiando capas para evitar crash.");
-            
+
             // CRÍTICO: Si el mapa está oculto, QUITAMOS la capa de calor para que no intente
             // dibujarse en un canvas de 0px y genere el error IndexSizeError.
             if (mapInstance && heatLayer) {
                 mapInstance.removeLayer(heatLayer);
                 heatLayer = null;
             }
-            return; 
+            return;
         }
 
         // 3. Inicialización única (Si es visible y no existe el mapa)
         if (!mapInstance) {
             mapInstance = L.map('heatmapContainer').setView([10.4806, -66.9036], 12);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { 
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
                 maxZoom: 19,
                 attribution: '&copy; OpenStreetMap'
             }).addTo(mapInstance);
@@ -853,49 +935,49 @@ window.toggleOrderDetails = function(rowId) {
         // 6. Pintar Nueva Capa
         if (data && data.length > 0) {
             try {
-                heatLayer = L.heatLayer(data, { 
-                    radius: 20, 
-                    blur: 15, 
-                    maxZoom: 14, 
+                heatLayer = L.heatLayer(data, {
+                    radius: 20,
+                    blur: 15,
+                    maxZoom: 14,
                     minOpacity: 0.4,
-                    gradient: {0.4: 'cyan', 0.65: 'lime', 1: 'red'} 
+                    gradient: { 0.4: 'cyan', 0.65: 'lime', 1: 'red' }
                 }).addTo(mapInstance);
-                
+
                 // Auto-ajustar zoom para ver los puntos
                 if (data.length > 1) {
                     const bounds = data.map(p => [p[0], p[1]]);
                     mapInstance.fitBounds(bounds, { padding: [20, 20] });
                 }
-            } catch(e) { 
-                console.error("Error pintando heatmap:", e); 
+            } catch (e) {
+                console.error("Error pintando heatmap:", e);
             }
         }
 
         // 7. Cargar Tiendas (Puntos Azules)
         try {
             const resStores = await authFetch('/api/data/stores-locations');
-            if(resStores) {
+            if (resStores) {
                 const stores = await resStores.json();
                 stores.forEach(s => {
                     // Usamos un ID único para no duplicar marcadores si ya existen (opcional, Leaflet maneja esto bien)
-                    L.circleMarker([s.lat, s.lng], { 
-                        radius: 5, fillColor: "#fff", color: "#3b82f6", weight: 2, fillOpacity: 1 
+                    L.circleMarker([s.lat, s.lng], {
+                        radius: 5, fillColor: "#fff", color: "#3b82f6", weight: 2, fillOpacity: 1
                     }).bindPopup(`<b>${s.name}</b>`).addTo(mapInstance);
                 });
             }
-        } catch(e) {}
+        } catch (e) { }
     }
 
     // --- 8. FILTRO DE TIENDAS (Dropdown) ---
     async function loadStoreFilterOptions() {
         const sel = document.getElementById('store-filter');
-        if(!sel) return;
+        if (!sel) return;
 
         console.log("🏪 Cargando lista de tiendas...");
 
         // FIX: La ruta correcta debe incluir /data/
         const res = await authFetch('/api/data/all-stores-names');
-        
+
         if (!res || !res.ok) {
             console.error("❌ Error cargando tiendas. Ruta no encontrada o error servidor.");
             sel.innerHTML = '<option value="">Error al cargar</option>';
@@ -904,21 +986,21 @@ window.toggleOrderDetails = function(rowId) {
 
         const data = await res.json();
         console.log(`✅ ${data.length} tiendas encontradas.`);
-        
+
         // Limpiamos y ponemos la opción default
         sel.innerHTML = '<option value="">Todas las Tiendas</option>';
-        
+
         data.forEach(name => {
-            const opt = document.createElement('option'); 
-            opt.value = name; 
-            opt.textContent = name; 
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
             sel.appendChild(opt);
         });
-        
+
         // Recargar dashboard al cambiar selección
-        sel.onchange = function() { 
+        sel.onchange = function () {
             console.log("Filtro tienda cambiado a:", sel.value);
-            fetchAllData(true); 
+            fetchAllData(true);
         };
     }
 
@@ -934,17 +1016,17 @@ window.toggleOrderDetails = function(rowId) {
     async function fetchAllData(isSearch = false) {
         // Actualizamos hora
         const now = new Date();
-        const timeString = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         document.getElementById('last-updated').textContent = timeString;
 
         // Usamos await para garantizar que los datos críticos carguen primero
-        await updateKpis(); 
+        await updateKpis();
         await updateRecentOrdersTable();
-        
+
         // Ejecutamos en paralelo los secundarios para velocidad
-        updateBottleneckChart();     
-        updateCancellationChart();   
-        
+        updateBottleneckChart();
+        updateCancellationChart();
+
         // Llamada a las funciones restantes (asegúrate de que estas existan en tu archivo real)
         // Como pusiste "dummy code" en el prompt, asumo que las tienes definidas abajo.
         if (typeof loadTopCustomers === 'function') loadTopCustomers();
@@ -966,13 +1048,13 @@ window.toggleOrderDetails = function(rowId) {
         fetchAllData();
     });
     // -------------------------------------
-        
+
     loadStoreFilterOptions();
-    
+
     fetchAllData();
     setInterval(fetchAllData, 60000);
-// --- FUNCIÓN RESYNC MANUAL ---
-    window.resyncOrder = async function(externalId, btnElement) {
+    // --- FUNCIÓN RESYNC MANUAL ---
+    window.resyncOrder = async function (externalId, btnElement) {
         // 1. Efecto Visual de Carga (Spinning)
         const icon = btnElement.querySelector('i');
         icon.classList.add('fa-spin', 'text-primary');
@@ -988,7 +1070,7 @@ window.toggleOrderDetails = function(rowId) {
                 // 3. Éxito: Feedback y Recarga suave
                 icon.classList.remove('text-primary');
                 icon.classList.add('text-success');
-                
+
                 // Pequeña pausa para que el usuario vea el verde
                 setTimeout(() => {
                     fetchAllData(); // Recargamos la tabla para ver los cambios
@@ -1007,13 +1089,13 @@ window.toggleOrderDetails = function(rowId) {
         }
     };
 
-// --- FUNCIÓN AUDITORÍA ATC (V4 - INTEGRADA Y BLINDADA) ---
-    window.openATCModal = async function(dbId, externalId) {
+    // --- FUNCIÓN AUDITORÍA ATC (V4 - INTEGRADA Y BLINDADA) ---
+    window.openATCModal = async function (dbId, externalId) {
         const modalEl = document.getElementById('modalATC');
         if (!modalEl) return;
         const modalBody = document.getElementById('modalATCBody');
         const modal = new bootstrap.Modal(modalEl);
-        
+
         modalBody.innerHTML = `
             <div class="text-center py-5">
                 <div class="spinner-border text-primary" role="status"></div>
@@ -1027,18 +1109,18 @@ window.toggleOrderDetails = function(rowId) {
             // 1. PETICIÓN DE DATOS
             const res = await authFetch(`/api/data/live-audit/${externalId}`);
             if (!res || !res.ok) throw new Error("Error conectando con API de Auditoría.");
-            
+
             const responseJson = await res.json();
             const data = responseJson.legacy; // Datos del CSV (La Verdad)
             const items = responseJson.items || []; // Productos (DB Local)
-            
+
             if (!data) throw new Error("El archivo CSV del Legacy llegó vacío.");
 
             // 2. CONFIGURACIÓN VISUAL
             const originalTitle = document.title;
             const cleanName = (data['Nombre del cliente'] || 'Cliente').replace(/[\\/:*?"<>|]/g, '');
             document.title = `Ficha #${data['ID del pedido']} - ${cleanName}`;
-            
+
             modalEl.addEventListener('hidden.bs.modal', () => { document.title = originalTitle; }, { once: true });
 
             // 3. PARSER INTELIGENTE (USA / VED)
@@ -1046,11 +1128,11 @@ window.toggleOrderDetails = function(rowId) {
                 if (!val) return 0.00;
                 if (typeof val === 'number') return val;
                 let v = String(val).trim();
-                
+
                 // Detección automática de formato
                 // Caso VED: "1.500,50" (Coma al final)
                 if (v.includes(',') && (v.lastIndexOf(',') > v.lastIndexOf('.'))) {
-                    v = v.replace(/\./g, '').replace(',', '.'); 
+                    v = v.replace(/\./g, '').replace(',', '.');
                 }
                 // Caso USA: "1,500.50" (Punto al final)
                 else if (v.includes('.') && (v.lastIndexOf('.') > v.lastIndexOf(','))) {
@@ -1059,8 +1141,8 @@ window.toggleOrderDetails = function(rowId) {
                 return parseFloat(v) || 0.00;
             };
 
-            const fmt = (n, symbol="$") => {
-                 return `${symbol}${n.toLocaleString('es-VE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            const fmt = (n, symbol = "$") => {
+                return `${symbol}${n.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             };
 
             // 4. EXTRACCIÓN DE TASA
@@ -1074,14 +1156,14 @@ window.toggleOrderDetails = function(rowId) {
 
             // 5. CÁLCULO DE TABLA DETALLADA (EL CEREBRO)
             let productsHtml = '';
-            
+
             if (items.length > 0 && exchangeRate > 0) {
                 // --- ALGORITMO DETECTIVE DE IVA ---
-                const IVA_RATE = 0.16; 
+                const IVA_RATE = 0.16;
                 const totalDbNetUsd = items.reduce((acc, item) => acc + (item.unit_price * item.quantity), 0);
                 const legacyTaxUsd = parseM(data['Impuesto (USD)']);
-                
-                let itemTaxMap = new Array(items.length).fill(0); 
+
+                let itemTaxMap = new Array(items.length).fill(0);
                 let methodUsed = "proportional"; // Por defecto seguro
 
                 // Lógica de detección
@@ -1096,7 +1178,7 @@ window.toggleOrderDetails = function(rowId) {
                     const findSubset = (idx, currentSum, selection) => {
                         if (Math.abs(currentSum - targetBase) < 0.03) return selection;
                         if (idx >= items.length || currentSum > targetBase + 0.03) return null;
-                        
+
                         // Con item
                         const v = items[idx].unit_price * items[idx].quantity;
                         const r1 = findSubset(idx + 1, currentSum + v, [...selection, idx]);
@@ -1104,7 +1186,7 @@ window.toggleOrderDetails = function(rowId) {
                         // Sin item
                         return findSubset(idx + 1, currentSum, selection);
                     };
-                    
+
                     const res = findSubset(0, 0, []);
                     if (res) {
                         res.forEach(i => itemTaxMap[i] = 1);
@@ -1140,28 +1222,28 @@ window.toggleOrderDetails = function(rowId) {
                                 </thead>
                                 <tbody>
                                     ${items.map((item, idx) => {
-                                        let multiplier = 1;
-                                        let badge = '';
-                                        
-                                        // --- REGLA MAESTRA DEL CERO ---
-                                        if (item.unit_price === 0) {
-                                            multiplier = 1; // El cero se queda quieto
-                                            badge = '<span class="badge bg-light text-secondary border ms-1" style="font-size:0.6em">Obsequio</span>';
-                                        } 
-                                        // --- LÓGICA DE IMPUESTOS NORMAL ---
-                                        else if (methodUsed === 'exact' || methodUsed === 'all') {
-                                            if (itemTaxMap[idx] === 1) {
-                                                multiplier = 1.16;
-                                                badge = '<span class="badge bg-secondary ms-1" style="font-size:0.6em">+IVA</span>';
-                                            }
-                                        } else if (methodUsed === 'proportional') {
-                                            multiplier = taxMultiplierFallback;
-                                        }
+                    let multiplier = 1;
+                    let badge = '';
 
-                                        const grossUsd = item.unit_price * multiplier;
-                                        const grossBs = grossUsd * exchangeRate;
-                                        
-                                        return `
+                    // --- REGLA MAESTRA DEL CERO ---
+                    if (item.unit_price === 0) {
+                        multiplier = 1; // El cero se queda quieto
+                        badge = '<span class="badge bg-light text-secondary border ms-1" style="font-size:0.6em">Obsequio</span>';
+                    }
+                    // --- LÓGICA DE IMPUESTOS NORMAL ---
+                    else if (methodUsed === 'exact' || methodUsed === 'all') {
+                        if (itemTaxMap[idx] === 1) {
+                            multiplier = 1.16;
+                            badge = '<span class="badge bg-secondary ms-1" style="font-size:0.6em">+IVA</span>';
+                        }
+                    } else if (methodUsed === 'proportional') {
+                        multiplier = taxMultiplierFallback;
+                    }
+
+                    const grossUsd = item.unit_price * multiplier;
+                    const grossBs = grossUsd * exchangeRate;
+
+                    return `
                                         <tr>
                                             <td class="ps-3 text-truncate" style="max-width: 250px;">${item.name}</td>
                                             <td class="text-center fw-bold">${item.quantity}</td>
@@ -1170,7 +1252,7 @@ window.toggleOrderDetails = function(rowId) {
                                                 ${fmt(grossBs, 'Bs.')}
                                             </td>
                                         </tr>`;
-                                    }).join('')}
+                }).join('')}
                                 </tbody>
                             </table>
                             <div class="bg-light p-1 px-3 text-end text-muted fst-italic" style="font-size: 0.75rem;">
@@ -1184,7 +1266,7 @@ window.toggleOrderDetails = function(rowId) {
                 let errorMsg = "No se pudo generar el cálculo detallado.";
                 if (items.length === 0) errorMsg = "⚠️ No hay productos registrados en la base de datos local para este pedido.";
                 else if (exchangeRate === 0) errorMsg = "⚠️ No se pudo leer la Tasa de Cambio del archivo Legacy.";
-                
+
                 productsHtml = `<div class="alert alert-warning mt-3 small">${errorMsg}</div>`;
             }
 
@@ -1278,13 +1360,13 @@ window.toggleOrderDetails = function(rowId) {
             modalBody.innerHTML = `<div class="text-center py-5 text-danger"><h5>Error</h5><p>${e.message}</p></div>`;
         }
     };
-// =========================================================
+    // =========================================================
     // 🔔 MÓDULO VIGILANTE V2 (PERSISTENTE Y ROBUSTO)
     // =========================================================
-    
+
     // Leemos preferencia guardada (o false por defecto)
     let notificationsEnabled = localStorage.getItem('vigilante_active') === 'true';
-    let ordersMemory = {}; 
+    let ordersMemory = {};
     let isFirstLoad = true;
 
     const soundNewOrder = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
@@ -1299,7 +1381,7 @@ window.toggleOrderDetails = function(rowId) {
             console.warn("⚠️ No se encontró el botón #btn-notifications en el HTML.");
             return;
         }
-        
+
         // Si el usuario lo dejó activo, verificamos que el navegador aún tenga permiso
         if (notificationsEnabled && Notification.permission === "granted") {
             updateNotifIcon(true);
@@ -1315,20 +1397,20 @@ window.toggleOrderDetails = function(rowId) {
     btnNotif?.addEventListener('click', () => {
         console.log("👆 Click en Campana. Permiso:", Notification.permission);
 
-        const isSecure = window.isSecureContext; 
-        
+        const isSecure = window.isSecureContext;
+
         if (!notificationsEnabled) {
             // A. YA TIENE PERMISO -> ACTIVAR
             if (Notification.permission === "granted") {
                 toggleVigilante(true);
-            } 
+            }
             // B. BLOQUEADO O NO SEGURO -> MOSTRAR AYUDA INTELIGENTE
             else if (Notification.permission === "denied" || !isSecure) {
-                
+
                 // 1. Detectar Navegador para dar la URL correcta
                 const userAgent = navigator.userAgent.toLowerCase();
                 let flagsUrl = "chrome://flags/#unsafely-treat-insecure-origin-as-secure"; // Default (Chrome/Brave)
-                
+
                 if (userAgent.indexOf("edg") > -1) {
                     flagsUrl = "edge://flags/#unsafely-treat-insecure-origin-as-secure"; // Microsoft Edge
                 } else if (userAgent.indexOf("opera") > -1 || userAgent.indexOf("opr") > -1) {
@@ -1338,14 +1420,14 @@ window.toggleOrderDetails = function(rowId) {
                 // 2. Rellenar los inputs del Modal
                 const inputFlag = document.getElementById('inputFlagUrl');
                 const inputIp = document.getElementById('inputServerUrl');
-                
+
                 if (inputFlag) inputFlag.value = flagsUrl;
                 if (inputIp) inputIp.value = window.location.origin; // IP Automática (ej: http://10.10.100.58:8001)
-                
+
                 // 3. Mostrar Modal
                 const helpModal = new bootstrap.Modal(document.getElementById('modalNotifHelp'));
                 helpModal.show();
-            } 
+            }
             // C. PRIMERA VEZ -> PEDIR PERMISO
             else {
                 Notification.requestPermission().then(permission => {
@@ -1366,14 +1448,14 @@ window.toggleOrderDetails = function(rowId) {
         notificationsEnabled = state;
         localStorage.setItem('vigilante_active', state); // Guardar preferencia
         updateNotifIcon(state);
-        
+
         if (state) {
             // Sonido de confirmación
             soundNewOrder.volume = 0.5;
             soundNewOrder.play().catch(e => console.warn("Audio bloqueado:", e));
-            
+
             // Notificación de prueba
-            new Notification("GoAnalisis Vigilante", { 
+            new Notification("GoAnalisis Vigilante", {
                 body: "✅ Monitoreo en segundo plano activado.",
                 icon: "/static/img/logo.png"
             });
@@ -1385,8 +1467,8 @@ window.toggleOrderDetails = function(rowId) {
         if (isActive) {
             // ESTADO ACTIVO
             btnNotif.classList.remove('btn-outline-secondary');
-            btnNotif.classList.add('btn-primary', 'shadow', 'pulse-animation'); 
-            icon.className = 'fa-solid fa-bell'; 
+            btnNotif.classList.add('btn-primary', 'shadow', 'pulse-animation');
+            icon.className = 'fa-solid fa-bell';
             badgeNotif.classList.remove('d-none');
         } else {
             // ESTADO INACTIVO
@@ -1405,10 +1487,10 @@ window.toggleOrderDetails = function(rowId) {
         const notif = new Notification(title, {
             body: body,
             icon: '/static/img/logo.png',
-            requireInteraction: type === 'alert', 
+            requireInteraction: type === 'alert',
             tag: title
         });
-        
+
         notif.onclick = () => { window.focus(); notif.close(); };
 
         // Audio
@@ -1422,7 +1504,7 @@ window.toggleOrderDetails = function(rowId) {
                 soundNewOrder.volume = 0.5;
                 soundNewOrder.play();
             }
-        } catch(e) { console.warn("Audio error:", e); }
+        } catch (e) { console.warn("Audio error:", e); }
     }
 
     // 4. LÓGICA DE DETECCIÓN (EL CEREBRO)
@@ -1439,7 +1521,7 @@ window.toggleOrderDetails = function(rowId) {
             // --- FILTRO ANTI-SPAM (SEGURIDAD) ---
             // Convertimos la fecha del pedido a objeto Date
             const orderDate = new Date(o.created_at);
-            
+
             // Si el pedido es más viejo que hoy a las 00:00, LO IGNORAMOS.
             if (orderDate.getTime() < todayTime) {
                 return; // Salta a la siguiente iteración sin notificar
@@ -1454,7 +1536,7 @@ window.toggleOrderDetails = function(rowId) {
                 if (!isFirstLoad) {
                     sendNotification(`💰 Nuevo Pedido #${o.external_id}`, `${o.customer_name} ($${o.total_amount})`, 'info');
                 }
-            } 
+            }
             // B. CAMBIO DE ESTADO
             else if (prev.status !== o.current_status) {
                 const mapStatus = {
@@ -1473,11 +1555,11 @@ window.toggleOrderDetails = function(rowId) {
             // C. RETRASOS
             if (o.state_start_at && LIMITS[o.current_status]) {
                 let stateStr = o.state_start_at;
-                if (!stateStr.endsWith('Z')) stateStr += 'Z'; 
-                
+                if (!stateStr.endsWith('Z')) stateStr += 'Z';
+
                 const elapsedMinutes = (new Date() - new Date(stateStr)) / 1000 / 60;
                 const keyAlert = `alerted_${o.current_status}`;
-                
+
                 const prevFlags = prev || {};
 
                 if (elapsedMinutes > LIMITS[o.current_status] && !prevFlags[keyAlert]) {
@@ -1490,7 +1572,7 @@ window.toggleOrderDetails = function(rowId) {
                     ordersMemory[o.id][keyAlert] = true;
                 }
             }
-            
+
             const existing = ordersMemory[o.id] || {};
             ordersMemory[o.id] = { ...existing, status: o.current_status, time: new Date() };
         });
