@@ -298,6 +298,33 @@ document.addEventListener('DOMContentLoaded', function () {
             } catch (e) { return text; }
         };
 
+        const calcDiff = (start, end) => {
+            if (!start || !end) return "--";
+
+            // FECHA 1 (Inicio/Creación): Viene del Scraper en Hora Local Venezuela.
+            // NO le ponemos 'Z' para que el navegador sepa que es hora local.
+            const d1 = new Date(start);
+
+            // FECHA 2 (Fin/Log): Viene del Servidor en UTC.
+            // SÍ le ponemos 'Z' (si falta) para que el navegador sepa que es UTC
+            // y la convierta automáticamente a hora Venezuela al restar.
+            const endString = end.endsWith('Z') ? end : end + 'Z';
+            const d2 = new Date(endString);
+
+            const diffMs = d2 - d1;
+
+            // Validación: Si da negativo o muy pequeño, algo anda mal con la data
+            if (isNaN(diffMs) || diffMs < 0) return "0m";
+
+            const totalSecs = Math.floor(Math.abs(diffMs) / 1000);
+            const h = Math.floor(totalSecs / 3600);
+            const m = Math.floor((totalSecs % 3600) / 60);
+            const s = Math.floor(totalSecs % 60); // Opcional si quieres segundos
+
+            if (h > 0) return `${h}h ${m}m`;
+            return `${m}m`;
+        };
+
         let html = '';
 
         data.forEach(o => {
@@ -366,11 +393,23 @@ document.addEventListener('DOMContentLoaded', function () {
                 `;
             }
 
-            // D. Tiempo
+            // D. Tiempo (Híbrido: Scraped o Calculado)
             let timeHtml = '';
+
             if (isFinal) {
-                const finalTime = cleanFinalTime(o.duration_text);
-                timeHtml = `<div class="fw-bold text-dark fs-6">${finalTime}</div><small class="text-muted" style="font-size:0.7rem">Tiempo Total</small>`;
+                // 1. Intentamos usar el texto oficial del Legacy
+                let displayTime = cleanFinalTime(o.duration_text);
+
+                // 2. Si falla (dice "--" o vacío), lo calculamos nosotros
+                if ((!displayTime || displayTime === "--" || displayTime === "") && o.state_start_at && o.created_at) {
+                    // Para un pedido finalizado, state_start_at es la fecha de finalización
+                    displayTime = calcDiff(o.created_at, o.state_start_at);
+                }
+
+                // Color semántico según duración (Ej: >60m en Rojo)
+                // (Opcional, pero ayuda visualmente)
+
+                timeHtml = `<div class="fw-bold text-dark fs-6">${displayTime}</div><small class="text-muted" style="font-size:0.7rem">Tiempo Total</small>`;
             } else {
                 // Notar data-state-start para el cronómetro de fase
                 timeHtml = `
