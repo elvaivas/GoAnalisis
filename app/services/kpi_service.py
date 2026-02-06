@@ -4,18 +4,21 @@ from typing import Dict, Any, Optional
 from datetime import date, datetime
 from app.db.base import Order, Store, Customer
 
+
 def get_main_kpis(
-    db: Session, 
-    start_date: Optional[date] = None, 
-    end_date: Optional[date] = None, 
+    db: Session,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
     store_name: Optional[str] = None,
-    search_query: Optional[str] = None
+    search_query: Optional[str] = None,
 ) -> Dict[str, Any]:
-    
+
     base_query = db.query(Order)
 
     # --- CORRECCIÓN DE ZONA HORARIA (VENEZUELA) ---
-    local_created_at = func.timezone('America/Caracas', func.timezone('UTC', Order.created_at))
+    local_created_at = func.timezone(
+        "America/Caracas", func.timezone("UTC", Order.created_at)
+    )
     local_date = func.date(local_created_at)
 
     # --- FILTROS ---
@@ -23,23 +26,34 @@ def get_main_kpis(
         base_query = base_query.filter(local_date >= start_date)
     if end_date:
         base_query = base_query.filter(local_date <= end_date)
-    
+
     if store_name:
-        base_query = base_query.join(Store, Order.store_id == Store.id).filter(Store.name == store_name)
-    
+        base_query = base_query.join(Store, Order.store_id == Store.id).filter(
+            Store.name == store_name
+        )
+
     if search_query:
-        base_query = base_query.join(Customer, Order.customer_id == Customer.id, isouter=True)\
-            .filter(or_(Order.external_id.ilike(f"%{search_query}%"), Customer.name.ilike(f"%{search_query}%")))
+        base_query = base_query.join(
+            Customer, Order.customer_id == Customer.id, isouter=True
+        ).filter(
+            or_(
+                Order.external_id.ilike(f"%{search_query}%"),
+                Customer.name.ilike(f"%{search_query}%"),
+            )
+        )
 
     # --- CÁLCULO DE DATOS ---
     orders = base_query.all()
-    
+
     # Inicialización de Acumuladores
     total_revenue = 0.0
     total_fees_gross = 0.0
     total_coupons = 0.0
-    total_service_fee_accum = 0.0 
-    
+    total_service_fee_accum = 0.0
+
+    # Acumulador específico para KPI de Costo de Envío
+    total_delivery_fees_only = 0.0
+
     driver_payout = 0.0
     profit_delivery = 0.0
     profit_service = 0.0
@@ -50,38 +64,49 @@ def get_main_kpis(
     count_pickups = 0
     count_canceled = 0
     lost_revenue = 0.0
-    
-    # Acumulador específico para Ticket Promedio Delivery
-    delivery_revenue_only = 0.0 
-    
+
     durations_minutes = []
 
     for o in orders:
         # 1. Cancelados
-        if o.current_status == 'canceled': 
+        if o.current_status == "canceled":
             count_canceled += 1
-            lost_revenue += (o.total_amount or 0.0)
-            continue 
-        
-        # 2. Tipos y Contadores
-        if o.order_type == 'Delivery': 
-            count_deliveries += 1
-            delivery_revenue_only += (o.total_amount or 0.0)
-        elif o.order_type == 'Pickup': 
-            count_pickups += 1
+            lost_revenue += o.total_amount or 0.0
+            continue
 
-        # 3. Tiempos
-        if o.current_status == 'delivered' and o.order_type == 'Delivery' and o.delivery_time_minutes:
-            durations_minutes.append(o.delivery_time_minutes)
+        # Casting seguro de tipo
+        raw = o.order_type
+        o_type_str = raw.value if hasattr(raw, "value") else str(raw)
+        if o_type_str == "None":
+            o_type_str = "Delivery"
 
-        # 4. Valores Base (Sanitizados)
+        # 2. Valores Base (Sanitizados)
         total_amt = float(o.total_amount or 0.0)
-        delivery_real = float(o.gross_delivery_fee if o.gross_delivery_fee and o.gross_delivery_fee > 0 else (o.delivery_fee or 0.0))
+
+        # OJO: Obtenemos el Fee real del envío (Gross o normal)
+        delivery_real = float(
+            o.gross_delivery_fee
+            if o.gross_delivery_fee and o.gross_delivery_fee > 0
+            else (o.delivery_fee or 0.0)
+        )
         coupon = float(o.coupon_discount or 0.0)
         prod_price = float(o.product_price or 0.0)
         svc_fee = float(o.service_fee or 0.0)
 
-        # Acumuladores Globales
+        # 3. Lógica de Conteo y Acumulación por Tipo
+        if o_type_str == "Delivery":
+            count_deliveries += 1
+            # Sumamos SOLO el costo del envío para el KPI
+            total_delivery_fees_only += delivery_real
+
+            # Tiempos (Solo Delivery entregado)
+            if o.current_status == "delivered" and o.delivery_time_minutes:
+                durations_minutes.append(o.delivery_time_minutes)
+
+        elif o_type_str == "Pickup":
+            count_pickups += 1
+
+        # 4. Acumuladores Globales
         total_revenue += total_amt
         total_fees_gross += delivery_real
         total_coupons += coupon
@@ -89,9 +114,9 @@ def get_main_kpis(
 
         # --- FÓRMULAS FINANCIERAS ---
         # A. GANANCIA DELIVERY
-        driver_payout += (delivery_real * 0.80)
+        driver_payout += delivery_real * 0.80
         profit_delivery += (delivery_real * 0.20) / 1.16
-        
+
         # B. GANANCIA SERVICIO
         iva_prod = prod_price * 0.16
         base_service = prod_price + iva_prod + delivery_real + svc_fee
@@ -106,28 +131,45 @@ def get_main_kpis(
     # --- RESULTADOS FINALES ---
 
     # Ganancia Neta
-    real_net_profit = (profit_delivery + profit_service + profit_commission) - total_coupons
-    
-    # Promedios de Tiempo
-    avg_time = sum(durations_minutes) / len(durations_minutes) if durations_minutes else 0.0
+    real_net_profit = (
+        profit_delivery + profit_service + profit_commission
+    ) - total_coupons
 
-     # --- HOTFIX: AVG TICKET CORREGIDO ---
-    valid_orders_count = len(orders) - count_canceled
+    # Promedios de Tiempo
+    avg_time = (
+        sum(durations_minutes) / len(durations_minutes) if durations_minutes else 0.0
+    )
+
+    # --- CÁLCULO DE PROMEDIOS ---
+    valid_orders_count = count_deliveries + count_pickups
+
+    # Ticket Promedio Global (Venta Total / Pedidos)
     avg_ticket = (total_revenue / valid_orders_count) if valid_orders_count > 0 else 0.0
-    
-    avg_delivery_ticket = (delivery_revenue_only / count_deliveries) if count_deliveries > 0 else 0.0
-    avg_service_fee = (total_service_fee_accum / valid_orders_count) if valid_orders_count > 0 else 0.0
+
+    # Valor Promedio de Envío (Total Fees Delivery / Cantidad Deliveries)
+    avg_delivery_fee_value = (
+        (total_delivery_fees_only / count_deliveries) if count_deliveries > 0 else 0.0
+    )
+
+    # Tarifa Servicio Promedio
+    avg_service_fee = (
+        (total_service_fee_accum / valid_orders_count)
+        if valid_orders_count > 0
+        else 0.0
+    )
 
     # Métricas de Usuarios
     total_users_historic = db.query(Customer).count()
     unique_customers = {o.customer_id for o in orders if o.customer_id}
-    
-    # FIX: Las fechas de registro vienen planas (00:00:00), no aplicar timezone
+
+    # FIX: Las fechas de registro vienen planas, no aplicar timezone
     local_joined_at = func.date(Customer.joined_at)
     new_users_q = db.query(Customer)
-    if start_date: new_users_q = new_users_q.filter(local_joined_at >= start_date)
-    if end_date: new_users_q = new_users_q.filter(local_joined_at <= end_date)
-    
+    if start_date:
+        new_users_q = new_users_q.filter(local_joined_at >= start_date)
+    if end_date:
+        new_users_q = new_users_q.filter(local_joined_at <= end_date)
+
     return {
         "total_orders": len(orders),
         "total_revenue": round(total_revenue, 2),
@@ -141,9 +183,10 @@ def get_main_kpis(
         "lost_revenue": round(lost_revenue, 2),
         "avg_delivery_minutes": round(avg_time, 1),
         "avg_ticket": round(avg_ticket, 2),
-        "avg_delivery_ticket": round(avg_delivery_ticket, 2),
+        # AQUI ESTÁ EL CAMBIO IMPORTANTE:
+        "avg_delivery_ticket": round(avg_delivery_fee_value, 2),
         "avg_service_fee": round(avg_service_fee, 2),
         "total_users_historic": total_users_historic,
         "active_users_period": len(unique_customers),
-        "new_users_registered": new_users_q.count()
+        "new_users_registered": new_users_q.count(),
     }
