@@ -519,6 +519,11 @@ document.addEventListener('DOMContentLoaded', function () {
                                             class="btn btn-primary btn-sm w-100 mb-2 text-start shadow-sm">
                                         <i class="fa-solid fa-file-invoice me-2"></i>Ficha ATC
                                     </button>
+                                    <!-- BOTÓN NUEVO: ASISTENTE ATC -->
+                                    <button onclick="event.stopPropagation(); openAssistant('${o.id}', '${o.external_id}', '${o.current_status}', '${o.customer_name}', '${o.state_start_at}')" 
+                                            class="btn btn-outline-danger btn-sm w-100 mb-2 text-start shadow-sm fw-bold">
+                                        <i class="fa-solid fa-user-doctor me-2"></i>Gestionar Retraso
+                                    </button>
 
                                     <a href="https://ecosistema.gopharma.com.ve/admin/order/list/all?search=${o.external_id}" target="_blank" 
                                        onclick="event.stopPropagation()"
@@ -1620,5 +1625,216 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Inicializar al cargar
     initVigilante();
+
+    // =========================================================
+    // 🧠 ASISTENTE OPERATIVO ATC (PROTOCOLO INTELIGENTE)
+    // =========================================================
+
+    const ATC_PROTOCOLS = {
+        'pending': {
+            color: 'secondary',
+            title: 'Pago Pendiente / Pasarela',
+            checklist: [
+                "Llamar al cliente: ¿Hubo error en el pago?",
+                "Verificar Pasarela: ¿Reporta transacción fallida?",
+                "Verificar si el cliente duplicó el pedido por error"
+            ],
+            causes: [
+                "Cliente no completó el pago",
+                "Tarjeta rechazada / Saldo insuficiente",
+                "Falla Técnica Pasarela",
+                "Cliente duplicó pedido (Anular)",
+                "Cliente arrepentido"
+            ]
+        },
+        'processing': { // Facturando
+            color: 'warning',
+            title: 'Farmacia / Facturación',
+            checklist: [
+                "Llamar a Farmacia: ¿Por qué no facturan?",
+                "Verificar inventario: ¿Falta algún producto?",
+                "Si falta stock: Ofrecer reemplazo o devolución parcial"
+            ],
+            causes: [
+                "Tienda Full / Personal Ocupado",
+                "Falla de Luz / Internet en Tienda",
+                "Quiebre de Stock (Producto Faltante)",
+                "Tienda no contesta teléfono"
+            ]
+        },
+        'confirmed': { // Solicitando
+            color: 'primary',
+            title: 'Buscando Motorizado',
+            checklist: [
+                "Verificar entorno (Lluvia / Hora Pico)",
+                "Intentar asignar Motoemprendedor (Flota Propia)",
+                "Llamar cliente para avisar posible demora"
+            ],
+            causes: [
+                "Alta Demanda / Pocos Motorizados",
+                "Lluvia / Mal Clima",
+                "Zona Roja / Nadie acepta",
+                "Tarifa de envío muy baja"
+            ]
+        },
+        'driver_assigned': { // Asignado
+            color: 'dark',
+            title: 'Motorizado Asignado',
+            checklist: [
+                "Llamar Motorizado: ¿Por qué no llega a tienda?",
+                "Verificar si se mueve en el mapa (si aplica)",
+                "Si no responde > 15min: Liberar y Reasignar"
+            ],
+            causes: [
+                "Motorizado con caucho espichado / Avería",
+                "Motorizado rechazó después de aceptar",
+                "Tráfico pesado hacia tienda",
+                "Motorizado no contesta"
+            ]
+        },
+        'on_the_way': { // En Camino
+            color: 'info',
+            title: 'Ruta al Cliente',
+            checklist: [
+                "Llamar Motorizado: ¿Ubicación actual?",
+                "Verificar dirección de entrega con cliente",
+                "Pedir paciencia al cliente"
+            ],
+            causes: [
+                "Dirección difícil / Ubicación errónea",
+                "Cliente no contesta al llegar",
+                "Motorizado perdido",
+                "Retención policial / Alcabala",
+                "Accidente leve / Avería en ruta"
+            ]
+        }
+    };
+
+    // --- ABRIR ASISTENTE ---
+    window.openAssistant = async function (dbId, externalId, status, customerName, startTimeStr) {
+        const protocol = ATC_PROTOCOLS[status];
+
+        if (!protocol) {
+            alert("Este estado (" + status + ") no requiere gestión de retrasos.");
+            return;
+        }
+
+        const modal = new bootstrap.Modal(document.getElementById('modalAssistant'));
+
+        // 1. Llenar Datos Básicos
+        document.getElementById('auditDbId').value = dbId;
+        document.getElementById('auditStage').value = status;
+        document.getElementById('assistOrderId').textContent = `#${externalId}`;
+        document.getElementById('assistCustomer').textContent = customerName;
+
+        // 2. Calcular Tiempo en Fase
+        let timeText = "-- min";
+        if (startTimeStr) {
+            let start = startTimeStr;
+            if (!start.endsWith('Z')) start += 'Z'; // Fix UTC
+            const mins = Math.floor((new Date() - new Date(start)) / 1000 / 60);
+            timeText = `${mins} min`;
+        }
+        document.getElementById('assistTime').textContent = timeText;
+
+        // 3. Estilos Dinámicos
+        const header = document.getElementById('assistHeader');
+        header.className = `modal-header text-white bg-${protocol.color}`;
+
+        // 4. Renderizar Checklist
+        const checkContainer = document.getElementById('assistChecklist');
+        checkContainer.innerHTML = protocol.checklist.map((item, idx) => `
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="checkAction${idx}" value="${item}">
+                <label class="form-check-label" for="checkAction${idx}">${item}</label>
+            </div>
+        `).join('');
+
+        // 5. Renderizar Causas
+        const causeSelect = document.getElementById('assistRootCause');
+        causeSelect.innerHTML = `<option value="" selected disabled>Seleccione el motivo...</option>` +
+            protocol.causes.map(c => `<option value="${c}">${c}</option>`).join('');
+
+        // 6. Cargar Historial
+        loadAuditHistory(dbId);
+
+        modal.show();
+    };
+
+    // --- CARGAR HISTORIAL ---
+    async function loadAuditHistory(orderId) {
+        const list = document.getElementById('assistHistoryList');
+        list.innerHTML = '<div class="text-center"><i class="fa-solid fa-spinner fa-spin"></i> Cargando...</div>';
+
+        try {
+            const res = await authFetch(`/api/audit/history/${orderId}`);
+            if (res && res.ok) {
+                const logs = await res.json();
+                if (logs.length === 0) {
+                    list.innerHTML = '<div class="text-muted text-center py-2">Sin gestiones previas.</div>';
+                    return;
+                }
+
+                list.innerHTML = logs.map(log => `
+                    <div class="border-bottom pb-2 mb-2">
+                        <div class="d-flex justify-content-between">
+                            <strong>${log.user}</strong>
+                            <small class="text-muted">${new Date(log.date).toLocaleString()}</small>
+                        </div>
+                        <div class="text-danger small fw-bold">${log.cause}</div>
+                        <div class="text-secondary small">✅ ${log.action}</div>
+                        ${log.notes ? `<div class="fst-italic small text-muted">"${log.notes}"</div>` : ''}
+                    </div>
+                `).join('');
+            }
+        } catch (e) {
+            list.innerHTML = '<div class="text-danger">Error cargando historial.</div>';
+        }
+    }
+
+    // --- GUARDAR GESTIÓN ---
+    window.saveAuditLog = async function () {
+        const orderId = document.getElementById('auditDbId').value;
+        const stage = document.getElementById('auditStage').value;
+        const cause = document.getElementById('assistRootCause').value;
+        const notes = document.getElementById('assistNotes').value;
+
+        // Recopilar Checkboxes
+        const actions = [];
+        document.querySelectorAll('#assistChecklist input:checked').forEach(cb => actions.push(cb.value));
+
+        // Validaciones
+        if (actions.length === 0) return alert("⚠️ Debes marcar al menos una acción realizada del protocolo.");
+        if (!cause) return alert("⚠️ Debes seleccionar la Causa Raíz del problema.");
+
+        const payload = {
+            order_id: parseInt(orderId),
+            stage: stage,
+            action_taken: actions.join(" | "), // Unimos con pipe
+            root_cause: cause,
+            notes: notes
+        };
+
+        try {
+            const res = await authFetch('/api/audit/log', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+
+            if (res && res.ok) {
+                // Cerrar modal y refrescar
+                const modalEl = document.getElementById('modalAssistant');
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                modal.hide();
+                alert("✅ Gestión registrada con éxito.");
+                // Opcional: Recargar tabla
+            } else {
+                alert("Error al guardar.");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error de conexión.");
+        }
+    };
 
 }); // <--- FINAL DEL ARCHIVO (ASEGÚRATE DE QUE ESTÉ)

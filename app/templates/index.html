@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,7 +10,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/light.css">
-    
+
     <!-- LEAFLET MAPS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -18,38 +19,102 @@
     <!-- CSS Personalizado -->
     <link rel="stylesheet" href="/static/css/styles.css">
     <style>
-        body { background-color: #f3f4f6; font-family: 'Segoe UI', sans-serif; color: #374151; }
-        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-radius: 12px; transition: transform 0.2s; }
-        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .navbar { background-color: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
-        .text-soft-primary { color: #3b82f6; } .bg-soft-primary { background-color: #eff6ff; }
-        .text-soft-success { color: #10b981; } .bg-soft-success { background-color: #ecfdf5; }
-        .text-soft-warning { color: #f59e0b; } .bg-soft-warning { background-color: #fffbeb; }
-        .text-soft-danger { color: #ef4444; } .bg-soft-danger { background-color: #fef2f2; }
-        .kpi-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: #6b7280; letter-spacing: 0.5px; }
-        .kpi-val { font-size: 1.75rem; font-weight: 600; line-height: 1.2; }
+        body {
+            background-color: #f3f4f6;
+            font-family: 'Segoe UI', sans-serif;
+            color: #374151;
+        }
+
+        .card {
+            border: none;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border-radius: 12px;
+            transition: transform 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+
+        .navbar {
+            background-color: #ffffff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .text-soft-primary {
+            color: #3b82f6;
+        }
+
+        .bg-soft-primary {
+            background-color: #eff6ff;
+        }
+
+        .text-soft-success {
+            color: #10b981;
+        }
+
+        .bg-soft-success {
+            background-color: #ecfdf5;
+        }
+
+        .text-soft-warning {
+            color: #f59e0b;
+        }
+
+        .bg-soft-warning {
+            background-color: #fffbeb;
+        }
+
+        .text-soft-danger {
+            color: #ef4444;
+        }
+
+        .bg-soft-danger {
+            background-color: #fef2f2;
+        }
+
+        .kpi-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #6b7280;
+            letter-spacing: 0.5px;
+        }
+
+        .kpi-val {
+            font-size: 1.75rem;
+            font-weight: 600;
+            line-height: 1.2;
+        }
     </style>
 </head>
+
 <body>
 
     <nav class="navbar navbar-expand-lg sticky-top mb-4 py-3">
         <div class="container-fluid px-4">
             <a class="navbar-brand d-flex align-items-center" href="#">
                 <img src="/static/img/logo.png" alt="Logo" class="navbar-logo me-2" style="height: 32px;">
-                <span class="fw-bold">GoAnalisis</span> 
-                <span class="badge bg-primary-subtle text-primary ms-2 rounded-pill" style="font-size: 0.6rem;">V5.1</span>
+                <span class="fw-bold">GoAnalisis</span>
+                <span class="badge bg-primary-subtle text-primary ms-2 rounded-pill"
+                    style="font-size: 0.6rem;">V5.1</span>
             </a>
             <div class="d-flex align-items-center">
                 <!-- BOTÓN NUEVO: NOTIFICACIONES -->
-                <button id="btn-notifications" class="btn btn-sm btn-outline-secondary rounded-circle me-3 position-relative" title="Activar Alertas Operativas">
+                <button id="btn-notifications"
+                    class="btn btn-sm btn-outline-secondary rounded-circle me-3 position-relative"
+                    title="Activar Alertas Operativas">
                     <i class="fa-regular fa-bell"></i>
-                    <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle d-none" id="notif-badge">
+                    <span
+                        class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle d-none"
+                        id="notif-badge">
                         <span class="visually-hidden">Alertas activas</span>
                     </span>
                 </button>
                 <a href="#" id="btn-open-report" class="btn btn-sm btn-light text-muted border-0 me-3 admin-only">
-    <i class="fa-solid fa-file-invoice me-2"></i>Reporte
-</a>
+                    <i class="fa-solid fa-file-invoice me-2"></i>Reporte
+                </a>
                 <button id="btn-logout" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
                     <i class="fa-solid fa-power-off me-2"></i>Salir
                 </button>
@@ -65,16 +130,22 @@
                     <div class="col-md-4">
                         <label class="form-label text-muted small fw-bold mb-1">Rango de Fechas</label>
                         <div class="input-group">
-                            <span class="input-group-text bg-white border-end-0"><i class="fa-regular fa-calendar text-muted"></i></span>
-                            <input type="text" class="form-control border-start-0 ps-0" id="date-range-picker" placeholder="Hoy">
+                            <span class="input-group-text bg-white border-end-0"><i
+                                    class="fa-regular fa-calendar text-muted"></i></span>
+                            <input type="text" class="form-control border-start-0 ps-0" id="date-range-picker"
+                                placeholder="Hoy">
                             <!-- BOTÓN NUEVO: HOY -->
-        <button class="btn btn-light border fw-bold text-primary" type="button" id="btn-today" title="Ir a Hoy">Hoy</button>
-                            <button class="btn btn-light border" type="button" id="btn-all-history" title="Ver Histórico">∞</button>
+                            <button class="btn btn-light border fw-bold text-primary" type="button" id="btn-today"
+                                title="Ir a Hoy">Hoy</button>
+                            <button class="btn btn-light border" type="button" id="btn-all-history"
+                                title="Ver Histórico">∞</button>
                         </div>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-muted small fw-bold mb-1">Tienda</label>
-                        <select class="form-select" id="store-filter"><option value="">Cargando...</option></select>
+                        <select class="form-select" id="store-filter">
+                            <option value="">Cargando...</option>
+                        </select>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-muted small fw-bold mb-1">Búsqueda</label>
@@ -83,80 +154,184 @@
                             <button class="btn btn-light border" id="btn-clear-search">×</button>
                         </div>
                     </div>
-                    <div class="col-md-2"><button class="btn btn-primary w-100 fw-bold" id="btn-update">Filtrar</button></div>
+                    <div class="col-md-2"><button class="btn btn-primary w-100 fw-bold" id="btn-update">Filtrar</button>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- 1. RESUMEN FINANCIERO -->
         <div class="row g-3 mb-4 admin-only">
-            <div class="col-12 col-md-6 col-xl"><div class="card h-100 border-start border-4 border-secondary"><div class="card-body"><div class="d-flex justify-content-between"><div><div class="kpi-label">Volumen (GMV)</div><div class="kpi-val text-dark" id="kpi-total-revenue">--</div></div><div class="bg-light rounded-circle p-2 text-secondary"><i class="fa-solid fa-sack-dollar fa-lg"></i></div></div></div></div></div>
-            <div class="col-12 col-md-6 col-xl"><div class="card h-100 border-start border-4 border-primary"><div class="card-body"><div class="d-flex justify-content-between"><div><div class="kpi-label text-primary">Valor Envíos</div><div class="kpi-val text-primary" id="kpi-total-fees">--</div></div><div class="bg-soft-primary rounded-circle p-2 text-primary"><i class="fa-solid fa-motorcycle fa-lg"></i></div></div></div></div></div>
-            <div class="col-12 col-md-6 col-xl"><div class="card h-100 border-start border-4 border-danger"><div class="card-body"><div class="d-flex justify-content-between"><div><div class="kpi-label text-danger">Cupones (Inv.)</div><div class="kpi-val text-danger" id="kpi-total-coupons">--</div></div><div class="bg-soft-danger rounded-circle p-2 text-danger"><i class="fa-solid fa-tags fa-lg"></i></div></div></div></div></div>
-            <div class="col-12 col-md-6 col-xl"><div class="card h-100 border-start border-4 border-warning"><div class="card-body"><div class="d-flex justify-content-between"><div><div class="kpi-label text-warning">Nómina Moto</div><div class="kpi-val text-warning" id="kpi-driver-payout">--</div></div><div class="bg-soft-warning rounded-circle p-2 text-warning"><i class="fa-solid fa-helmet-safety fa-lg"></i></div></div></div></div></div>
-            <div class="col-12 col-md-6 col-xl"><div class="card h-100 border-start border-4 border-success bg-soft-success"><div class="card-body"><div class="d-flex justify-content-between"><div><div class="kpi-label text-success">Ganancia Neta</div><div class="kpi-val text-success fw-bold" id="kpi-company-profit">--</div></div><div class="bg-white rounded-circle p-2 text-success shadow-sm"><i class="fa-solid fa-chart-line fa-lg"></i></div></div></div></div></div>
+            <div class="col-12 col-md-6 col-xl">
+                <div class="card h-100 border-start border-4 border-secondary">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <div class="kpi-label">Volumen (GMV)</div>
+                                <div class="kpi-val text-dark" id="kpi-total-revenue">--</div>
+                            </div>
+                            <div class="bg-light rounded-circle p-2 text-secondary"><i
+                                    class="fa-solid fa-sack-dollar fa-lg"></i></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl">
+                <div class="card h-100 border-start border-4 border-primary">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <div class="kpi-label text-primary">Valor Envíos</div>
+                                <div class="kpi-val text-primary" id="kpi-total-fees">--</div>
+                            </div>
+                            <div class="bg-soft-primary rounded-circle p-2 text-primary"><i
+                                    class="fa-solid fa-motorcycle fa-lg"></i></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl">
+                <div class="card h-100 border-start border-4 border-danger">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <div class="kpi-label text-danger">Cupones (Inv.)</div>
+                                <div class="kpi-val text-danger" id="kpi-total-coupons">--</div>
+                            </div>
+                            <div class="bg-soft-danger rounded-circle p-2 text-danger"><i
+                                    class="fa-solid fa-tags fa-lg"></i></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl">
+                <div class="card h-100 border-start border-4 border-warning">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <div class="kpi-label text-warning">Nómina Moto</div>
+                                <div class="kpi-val text-warning" id="kpi-driver-payout">--</div>
+                            </div>
+                            <div class="bg-soft-warning rounded-circle p-2 text-warning"><i
+                                    class="fa-solid fa-helmet-safety fa-lg"></i></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 col-xl">
+                <div class="card h-100 border-start border-4 border-success bg-soft-success">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <div class="kpi-label text-success">Ganancia Neta</div>
+                                <div class="kpi-val text-success fw-bold" id="kpi-company-profit">--</div>
+                            </div>
+                            <div class="bg-white rounded-circle p-2 text-success shadow-sm"><i
+                                    class="fa-solid fa-chart-line fa-lg"></i></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- 2. OPERATIVO -->
         <div class="row g-3 mb-4">
-            <div class="col-6 col-md-2 col-xl"><div class="card h-100 p-2 text-center"><small class="text-muted fw-bold">TOTAL</small><div class="h5 mb-0 fw-bold" id="kpi-total-orders">--</div></div></div>
-            <div class="col-6 col-md-2 col-xl"><div class="card h-100 p-2 text-center border-bottom border-3 border-info"><small class="text-info fw-bold">DELIVERY</small><div class="h5 mb-0 fw-bold text-dark" id="kpi-deliveries">--</div></div></div>
-            <div class="col-6 col-md-2 col-xl"><div class="card h-100 p-2 text-center border-bottom border-3 border-warning"><small class="text-warning fw-bold">PICKUP</small><div class="h5 mb-0 fw-bold text-dark" id="kpi-pickups">--</div></div></div>
-            <div class="col-6 col-md-2 col-xl"><div class="card h-100 p-2 text-center border-bottom border-3 border-danger"><small class="text-danger fw-bold">CANCELADOS</small><div class="h5 mb-0 fw-bold text-dark" id="kpi-canceled">--</div></div></div>
-            <div class="col-6 col-md-2 col-xl"><div class="card h-100 p-2 text-center"><small class="text-muted fw-bold">TIEMPO PROM.</small><div class="h5 mb-0 fw-bold text-dark" id="kpi-avg-time">--</div></div></div>
-            <div class="col-6 col-md-2 col-xl"><div class="card h-100 p-2 text-center border-bottom border-3 border-primary"><small class="text-primary fw-bold">NUEVOS USUARIOS</small><div class="h5 mb-0 fw-bold text-dark" id="kpi-new-users">--</div></div></div>
+            <div class="col-6 col-md-2 col-xl">
+                <div class="card h-100 p-2 text-center"><small class="text-muted fw-bold">TOTAL</small>
+                    <div class="h5 mb-0 fw-bold" id="kpi-total-orders">--</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2 col-xl">
+                <div class="card h-100 p-2 text-center border-bottom border-3 border-info"><small
+                        class="text-info fw-bold">DELIVERY</small>
+                    <div class="h5 mb-0 fw-bold text-dark" id="kpi-deliveries">--</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2 col-xl">
+                <div class="card h-100 p-2 text-center border-bottom border-3 border-warning"><small
+                        class="text-warning fw-bold">PICKUP</small>
+                    <div class="h5 mb-0 fw-bold text-dark" id="kpi-pickups">--</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2 col-xl">
+                <div class="card h-100 p-2 text-center border-bottom border-3 border-danger"><small
+                        class="text-danger fw-bold">CANCELADOS</small>
+                    <div class="h5 mb-0 fw-bold text-dark" id="kpi-canceled">--</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2 col-xl">
+                <div class="card h-100 p-2 text-center"><small class="text-muted fw-bold">TIEMPO PROM.</small>
+                    <div class="h5 mb-0 fw-bold text-dark" id="kpi-avg-time">--</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-2 col-xl">
+                <div class="card h-100 p-2 text-center border-bottom border-3 border-primary"><small
+                        class="text-primary fw-bold">NUEVOS USUARIOS</small>
+                    <div class="h5 mb-0 fw-bold text-dark" id="kpi-new-users">--</div>
+                </div>
+            </div>
         </div>
 
         <!-- TABLA PEDIDOS EN VIVO -->
-<div class="card mb-4 overflow-hidden">
-    <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center py-3 cursor-pointer" 
-         data-bs-toggle="collapse" data-bs-target="#collapseOrders">
-        <span class="fw-bold"><i class="fa-solid fa-list-check me-2 text-primary"></i> Últimos Pedidos <small class="text-muted ms-2 fw-normal" id="last-updated">--:--</small></span>
-        <div class="d-flex align-items-center">
-            <span class="badge bg-danger bg-opacity-75 animate-pulse me-3">EN VIVO</span>
-            <i class="fa-solid fa-chevron-down text-muted collapse-icon"></i>
+        <div class="card mb-4 overflow-hidden">
+            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center py-3 cursor-pointer"
+                data-bs-toggle="collapse" data-bs-target="#collapseOrders">
+                <span class="fw-bold"><i class="fa-solid fa-list-check me-2 text-primary"></i> Últimos Pedidos <small
+                        class="text-muted ms-2 fw-normal" id="last-updated">--:--</small></span>
+                <div class="d-flex align-items-center">
+                    <span class="badge bg-danger bg-opacity-75 animate-pulse me-3">EN VIVO</span>
+                    <i class="fa-solid fa-chevron-down text-muted collapse-icon"></i>
+                </div>
+            </div>
+            <div id="collapseOrders" class="collapse show">
+                <div class="table-responsive">
+                    <!-- TABLA REINGENIERIZADA (5 COLUMNAS) -->
+                    <table class="table table-hover align-middle mb-0" style="font-size: 0.9rem;">
+                        <thead class="bg-light text-muted small text-uppercase">
+                            <tr>
+                                <th class="ps-4 py-3" style="width: 15%">Identificación</th> <!-- ID + Tienda -->
+                                <th style="width: 25%">Cliente</th> <!-- Nombre + Lealtad + Tlf -->
+                                <th style="width: 25%">Logística</th> <!-- Tipo + Motorizado -->
+                                <th style="width: 20%">Estado / Tiempo</th> <!-- Status + Cronómetro/Final -->
+                                <th class="text-end pe-4" style="width: 15%">Total</th> <!-- Dinero -->
+                            </tr>
+                        </thead>
+                        <tbody id="recent-orders-table-body" class="border-top-0"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-    </div>
-    <div id="collapseOrders" class="collapse show">
-        <div class="table-responsive">
-            <!-- TABLA REINGENIERIZADA (5 COLUMNAS) -->
-            <table class="table table-hover align-middle mb-0" style="font-size: 0.9rem;">
-                <thead class="bg-light text-muted small text-uppercase">
-                    <tr>
-                        <th class="ps-4 py-3" style="width: 15%">Identificación</th> <!-- ID + Tienda -->
-                        <th style="width: 25%">Cliente</th> <!-- Nombre + Lealtad + Tlf -->
-                        <th style="width: 25%">Logística</th> <!-- Tipo + Motorizado -->
-                        <th style="width: 20%">Estado / Tiempo</th> <!-- Status + Cronómetro/Final -->
-                        <th class="text-end pe-4" style="width: 15%">Total</th> <!-- Dinero -->
-                    </tr>
-                </thead>
-                <tbody id="recent-orders-table-body" class="border-top-0"></tbody>
-            </table>
-        </div>
-    </div>
-</div>
 
         <!-- MAPA Y TENDENCIAS -->
         <div class="row g-4 mb-4 admin-only">
             <div class="col-lg-8">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-3 cursor-pointer" data-bs-toggle="collapse" data-bs-target="#collapseMap">
-                        <span class="fw-bold"><i class="fa-solid fa-map-location-dot me-2 text-danger"></i> Mapa de Oportunidades</span>
+                    <div class="card-header bg-white border-0 py-3 cursor-pointer" data-bs-toggle="collapse"
+                        data-bs-target="#collapseMap">
+                        <span class="fw-bold"><i class="fa-solid fa-map-location-dot me-2 text-danger"></i> Mapa de
+                            Oportunidades</span>
                     </div>
-                    <div id="collapseMap" class="collapse"><div class="card-body p-0"><div id="heatmapContainer" style="height: 400px; width: 100%;"></div></div></div>
+                    <div id="collapseMap" class="collapse">
+                        <div class="card-body p-0">
+                            <div id="heatmapContainer" style="height: 400px; width: 100%;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="col-lg-4">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold"><i class="fa-solid fa-chart-column me-2 text-primary"></i> Tendencias</span></div>
-                    <div class="card-body"><div style="height: 350px;"><canvas id="trendsChart"></canvas></div></div>
+                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold"><i
+                                class="fa-solid fa-chart-column me-2 text-primary"></i> Tendencias</span></div>
+                    <div class="card-body">
+                        <div style="height: 350px;"><canvas id="trendsChart"></canvas></div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- ANÁLISIS OPERATIVO (4 COLUMNAS) -->
         <div class="row g-3 mb-4 admin-only">
-            
+
             <!-- 1. TIPO DE ORDEN (Dona) -->
             <div class="col-12 col-sm-6 col-lg-2">
                 <div class="card h-100">
@@ -174,7 +349,7 @@
 
             <!-- 2. MOTIVOS CANCELACIÓN (Pie) -->
             <div class="col-12 col-sm-6 col-lg-4">
-                 <div class="card h-100">
+                <div class="card h-100">
                     <div class="card-header bg-white border-0 py-2">
                         <span class="fw-bold small text-danger"><i class="fa-solid fa-ban me-1"></i> MOTIVOS</span>
                     </div>
@@ -190,7 +365,8 @@
             <div class="col-12 col-sm-6 col-lg-3">
                 <div class="card h-100">
                     <div class="card-header bg-white border-0 py-2">
-                        <span class="fw-bold small text-primary"><i class="fa-solid fa-motorcycle me-1"></i> DELIVERY (Min)</span>
+                        <span class="fw-bold small text-primary"><i class="fa-solid fa-motorcycle me-1"></i> DELIVERY
+                            (Min)</span>
                     </div>
                     <div class="card-body p-2">
                         <div style="height: 150px; width: 100%;">
@@ -204,7 +380,8 @@
             <div class="col-12 col-sm-6 col-lg-3">
                 <div class="card h-100">
                     <div class="card-header bg-white border-0 py-2">
-                        <span class="fw-bold small text-warning"><i class="fa-solid fa-person-walking-luggage me-1"></i> PICKUP (Min)</span>
+                        <span class="fw-bold small text-warning"><i class="fa-solid fa-person-walking-luggage me-1"></i>
+                            PICKUP (Min)</span>
                     </div>
                     <div class="card-body p-2">
                         <div style="height: 150px; width: 100%;">
@@ -219,14 +396,20 @@
         <div class="row g-4 mb-4">
             <div class="col-md-6">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-success"><i class="fa-solid fa-shop me-2"></i> Top Tiendas</span></div>
-                    <div class="card-body p-0" style="max-height: 300px; overflow-y: auto;"><ul class="list-group list-group-flush" id="top-stores-list"></ul></div>
+                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-success"><i
+                                class="fa-solid fa-shop me-2"></i> Top Tiendas</span></div>
+                    <div class="card-body p-0" style="max-height: 300px; overflow-y: auto;">
+                        <ul class="list-group list-group-flush" id="top-stores-list"></ul>
+                    </div>
                 </div>
             </div>
             <div class="col-md-6">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-warning"><i class="fa-solid fa-motorcycle me-2"></i> Top Repartidores</span></div>
-                    <div class="card-body"><div style="height: 250px;"><canvas id="driverLeaderboardChart"></canvas></div></div>
+                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-warning"><i
+                                class="fa-solid fa-motorcycle me-2"></i> Top Repartidores</span></div>
+                    <div class="card-body">
+                        <div style="height: 250px;"><canvas id="driverLeaderboardChart"></canvas></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -236,10 +419,20 @@
             <!-- Top Productos -->
             <div class="col-md-6">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-primary"><i class="fa-solid fa-pills me-2"></i> Top 10 Productos</span></div>
+                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-primary"><i
+                                class="fa-solid fa-pills me-2"></i> Top 10 Productos</span></div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
-                            <table class="table table-hover align-middle mb-0"><thead class="bg-light text-muted small"><tr><th class="ps-4">Producto</th><th class="text-center">Uds</th><th class="text-end pe-4">Ingresos</th></tr></thead><tbody id="top-products-body"></tbody></table>
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="bg-light text-muted small">
+                                    <tr>
+                                        <th class="ps-4">Producto</th>
+                                        <th class="text-center">Uds</th>
+                                        <th class="text-end pe-4">Ingresos</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="top-products-body"></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -247,11 +440,20 @@
             <!-- [RESTAURADO] Top Clientes -->
             <div class="col-md-6">
                 <div class="card h-100">
-                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-info"><i class="fa-solid fa-users me-2"></i> Top Clientes</span></div>
+                    <div class="card-header bg-white border-0 py-3"><span class="fw-bold text-info"><i
+                                class="fa-solid fa-users me-2"></i> Top Clientes</span></div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
                             <table class="table table-hover align-middle mb-0" id="topCustomersTable">
-                                <thead class="bg-light text-muted small"><tr><th class="ps-4">#</th><th>Cliente</th><th class="text-center">Ped.</th><th class="text-end">Total</th><th class="text-end pe-4">Avg</th></tr></thead>
+                                <thead class="bg-light text-muted small">
+                                    <tr>
+                                        <th class="ps-4">#</th>
+                                        <th>Cliente</th>
+                                        <th class="text-center">Ped.</th>
+                                        <th class="text-end">Total</th>
+                                        <th class="text-end pe-4">Avg</th>
+                                    </tr>
+                                </thead>
                                 <tbody></tbody>
                             </table>
                         </div>
@@ -261,7 +463,7 @@
         </div>
     </main>
 
-<!-- ========================================== -->
+    <!-- ========================================== -->
     <!-- MODAL AUDITORÍA ATC (Estructura Vacía) -->
     <!-- ========================================== -->
     <div class="modal fade" id="modalATC" tabindex="-1" aria-hidden="true">
@@ -272,9 +474,10 @@
                     <h5 class="modal-title fw-bold">
                         <i class="fa-solid fa-file-invoice me-2"></i>Auditoría de Pedido
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
                 </div>
-                
+
                 <!-- Cuerpo (Aquí el JS inyecta la magia) -->
                 <div class="modal-body p-4" id="modalATCBody">
                     <!-- Spinner por defecto -->
@@ -287,10 +490,12 @@
                 <!-- Footer con Acciones -->
                 <div class="modal-footer bg-light">
                     <div class="d-flex w-100 justify-content-between align-items-center">
-                        <small class="text-muted fst-italic"><i class="fa-solid fa-robot me-1"></i>Auditado por GoAnalisis Dron</small>
+                        <small class="text-muted fst-italic"><i class="fa-solid fa-robot me-1"></i>Auditado por
+                            GoAnalisis Dron</small>
                         <div>
                             <!-- Botón de respaldo (Excel Lento) -->
-                            <button type="button" class="btn btn-outline-secondary btn-sm me-2" id="btn-legacy-download">
+                            <button type="button" class="btn btn-outline-secondary btn-sm me-2"
+                                id="btn-legacy-download">
                                 <i class="fa-solid fa-cloud-arrow-down me-1"></i>Excel Oficial
                             </button>
                             <!-- Botón Imprimir -->
@@ -299,6 +504,94 @@
                             </button>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- MODAL ASISTENTE OPERATIVO ATC -->
+    <div class="modal fade" id="modalAssistant" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <!-- Header dinámico (Cambia de color según estado) -->
+                <div class="modal-header text-white" id="assistHeader">
+                    <h5 class="modal-title fw-bold">
+                        <i class="fa-solid fa-user-doctor me-2"></i>Gestión de Retraso
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body p-4">
+                    <!-- Info del Pedido -->
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <h4 class="mb-0 fw-bold" id="assistOrderId">#--</h4>
+                            <small class="text-muted" id="assistCustomer">Cliente...</small>
+                        </div>
+                        <div class="text-end">
+                            <div class="badge bg-light text-dark border px-3 py-2">
+                                Tiempo en fase: <span id="assistTime" class="fw-bold text-danger">-- min</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FORMULARIO DE GESTIÓN -->
+                    <form id="formAudit">
+                        <input type="hidden" id="auditDbId">
+                        <input type="hidden" id="auditStage">
+
+                        <!-- 1. Checklist de Acciones -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-uppercase text-secondary">1. Protocolo
+                                Obligatorio</label>
+                            <div class="card bg-light border-0 p-3">
+                                <div id="assistChecklist" class="d-flex flex-column gap-2">
+                                    <!-- Aquí se inyectan los checkboxes -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. Causa Raíz -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-uppercase text-secondary">2. Causa del
+                                Retraso</label>
+                            <select class="form-select" id="assistRootCause">
+                                <option value="" selected disabled>Seleccione el motivo...</option>
+                                <!-- Aquí se inyectan las opciones -->
+                            </select>
+                        </div>
+
+                        <!-- 3. Notas -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-uppercase text-secondary">3. Notas
+                                Adicionales</label>
+                            <textarea class="form-control" id="assistNotes" rows="2"
+                                placeholder="Detalles extra (opcional)..."></textarea>
+                        </div>
+                    </form>
+
+                    <!-- HISTORIAL PREVIO (Acordeón) -->
+                    <div class="accordion mt-4" id="accordionHistory">
+                        <div class="accordion-item border-0">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed bg-white shadow-none text-muted py-2 small"
+                                    type="button" data-bs-toggle="collapse" data-bs-target="#collapseHistory">
+                                    <i class="fa-solid fa-clock-rotate-left me-2"></i>Ver Gestiones Anteriores
+                                </button>
+                            </h2>
+                            <div id="collapseHistory" class="accordion-collapse collapse">
+                                <div class="accordion-body bg-light p-2 small" id="assistHistoryList">
+                                    <span class="text-muted fst-italic">Cargando...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary fw-bold px-4" onclick="saveAuditLog()">
+                        <i class="fa-solid fa-floppy-disk me-2"></i>Registrar Gestión
+                    </button>
                 </div>
             </div>
         </div>
@@ -317,21 +610,25 @@
                     <div class="alert alert-light border border-warning d-flex align-items-center mb-3">
                         <i class="fa-solid fa-triangle-exclamation text-warning fs-3 me-3"></i>
                         <div class="small lh-sm">
-                            Tu navegador bloquea las alertas porque este sistema es interno (sin HTTPS). 
+                            Tu navegador bloquea las alertas porque este sistema es interno (sin HTTPS).
                             <strong>Sigue estos 3 pasos para autorizarlo:</strong>
                         </div>
                     </div>
 
                     <!-- PASO 1 -->
                     <div class="mb-3">
-                        <label class="form-label small fw-bold text-primary mb-1">PASO 1: Copia y abre esta dirección</label>
+                        <label class="form-label small fw-bold text-primary mb-1">PASO 1: Copia y abre esta
+                            dirección</label>
                         <div class="input-group">
-                            <input type="text" class="form-control bg-light font-monospace small" id="inputFlagUrl" readonly>
+                            <input type="text" class="form-control bg-light font-monospace small" id="inputFlagUrl"
+                                readonly>
                             <button class="btn btn-primary" onclick="copyToClipboard('inputFlagUrl')">
                                 <i class="fa-regular fa-copy"></i> Copiar
                             </button>
                         </div>
-                        <div class="form-text x-small text-muted"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i>Abre una nueva pestaña, pega esa dirección y entra.</div>
+                        <div class="form-text x-small text-muted"><i
+                                class="fa-solid fa-arrow-up-right-from-square me-1"></i>Abre una nueva pestaña, pega esa
+                            dirección y entra.</div>
                     </div>
 
                     <!-- PASO 2 -->
@@ -345,7 +642,8 @@
                         </div>
                         <div class="input-group">
                             <span class="input-group-text bg-white small">2. Pega esto:</span>
-                            <input type="text" class="form-control bg-light font-monospace fw-bold text-dark" id="inputServerUrl" readonly>
+                            <input type="text" class="form-control bg-light font-monospace fw-bold text-dark"
+                                id="inputServerUrl" readonly>
                             <button class="btn btn-dark" onclick="copyToClipboard('inputServerUrl')">
                                 <i class="fa-regular fa-copy"></i> Copiar IP
                             </button>
@@ -355,7 +653,9 @@
                     <!-- PASO 3 -->
                     <div class="text-center mt-4">
                         <label class="form-label small fw-bold text-primary mb-1">PASO 3: Finalizar</label>
-                        <p class="small text-muted mb-0">Haz clic en el botón <strong class="text-primary">Relaunch</strong> (Reiniciar) que aparecerá abajo en tu navegador.</p>
+                        <p class="small text-muted mb-0">Haz clic en el botón <strong
+                                class="text-primary">Relaunch</strong> (Reiniciar) que aparecerá abajo en tu navegador.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -364,16 +664,37 @@
     <!-- ESTILOS DE IMPRESIÓN (Para que salga limpia la hoja) -->
     <style>
         @media print {
-            body * { visibility: hidden; } /* Ocultar todo el sitio */
-            #modalATC, #modalATC * { visibility: visible; } /* Mostrar solo el modal */
-            #modalATC { 
-                position: absolute; 
-                left: 0; top: 0; 
-                width: 100%; margin: 0; padding: 0; 
+            body * {
+                visibility: hidden;
+            }
+
+            /* Ocultar todo el sitio */
+            #modalATC,
+            #modalATC * {
+                visibility: visible;
+            }
+
+            /* Mostrar solo el modal */
+            #modalATC {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                margin: 0;
+                padding: 0;
                 background: white !important;
             }
-            .modal-header, .modal-footer, .btn-close { display: none !important; } /* Ocultar botones al imprimir */
-            .modal-body { padding: 0 !important; }
+
+            .modal-header,
+            .modal-footer,
+            .btn-close {
+                display: none !important;
+            }
+
+            /* Ocultar botones al imprimir */
+            .modal-body {
+                padding: 0 !important;
+            }
         }
     </style>
 
@@ -386,7 +707,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
     <script src="/static/js/dashboard.js?v=6.1"></script>
-    
+
     <!-- Script de Utilidad (Copiar al portapapeles en HTTP) -->
     <script>
         function copyToClipboard(elementId) {
@@ -394,7 +715,7 @@
             copyText.select();
             copyText.setSelectionRange(0, 99999);
             var success = false;
-            
+
             // Intento A: Moderno
             if (navigator.clipboard && window.isSecureContext) {
                 navigator.clipboard.writeText(copyText.value).then(() => animateButton(copyText));
@@ -411,11 +732,11 @@
             const btn = inputElement.nextElementSibling;
             const originalHtml = btn.innerHTML;
             const originalClass = btn.classList.contains('btn-outline-primary') ? 'btn-outline-primary' : 'btn-outline-dark';
-            
+
             btn.innerHTML = '<i class="fa-solid fa-check"></i> Copiado';
             btn.classList.remove(originalClass);
             btn.classList.add('btn-success', 'text-white');
-            
+
             setTimeout(() => {
                 btn.innerHTML = originalHtml;
                 btn.classList.remove('btn-success', 'text-white');
@@ -424,4 +745,5 @@
         }
     </script>
 </body>
+
 </html>
