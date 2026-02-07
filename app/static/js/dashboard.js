@@ -1707,6 +1707,38 @@ document.addEventListener('DOMContentLoaded', function () {
                 "Retención policial / Alcabala",
                 "Accidente leve / Avería en ruta"
             ]
+        },
+        'delivered': { // Auditoría Posterior
+            color: 'success',
+            title: 'Auditoría Post-Mortem',
+            checklist: [
+                "Revisar Gráfica de Cronología (¿Dónde se tardó?)",
+                "Verificar si el cliente reportó quejas",
+                "Contactar al responsable del retraso (Tienda/Moto) para feedback"
+            ],
+            causes: [
+                "Retraso Administrativo (Farmacia tardó en facturar)",
+                "Retraso Logístico (Motorizado demoró en ruta/retiro)",
+                "Incidente Técnico (Sistema/Pagos)",
+                "Cliente demoró en recibir (Espera en garita/lobby)",
+                "Fuerza Mayor (Lluvia/Tranca)"
+            ]
+        },
+        'canceled': { // Análisis de Cancelación
+            color: 'danger',
+            title: 'Análisis de Cancelación',
+            checklist: [
+                "Verificar motivo automático de cancelación",
+                "Confirmar si se notificó al cliente",
+                "Validar si se requiere nota de crédito o reverso"
+            ],
+            causes: [
+                "Cliente solicitó cancelar",
+                "Quiebre de Stock (Tienda)",
+                "Pago no verificado / Fraude",
+                "Zona fuera de cobertura",
+                "Duplicidad de pedido"
+            ]
         }
     };
 
