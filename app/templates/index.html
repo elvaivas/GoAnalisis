@@ -508,7 +508,10 @@
             </div>
         </div>
     </div>
-    <!-- MODAL ASISTENTE OPERATIVO ATC -->
+
+    <!-- ========================================== -->
+    <!-- MODAL ASISTENTE OPERATIVO ATC (V2 - FINAL) -->
+    <!-- ========================================== -->
     <div class="modal fade" id="modalAssistant" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg">
@@ -517,11 +520,12 @@
                     <h5 class="modal-title fw-bold">
                         <i class="fa-solid fa-user-doctor me-2"></i>Gestión de Retraso
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
                 </div>
 
                 <div class="modal-body p-4">
-                    <!-- Info del Pedido -->
+                    <!-- Info del Pedido (Cabecera interna) -->
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
                             <h4 class="mb-0 fw-bold" id="assistOrderId">#--</h4>
@@ -537,15 +541,29 @@
                     <!-- FORMULARIO DE GESTIÓN -->
                     <form id="formAudit">
                         <input type="hidden" id="auditDbId">
-                        <input type="hidden" id="auditStage">
+
+                        <!-- 0. SELECTOR DE FASE A AUDITAR (CRÍTICO) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-uppercase text-primary">
+                                <i class="fa-solid fa-layer-group me-1"></i>Fase a Auditar
+                            </label>
+                            <select class="form-select border-primary" id="auditPhaseSelector"
+                                onchange="renderProtocolUI()">
+                                <!-- Se llena dinámicamente con JS -->
+                            </select>
+                            <div class="form-text x-small">
+                                Si hubo problemas en varias etapas, registre una por una.
+                            </div>
+                        </div>
 
                         <!-- 1. Checklist de Acciones -->
                         <div class="mb-3">
-                            <label class="form-label fw-bold small text-uppercase text-secondary">1. Protocolo
-                                Obligatorio</label>
+                            <label class="form-label fw-bold small text-uppercase text-secondary">1. Protocolo /
+                                Verificación</label>
                             <div class="card bg-light border-0 p-3">
+                                <!-- ESTE ID ES EL QUE BUSCA EL JS PARA INYECTAR LOS CHECKBOXES -->
                                 <div id="assistChecklist" class="d-flex flex-column gap-2">
-                                    <!-- Aquí se inyectan los checkboxes -->
+                                    <span class="text-muted small">Cargando protocolo...</span>
                                 </div>
                             </div>
                         </div>
@@ -556,7 +574,7 @@
                                 Retraso</label>
                             <select class="form-select" id="assistRootCause">
                                 <option value="" selected disabled>Seleccione el motivo...</option>
-                                <!-- Aquí se inyectan las opciones -->
+                                <!-- Se llena dinámicamente -->
                             </select>
                         </div>
 
@@ -580,7 +598,7 @@
                             </h2>
                             <div id="collapseHistory" class="accordion-collapse collapse">
                                 <div class="accordion-body bg-light p-2 small" id="assistHistoryList">
-                                    <span class="text-muted fst-italic">Cargando...</span>
+                                    <span class="text-muted fst-italic">Cargando historial...</span>
                                 </div>
                             </div>
                         </div>
@@ -592,71 +610,6 @@
                     <button type="button" class="btn btn-primary fw-bold px-4" onclick="saveAuditLog()">
                         <i class="fa-solid fa-floppy-disk me-2"></i>Registrar Gestión
                     </button>
-                </div>
-            </div>
-        </div>
-    </div>
-    <!-- MODAL DE AYUDA TÉCNICA (DESBLOQUEO DE NOTIFICACIONES) -->
-    <div class="modal fade" id="modalNotifHelp" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border-0 shadow-lg">
-                <div class="modal-header bg-warning bg-opacity-25 border-0">
-                    <h5 class="modal-title fw-bold text-dark">
-                        <i class="fa-solid fa-lock text-warning me-2"></i>Desbloquear Alertas
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body text-start pb-4">
-                    <div class="alert alert-light border border-warning d-flex align-items-center mb-3">
-                        <i class="fa-solid fa-triangle-exclamation text-warning fs-3 me-3"></i>
-                        <div class="small lh-sm">
-                            Tu navegador bloquea las alertas porque este sistema es interno (sin HTTPS).
-                            <strong>Sigue estos 3 pasos para autorizarlo:</strong>
-                        </div>
-                    </div>
-
-                    <!-- PASO 1 -->
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold text-primary mb-1">PASO 1: Copia y abre esta
-                            dirección</label>
-                        <div class="input-group">
-                            <input type="text" class="form-control bg-light font-monospace small" id="inputFlagUrl"
-                                readonly>
-                            <button class="btn btn-primary" onclick="copyToClipboard('inputFlagUrl')">
-                                <i class="fa-regular fa-copy"></i> Copiar
-                            </button>
-                        </div>
-                        <div class="form-text x-small text-muted"><i
-                                class="fa-solid fa-arrow-up-right-from-square me-1"></i>Abre una nueva pestaña, pega esa
-                            dirección y entra.</div>
-                    </div>
-
-                    <!-- PASO 2 -->
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold text-primary mb-1">PASO 2: Habilita y Pega la IP</label>
-                        <div class="d-flex align-items-center bg-light p-2 rounded border mb-2">
-                            <div class="me-2 text-muted small">1. Busca:</div>
-                            <span class="badge bg-warning text-dark me-2">Insecure origins...</span>
-                            <div class="me-2 text-muted small">Cambia a:</div>
-                            <span class="badge bg-success">Enabled</span>
-                        </div>
-                        <div class="input-group">
-                            <span class="input-group-text bg-white small">2. Pega esto:</span>
-                            <input type="text" class="form-control bg-light font-monospace fw-bold text-dark"
-                                id="inputServerUrl" readonly>
-                            <button class="btn btn-dark" onclick="copyToClipboard('inputServerUrl')">
-                                <i class="fa-regular fa-copy"></i> Copiar IP
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- PASO 3 -->
-                    <div class="text-center mt-4">
-                        <label class="form-label small fw-bold text-primary mb-1">PASO 3: Finalizar</label>
-                        <p class="small text-muted mb-0">Haz clic en el botón <strong
-                                class="text-primary">Relaunch</strong> (Reiniciar) que aparecerá abajo en tu navegador.
-                        </p>
-                    </div>
                 </div>
             </div>
         </div>

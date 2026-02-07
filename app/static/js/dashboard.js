@@ -395,6 +395,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // D. Tiempo (Híbrido: Scraped o Calculado)
             let timeHtml = '';
+            let finalDurationStr = "";
 
             if (isFinal) {
                 // 1. Intentamos usar el texto oficial del Legacy
@@ -405,6 +406,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Para un pedido finalizado, state_start_at es la fecha de finalización
                     displayTime = calcDiff(o.created_at, o.state_start_at);
                 }
+
+                finalDurationStr = displayTime;
 
                 // Color semántico según duración (Ej: >60m en Rojo)
                 // (Opcional, pero ayuda visualmente)
@@ -520,7 +523,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         <i class="fa-solid fa-file-invoice me-2"></i>Ficha ATC
                                     </button>
                                     <!-- BOTÓN NUEVO: ASISTENTE ATC -->
-                                    <button onclick="event.stopPropagation(); openAssistant('${o.id}', '${o.external_id}', '${o.current_status}', '${o.customer_name}', '${o.state_start_at}')" 
+                                    <button onclick="event.stopPropagation(); openAssistant('${o.id}', '${o.external_id}', '${o.current_status}', '${o.customer_name}', '${o.state_start_at}', '${finalDurationStr}')" 
                                             class="btn btn-outline-danger btn-sm w-100 mb-2 text-start shadow-sm fw-bold">
                                         <i class="fa-solid fa-user-doctor me-2"></i>Gestionar Retraso
                                     </button>
@@ -703,7 +706,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (bottleneckChart) bottleneckChart.destroy();
 
                 // ACTIVAR PLUGIN
-                Chart.register(ChartDataLabels);
+                //Chart.register(ChartDataLabels);
 
                 bottleneckChart = new Chart(ctxDelivery, {
                     type: 'bar',
@@ -759,9 +762,26 @@ document.addEventListener('DOMContentLoaded', function () {
         let values = data.length ? data.map(d => d.count) : [0];
 
         if (cancellationChartInstance) cancellationChartInstance.destroy();
+
         cancellationChartInstance = new Chart(ctx, {
-            type: 'pie', data: { labels: labels, datasets: [{ data: values, backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#3b82f6'] }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+            type: 'pie',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#3b82f6']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'right' },
+                    // --- CORRECCIÓN DEL ERROR ---
+                    // Desactivamos datalabels aquí para evitar el error "_labels undefined"
+                    datalabels: { display: false }
+                }
+            }
         });
     }
 
@@ -1631,6 +1651,19 @@ document.addEventListener('DOMContentLoaded', function () {
     // =========================================================
 
     const ATC_PROTOCOLS = {
+        'created': {
+            color: 'dark',
+            title: 'Pedido Recién Creado',
+            checklist: [
+                "Verificar si el pedido cayó en el sistema Legacy",
+                "Verificar si el pago se procesó correctamente"
+            ],
+            causes: [
+                "Retraso en integración",
+                "Cliente abandonó pasarela",
+                "Error de sistema"
+            ]
+        },
         'pending': {
             color: 'secondary',
             title: 'Pago Pendiente / Pasarela',
@@ -1653,13 +1686,15 @@ document.addEventListener('DOMContentLoaded', function () {
             checklist: [
                 "Llamar a Farmacia: ¿Por qué no facturan?",
                 "Verificar inventario: ¿Falta algún producto?",
-                "Si falta stock: Ofrecer reemplazo o devolución parcial"
+                "Si falta stock: Ofrecer reemplazo o devolución parcial",
+                "Si no contestan: Escalar a Supervisor de Tienda"
             ],
             causes: [
                 "Tienda Full / Personal Ocupado",
                 "Falla de Luz / Internet en Tienda",
                 "Quiebre de Stock (Producto Faltante)",
-                "Tienda no contesta teléfono"
+                "Tienda no contesta teléfono",
+                "Problema con impresora fiscal"
             ]
         },
         'confirmed': { // Solicitando
@@ -1708,29 +1743,29 @@ document.addEventListener('DOMContentLoaded', function () {
                 "Accidente leve / Avería en ruta"
             ]
         },
-        'delivered': { // Auditoría Posterior
+        'delivered': { // Post-Mortem Entregado
             color: 'success',
             title: 'Auditoría Post-Mortem',
             checklist: [
                 "Revisar Gráfica de Cronología (¿Dónde se tardó?)",
                 "Verificar si el cliente reportó quejas",
-                "Contactar al responsable del retraso (Tienda/Moto) para feedback"
+                "Contactar al responsable del retraso para feedback"
             ],
             causes: [
-                "Retraso Administrativo (Farmacia tardó en facturar)",
-                "Retraso Logístico (Motorizado demoró en ruta/retiro)",
-                "Incidente Técnico (Sistema/Pagos)",
-                "Cliente demoró en recibir (Espera en garita/lobby)",
+                "Retraso Administrativo (Farmacia)",
+                "Retraso Logístico (Motorizado)",
+                "Incidente Técnico",
+                "Cliente demoró en recibir",
                 "Fuerza Mayor (Lluvia/Tranca)"
             ]
         },
-        'canceled': { // Análisis de Cancelación
+        'canceled': { // Post-Mortem Cancelado
             color: 'danger',
             title: 'Análisis de Cancelación',
             checklist: [
                 "Verificar motivo automático de cancelación",
                 "Confirmar si se notificó al cliente",
-                "Validar si se requiere nota de crédito o reverso"
+                "Validar si se requiere nota de crédito"
             ],
             causes: [
                 "Cliente solicitó cancelar",
@@ -1742,127 +1777,287 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 
-    // --- ABRIR ASISTENTE ---
-    window.openAssistant = async function (dbId, externalId, status, customerName, startTimeStr) {
-        const protocol = ATC_PROTOCOLS[status];
+    // Mapa de nombres legibles para el selector
+    const PHASE_NAMES = {
+        'pending': '1. Pago / Pasarela',
+        'processing': '2. Facturación (Farmacia)',
+        'confirmed': '3. Búsqueda de Motorizado',
+        'driver_assigned': '4. Asignación / Recogida',
+        'on_the_way': '5. Traslado (En Camino)',
+        'delivered': '6. Cierre / Entrega',
+        'canceled': 'X. Cancelación'
+    };
 
-        if (!protocol) {
-            alert("Este estado (" + status + ") no requiere gestión de retrasos.");
-            return;
-        }
-
+    // --- ABRIR ASISTENTE (V2 - MULTI FASE) ---
+    window.openAssistant = async function (dbId, externalId, currentStatus, customerName, startTimeStr, finalDurationText) {
         const modal = new bootstrap.Modal(document.getElementById('modalAssistant'));
 
-        // 1. Llenar Datos Básicos
+        // 1. Datos Básicos
         document.getElementById('auditDbId').value = dbId;
-        document.getElementById('auditStage').value = status;
         document.getElementById('assistOrderId').textContent = `#${externalId}`;
         document.getElementById('assistCustomer').textContent = customerName;
 
-        // 2. Calcular Tiempo en Fase
-        let timeText = "-- min";
-        if (startTimeStr) {
-            let start = startTimeStr;
-            if (!start.endsWith('Z')) start += 'Z'; // Fix UTC
-            const mins = Math.floor((new Date() - new Date(start)) / 1000 / 60);
-            timeText = `${mins} min`;
+        // 2. Lógica de Tiempo (Inteligente)
+        const timeBadge = document.getElementById('assistTime');
+
+        // Limpiar clases previas
+        timeBadge.classList.remove('text-danger', 'text-success', 'text-dark', 'bg-light');
+
+        if (currentStatus === 'delivered' || currentStatus === 'canceled') {
+            // CASO CERRADO: Mostramos el tiempo total estático
+            // Si viene vacío por alguna razón, ponemos "--"
+            const text = finalDurationText || "--";
+            timeBadge.textContent = `Tiempo Total: ${text}`;
+
+            // Estilo Verde para entregado, Gris/Oscuro para cancelado
+            if (currentStatus === 'delivered') {
+                timeBadge.classList.add('text-success', 'border-success', 'bg-soft-success');
+            } else {
+                timeBadge.classList.add('text-dark', 'bg-light');
+            }
+
+        } else {
+            // CASO VIVO: Calculamos minutos transcurridos en fase actual
+            let timeText = "-- min";
+            if (startTimeStr) {
+                let start = startTimeStr;
+                if (!start.endsWith('Z')) start += 'Z';
+                const mins = Math.floor((new Date() - new Date(start)) / 1000 / 60);
+                timeText = `${mins} min en fase`;
+            }
+            timeBadge.textContent = timeText;
+            timeBadge.classList.add('text-danger', 'bg-light'); // Rojo para indicar urgencia
         }
-        document.getElementById('assistTime').textContent = timeText;
 
-        // 3. Estilos Dinámicos
-        const header = document.getElementById('assistHeader');
-        header.className = `modal-header text-white bg-${protocol.color}`;
+        // 3. LLENAR SELECTOR (Lógica Blindada)
+        const selector = document.getElementById('auditPhaseSelector');
+        selector.innerHTML = '';
 
-        // 4. Renderizar Checklist
-        const checkContainer = document.getElementById('assistChecklist');
-        checkContainer.innerHTML = protocol.checklist.map((item, idx) => `
-            <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="checkAction${idx}" value="${item}">
-                <label class="form-check-label" for="checkAction${idx}">${item}</label>
-            </div>
-        `).join('');
+        let statusExists = false;
 
-        // 5. Renderizar Causas
-        const causeSelect = document.getElementById('assistRootCause');
-        causeSelect.innerHTML = `<option value="" selected disabled>Seleccione el motivo...</option>` +
-            protocol.causes.map(c => `<option value="${c}">${c}</option>`).join('');
+        // Llenamos las opciones
+        Object.keys(ATC_PROTOCOLS).forEach(key => {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = PHASE_NAMES[key] || key.toUpperCase();
+            selector.appendChild(opt);
 
-        // 6. Cargar Historial
+            if (key === currentStatus) statusExists = true;
+        });
+
+        // 4. SELECCIÓN EXPLÍCITA Y RENDERIZADO
+        // Forzamos el valor manualmente para asegurar que el DOM lo tenga antes de renderizar
+        if (statusExists) {
+            selector.value = currentStatus;
+        } else {
+            // Si el estado actual (ej: "draft") no tiene protocolo, ponemos el primero por defecto
+            selector.selectedIndex = 0;
+            console.warn(`El estado '${currentStatus}' no tiene protocolo definido. Usando default.`);
+        }
+
+        // LLAMADA CRÍTICA: Ahora que el selector tiene valor, pintamos el checklist
+        renderProtocolUI();
+
+        // 5. Cargar Historial
         loadAuditHistory(dbId);
 
         modal.show();
     };
 
-    // --- CARGAR HISTORIAL ---
+    // --- FUNCIÓN RENDERIZADORA DE UI (V2) ---
+    window.renderProtocolUI = function () {
+        // 1. Obtener elementos
+        const selector = document.getElementById('auditPhaseSelector');
+        const checklistContainer = document.getElementById('assistChecklist');
+        const causeSelect = document.getElementById('assistRootCause');
+
+        // Debug de Elementos
+        if (!selector) return console.error("❌ Falta ID: auditPhaseSelector");
+        if (!checklistContainer) return console.error("❌ Falta ID: assistChecklist");
+
+        const stage = selector.value;
+        const protocol = ATC_PROTOCOLS[stage];
+
+        console.log(`🎨 Renderizando fase: ${stage}`);
+
+        // 2. Validar Protocolo
+        if (!protocol) {
+            console.warn(`⚠️ No existe protocolo para: ${stage}`);
+            checklistContainer.innerHTML = '<div class="text-muted small">No hay protocolo definido.</div>';
+            return;
+        }
+
+        // 3. Aplicar Color Header
+        const header = document.getElementById('assistHeader');
+        if (header) header.className = `modal-header text-white bg-${protocol.color}`;
+
+        // 4. Renderizar Checklist
+        console.log(`📝 Preguntas encontradas: ${protocol.checklist?.length || 0}`);
+
+        if (protocol.checklist && protocol.checklist.length > 0) {
+            const htmlChecks = protocol.checklist.map((item, idx) => `
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="checkAction${idx}" value="${item}">
+                    <label class="form-check-label text-dark" for="checkAction${idx}" style="font-size: 0.9rem; cursor:pointer">
+                        ${item}
+                    </label>
+                </div>
+            `).join('');
+            checklistContainer.innerHTML = htmlChecks;
+        } else {
+            checklistContainer.innerHTML = '<div class="text-muted small fst-italic">Sin pasos obligatorios.</div>';
+        }
+
+        // 5. Renderizar Causas
+        if (causeSelect) {
+            causeSelect.innerHTML = `<option value="" selected disabled>Seleccione causa...</option>` +
+                (protocol.causes || []).map(c => `<option value="${c}">${c}</option>`).join('');
+        }
+    };
+
+    // --- CARGAR HISTORIAL (ESTILO LÍNEA DE TIEMPO) ---
     async function loadAuditHistory(orderId) {
         const list = document.getElementById('assistHistoryList');
-        list.innerHTML = '<div class="text-center"><i class="fa-solid fa-spinner fa-spin"></i> Cargando...</div>';
+        // Icono de carga
+        list.innerHTML = `
+            <div class="text-center py-3 text-muted">
+                <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Consultando bitácora...
+            </div>`;
+
+        // Mapeo de colores para las fases en el historial
+        const stageColors = {
+            'pending': 'secondary', 'created': 'dark',
+            'processing': 'warning', 'confirmed': 'primary',
+            'driver_assigned': 'dark', 'on_the_way': 'info',
+            'delivered': 'success', 'canceled': 'danger'
+        };
+
+        const stageNames = {
+            'pending': 'Pendiente', 'processing': 'Facturación',
+            'confirmed': 'Buscando Moto', 'driver_assigned': 'Asignado',
+            'on_the_way': 'En Camino', 'delivered': 'Entregado',
+            'canceled': 'Cancelado'
+        };
 
         try {
             const res = await authFetch(`/api/audit/history/${orderId}`);
             if (res && res.ok) {
                 const logs = await res.json();
+
                 if (logs.length === 0) {
-                    list.innerHTML = '<div class="text-muted text-center py-2">Sin gestiones previas.</div>';
+                    list.innerHTML = `
+                        <div class="text-center py-4 text-muted bg-white rounded border border-dashed">
+                            <i class="fa-regular fa-clipboard me-2"></i>No hay reportes previos.
+                            <div class="small">Sé el primero en reportar una incidencia.</div>
+                        </div>`;
                     return;
                 }
 
-                list.innerHTML = logs.map(log => `
-                    <div class="border-bottom pb-2 mb-2">
-                        <div class="d-flex justify-content-between">
-                            <strong>${log.user}</strong>
-                            <small class="text-muted">${new Date(log.date).toLocaleString()}</small>
+                // Renderizar Tarjetas de Historial
+                list.innerHTML = logs.map(log => {
+                    const color = stageColors[log.stage] || 'secondary';
+                    const faseName = stageNames[log.stage] || log.stage;
+                    const dateObj = new Date(log.date);
+                    const dateStr = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    return `
+                    <div class="card mb-2 border-0 shadow-sm">
+                        <div class="card-body p-2">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <div>
+                                    <span class="badge bg-${color} text-uppercase" style="font-size:0.65rem">${faseName}</span>
+                                    <strong class="small text-dark ms-1"><i class="fa-solid fa-user-tag me-1"></i>${log.user}</strong>
+                                </div>
+                                <small class="text-muted" style="font-size:0.7rem">${dateStr}</small>
+                            </div>
+                            
+                            <div class="bg-light p-2 rounded mb-1 border-start border-3 border-${color}">
+                                <div class="d-flex align-items-center text-danger small fw-bold mb-1">
+                                    <i class="fa-solid fa-triangle-exclamation me-2"></i>${log.cause}
+                                </div>
+                                <div class="text-dark small mb-1">
+                                    <i class="fa-solid fa-check-double text-success me-1"></i>${log.action}
+                                </div>
+                                ${log.notes ? `<div class="text-muted small fst-italic mt-1 border-top pt-1"><i class="fa-regular fa-comment me-1"></i>"${log.notes}"</div>` : ''}
+                            </div>
                         </div>
-                        <div class="text-danger small fw-bold">${log.cause}</div>
-                        <div class="text-secondary small">✅ ${log.action}</div>
-                        ${log.notes ? `<div class="fst-italic small text-muted">"${log.notes}"</div>` : ''}
                     </div>
-                `).join('');
+                    `;
+                }).join('');
+
+                // Auto-expandir el acordeón si hay historial para que sea visible
+                const collapseElement = document.getElementById('collapseHistory');
+                if (collapseElement && !collapseElement.classList.contains('show')) {
+                    new bootstrap.Collapse(collapseElement).show();
+                }
+
+            } else {
+                list.innerHTML = '<div class="alert alert-danger small">Error cargando datos.</div>';
             }
         } catch (e) {
-            list.innerHTML = '<div class="text-danger">Error cargando historial.</div>';
+            console.error(e);
+            list.innerHTML = '<div class="alert alert-danger small">Error de conexión.</div>';
         }
     }
 
-    // --- GUARDAR GESTIÓN ---
+    // --- GUARDAR GESTIÓN (V2) ---
     window.saveAuditLog = async function () {
         const orderId = document.getElementById('auditDbId').value;
-        const stage = document.getElementById('auditStage').value;
+        const stage = document.getElementById('auditPhaseSelector').value;
         const cause = document.getElementById('assistRootCause').value;
         const notes = document.getElementById('assistNotes').value;
 
-        // Recopilar Checkboxes
-        const actions = [];
-        document.querySelectorAll('#assistChecklist input:checked').forEach(cb => actions.push(cb.value));
+        // 1. Contar casillas marcadas
+        const checkedBoxes = document.querySelectorAll('#assistChecklist input:checked');
+        const actions = Array.from(checkedBoxes).map(cb => cb.value);
 
-        // Validaciones
-        if (actions.length === 0) return alert("⚠️ Debes marcar al menos una acción realizada del protocolo.");
-        if (!cause) return alert("⚠️ Debes seleccionar la Causa Raíz del problema.");
+        // 2. Contar casillas TOTALES visibles
+        const totalBoxesInScreen = document.querySelectorAll('#assistChecklist input').length;
+
+        // --- VALIDACIÓN: Solo exige marcar si hay opciones para marcar ---
+        if (totalBoxesInScreen > 0 && actions.length === 0) {
+            return alert("⚠️ Protocolo incompleto: Por favor marque las acciones realizadas en el checklist.");
+        }
+
+        if (!cause) return alert("⚠️ Campo obligatorio: Debe seleccionar la Causa Raíz del problema.");
 
         const payload = {
             order_id: parseInt(orderId),
             stage: stage,
-            action_taken: actions.join(" | "), // Unimos con pipe
+            action_taken: actions.length > 0 ? actions.join(" | ") : "Gestión Directa (Sin checklist)",
             root_cause: cause,
             notes: notes
         };
 
         try {
+            const btnSave = document.querySelector('#modalAssistant .btn-primary');
+            const originalText = btnSave.innerHTML;
+            btnSave.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando...';
+            btnSave.disabled = true;
+
             const res = await authFetch('/api/audit/log', {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
 
             if (res && res.ok) {
-                // Cerrar modal y refrescar
-                const modalEl = document.getElementById('modalAssistant');
-                const modal = bootstrap.Modal.getInstance(modalEl);
-                modal.hide();
                 alert("✅ Gestión registrada con éxito.");
-                // Opcional: Recargar tabla
+
+                // Limpieza parcial para permitir otra entrada
+                document.getElementById('assistNotes').value = "";
+                document.getElementById('assistRootCause').value = "";
+                document.querySelectorAll('#assistChecklist input').forEach(cb => cb.checked = false);
+
+                // Recargar historial
+                loadAuditHistory(orderId);
             } else {
-                alert("Error al guardar.");
+                alert("Error al guardar en el servidor.");
             }
+
+            // Restaurar botón
+            btnSave.innerHTML = originalText;
+            btnSave.disabled = false;
+
         } catch (e) {
             console.error(e);
             alert("Error de conexión.");
