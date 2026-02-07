@@ -1,13 +1,24 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Enum, Boolean
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    DateTime,
+    ForeignKey,
+    Enum,
+    Boolean,
+)
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
 import enum
 
 Base = declarative_base()
 
+
 class OrderTypeEnum(str, enum.Enum):
     DELIVERY = "Delivery"
     PICKUP = "Pickup"
+
 
 class Order(Base):
     __tablename__ = "orders"
@@ -15,45 +26,52 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     external_id = Column(String, unique=True, index=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     # Datos financieros
     total_amount = Column(Float, nullable=True)
     delivery_fee = Column(Float, nullable=True)
     product_price = Column(Float, default=0.0)
-    
+
     # Estado y Tipo
     current_status = Column(String, default="pending")
     order_type = Column(Enum(OrderTypeEnum), nullable=True)
-    
+
     # --- NUEVOS CAMPOS DE ANÁLISIS ---
-    payment_method = Column(String, nullable=True)      # Ej: Pago Móvil, Zelle
-    cancellation_reason = Column(String, nullable=True) # Ej: Problemas con el pago
-    canceled_by = Column(String, nullable=True)         # Ej: customer, admin
-    
+    payment_method = Column(String, nullable=True)  # Ej: Pago Móvil, Zelle
+    cancellation_reason = Column(String, nullable=True)  # Ej: Problemas con el pago
+    canceled_by = Column(String, nullable=True)  # Ej: customer, admin
+
     # --- CAMPO CORREGIDO (AMPLIADO) ---
-    duration = Column(String(255), nullable=True)       # Antes String (50), ahora soporta texto largo
+    duration = Column(
+        String(255), nullable=True
+    )  # Antes String (50), ahora soporta texto largo
     # ---------------------------------
     # --- NUEVOS CAMPOS V3 (Drone) ---
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
-    
+
     # --- NUEVO CAMPO V4 (Estadísticas de Tiempo) ---
-    delivery_time_minutes = Column(Float, nullable=True) 
-    
+    delivery_time_minutes = Column(Float, nullable=True)
+
     # --- FINANZAS PROFUNDAS ---
     service_fee = Column(Float, default=0.0)
     coupon_discount = Column(Float, default=0.0)
     tips = Column(Float, default=0.0)
-    
+
     # --- NUEVO: Tarifa Bruta (Base para el 80/20) ---
-    gross_delivery_fee = Column(Float, default=0.0) 
+    gross_delivery_fee = Column(Float, default=0.0)
     # ...
     # --- NUEVO CAMPO V6 ---
-    distance_km = Column(Float, default=0.0) # Distancia Tienda -> Cliente
+    distance_km = Column(Float, default=0.0)  # Distancia Tienda -> Cliente
     # ...
 
     # RELACIÓN NUEVA
-    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+    items = relationship(
+        "OrderItem", back_populates="order", cascade="all, delete-orphan"
+    )
+    audits = relationship(
+        "OrderAudit", back_populates="order", cascade="all, delete-orphan"
+    )
 
     # Relaciones (Foreing Keys)
     store_id = Column(Integer, ForeignKey("stores.id"), nullable=True)
@@ -61,10 +79,13 @@ class Order(Base):
     driver_id = Column(Integer, ForeignKey("drivers.id"), nullable=True)
 
     # Relaciones (Objetos)
-    status_logs = relationship("OrderStatusLog", back_populates="order", cascade="all, delete-orphan")
+    status_logs = relationship(
+        "OrderStatusLog", back_populates="order", cascade="all, delete-orphan"
+    )
     store = relationship("Store", back_populates="orders")
     customer = relationship("Customer", back_populates="orders")
     driver = relationship("Driver", back_populates="orders")
+
 
 class OrderStatusLog(Base):
     __tablename__ = "order_status_logs"
@@ -73,6 +94,7 @@ class OrderStatusLog(Base):
     status = Column(String, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     order = relationship("Order", back_populates="status_logs")
+
 
 class Store(Base):
     __tablename__ = "stores"
@@ -84,29 +106,34 @@ class Store(Base):
     longitude = Column(Float, nullable=True)
     orders = relationship("Order", back_populates="store")
 
+
 # --- NUEVA CLASE ---
 class OrderItem(Base):
     __tablename__ = "order_items"
     id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("orders.id"))
-    
+
     name = Column(String)
     quantity = Column(Integer)
     unit_price = Column(Float)
     total_price = Column(Float)
     barcode = Column(String, nullable=True)
-    
+
     order = relationship("Order", back_populates="items")
+
+
 # -------------------
+
 
 class Customer(Base):
     __tablename__ = "customers"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=True)
     external_id = Column(String, unique=True)
-    phone = Column(String, nullable=True) # <--- NUEVO CAMPO
+    phone = Column(String, nullable=True)  # <--- NUEVO CAMPO
     joined_at = Column(DateTime, nullable=True)
     orders = relationship("Order", back_populates="customer")
+
 
 class Driver(Base):
     __tablename__ = "drivers"
@@ -115,10 +142,30 @@ class Driver(Base):
     name = Column(String, nullable=True)
     orders = relationship("Order", back_populates="driver")
 
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
-    role = Column(String, default="viewer") # 'admin' o 'viewer'
+    role = Column(String, default="viewer")  # 'admin' o 'viewer'
     is_active = Column(Boolean, default=True)
+
+
+class OrderAudit(Base):
+    __tablename__ = "order_audits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+
+    stage = Column(String)  # En qué fase estaba (pending, processing...)
+    action_taken = Column(String)  # Qué hizo (Checklist: "Llamó cliente", "Reasignó")
+    root_cause = Column(String)  # Por qué pasó (Desplegable: "Lluvia", "Sin Luz")
+    notes = Column(String, nullable=True)  # Notas opcionales
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relaciones
+    order = relationship("Order", back_populates="audits")
+    user = relationship("User")
