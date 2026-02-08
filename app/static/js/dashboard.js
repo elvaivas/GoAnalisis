@@ -463,8 +463,21 @@ document.addEventListener('DOMContentLoaded', function () {
                             <i id="icon-${o.id}" class="fa-solid fa-chevron-right text-muted me-2 small" style="width: 15px; transition: transform 0.2s;"></i>
                             <div>
                                 <div class="d-flex align-items-center">
+                                    <div class="d-flex align-items-center">
                                     <div class="fw-bold text-dark">#${o.external_id}</div>
+                                    
+                                    <!-- INDICADOR DE GESTIÓN (PUNTICO) -->
+                                    ${o.has_audit ? `
+                                        <span class="ms-2 badge bg-indigo text-white rounded-pill border border-white shadow-sm" 
+                                              style="font-size: 0.6rem; background-color: #6610f2;" 
+                                              title="Incidencia Gestionada / Auditada">
+                                            <i class="fa-solid fa-check"></i>
+                                        </span>
+                                    ` : ''}
+                                    <!-- ------------------------------ -->
+
                                     ${resyncButtonHtml}
+                                </div>
                                 </div>
                                 <span class="badge bg-light text-secondary border fw-normal" style="font-size:0.7rem">${o.store_name}</span>
                             </div>
