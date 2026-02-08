@@ -94,71 +94,77 @@ document.addEventListener('DOMContentLoaded', function () {
             icon.classList.add('fa-chevron-down');
             mainRow.classList.add('table-active');
 
-            // --- AQUÍ LA MAGIA: DIBUJAR GRÁFICA ---
-            const ctx = document.getElementById(`timeline-chart-${rowId}`)?.getContext('2d');
-            const loader = document.getElementById(`timeline-loading-${rowId}`);
+            // --- CORRECCIÓN DE TIEMPO DE RENDERIZADO ---
+            // Esperamos 150ms a que el acordeón empiece a abrirse para que el canvas tenga dimensiones.
+            setTimeout(async () => {
+                const ctx = document.getElementById(`timeline-chart-${rowId}`)?.getContext('2d');
+                const loader = document.getElementById(`timeline-loading-${rowId}`);
 
-            // Si ya existe la gráfica, no la volvemos a cargar
-            if (timelineCharts[rowId]) return;
+                // Doble chequeo: Si ya existe en memoria Y el canvas está en el DOM, no hacemos nada.
+                // Si existe en memoria pero el canvas cambió (por refresh), la limpieza del Paso 1 ya lo habrá matado.
+                if (timelineCharts[rowId]) return;
 
-            if (ctx) {
-                if (loader) loader.classList.remove('d-none'); // Mostrar loading
+                if (ctx) {
+                    if (loader) loader.classList.remove('d-none');
 
-                try {
-                    // Fetch datos del backend
-                    const res = await authFetch(`/api/analysis/order/${rowId}/timeline`);
-                    const data = await res.json();
+                    try {
+                        const res = await authFetch(`/api/analysis/order/${rowId}/timeline`);
+                        if (!res) return; // Validación extra
+                        const data = await res.json();
 
-                    if (loader) loader.classList.add('d-none'); // Ocultar loading
+                        if (loader) loader.classList.add('d-none');
 
-                    if (data.labels.length === 0) {
-                        // No hay logs suficientes
-                        return;
-                    }
+                        if (!data.labels || data.labels.length === 0) {
+                            if (loader) {
+                                loader.classList.remove('d-none');
+                                loader.innerText = "Sin datos cronológicos suficientes.";
+                            }
+                            return;
+                        }
 
-                    // Crear Gráfica
-                    timelineCharts[rowId] = new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: data.labels,
-                            datasets: [{
-                                data: data.data,
-                                backgroundColor: data.colors,
-                                borderRadius: 4,
-                                barThickness: 20
-                            }]
-                        },
-                        options: {
-                            indexAxis: 'y', // Horizontal
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: {
-                                    callbacks: { label: (c) => `${c.raw} min` }
+                        // Crear Gráfica
+                        timelineCharts[rowId] = new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: data.labels,
+                                datasets: [{
+                                    data: data.data,
+                                    backgroundColor: data.colors,
+                                    borderRadius: 4,
+                                    barThickness: 20
+                                }]
+                            },
+                            options: {
+                                indexAxis: 'y',
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                animation: { duration: 500 }, // Suavizar entrada
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { callbacks: { label: (c) => `${c.raw} min` } },
+                                    datalabels: {
+                                        color: '#000',
+                                        anchor: 'end',
+                                        align: 'right',
+                                        formatter: (val) => Math.round(val) + "m",
+                                        font: { weight: 'bold', size: 10 }
+                                    }
                                 },
-                                datalabels: {
-                                    color: '#000',
-                                    anchor: 'end',
-                                    align: 'right',
-                                    formatter: (val) => Math.round(val) + "m",
-                                    font: { weight: 'bold', size: 10 }
-                                }
+                                scales: {
+                                    x: { display: false },
+                                    y: { grid: { display: false } }
+                                },
+                                layout: { padding: { right: 35 } }
                             },
-                            scales: {
-                                x: { display: false }, // Ocultar eje X
-                                y: { grid: { display: false } } // Limpiar eje Y
-                            },
-                            layout: { padding: { right: 30 } }
-                        },
-                        plugins: [ChartDataLabels] // Usamos el plugin que ya instalamos
-                    });
+                            plugins: [ChartDataLabels]
+                        });
 
-                } catch (e) {
-                    console.error("Error timeline:", e);
-                    if (loader) loader.innerText = "Sin datos de tiempo";
+                    } catch (e) {
+                        console.error("Error timeline:", e);
+                        if (loader) loader.innerText = "Error cargando gráfica.";
+                    }
                 }
-            }
+            }, 150); // <--- FIN DEL TIMEOUT
 
         } else {
             // CERRAR
@@ -553,6 +559,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 </tr>
             `;
         });
+        Object.values(timelineCharts).forEach(chart => chart.destroy()); // Limpieza de memoria Chart.js
+        timelineCharts = {};
 
         tableBody.innerHTML = html;
         startLiveTimers();
