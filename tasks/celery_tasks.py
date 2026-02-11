@@ -574,8 +574,9 @@ def enrich_missing_data(self):
                 targets = (
                     db.query(Order)
                     .filter(
-                        Order.created_at >= cutoff_days,  # <--- FILTRO NUEVO
+                        Order.created_at >= cutoff_days,
                         Order.current_status == "delivered",
+                        Order.order_type != "Pickup",  # <--- ESTA ES LA CLAVE
                         (Order.latitude == None)
                         | (Order.gross_delivery_fee == 0)
                         | (Order.product_price == 0),
@@ -584,18 +585,19 @@ def enrich_missing_data(self):
                     .all()
                 )
 
-                if targets:
-                    if not drone.driver:
-                        drone.login()
-                    for order in targets:
-                        # Log para ver qué estamos procesando
-                        logger.info(
-                            f"🔧 Enriqueciendo Reciente #{order.external_id}..."
-                        )
-                        data = drone.scrape_detail(order.external_id, mode="full")
-                        process_drone_data(db, data)
-                        processed += 1
-                db.commit()
+                targets = (
+                    db.query(Order)
+                    .filter(
+                        Order.created_at >= cutoff_days,
+                        Order.current_status == "delivered",
+                        Order.order_type != "Pickup",  # <--- ESTA ES LA CLAVE
+                        (Order.latitude == None)
+                        | (Order.gross_delivery_fee == 0)
+                        | (Order.product_price == 0),
+                    )
+                    .limit(limit)
+                    .all()
+                )
 
             # --- 3. ZOMBIES (Pedidos 'Pendientes' con > 6 horas) ---
             # Esto arregla el caso del pedido 106784 automáticamente
