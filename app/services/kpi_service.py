@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date, or_
 from typing import Dict, Any, Optional
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from app.db.base import Order, Store, Customer
 
 
@@ -99,9 +99,30 @@ def get_main_kpis(
             # Sumamos SOLO el costo del envío para el KPI
             total_delivery_fees_only += delivery_real
 
-            # Tiempos (Solo Delivery entregado)
-            if o.current_status == "delivered" and o.delivery_time_minutes:
-                durations_minutes.append(o.delivery_time_minutes)
+            # --- CORRECCIÓN DE TIEMPOS (TICKET #107365 y similares) ---
+            if o.current_status == "delivered":
+                # Caso A: El scraper leyó el tiempo correctamente
+                if o.delivery_time_minutes and o.delivery_time_minutes > 0:
+                    durations_minutes.append(o.delivery_time_minutes)
+
+                # Caso B: Fallback - Calculamos nosotros por logs
+                else:
+                    # Buscamos en la relación logs el que sea 'delivered'
+                    done_log = next(
+                        (l for l in o.status_logs if l.status == "delivered"), None
+                    )
+                    if done_log:
+                        # created_at es local (-4), done_log.timestamp es UTC.
+                        # Sumamos 4h a la creación para comparar peras con peras.
+                        created_utc = o.created_at + timedelta(hours=4)
+                        delta = (
+                            done_log.timestamp - created_utc
+                        ).total_seconds() / 60.0
+
+                        # Filtro de seguridad: evitar tiempos negativos o errores de más de 8 horas
+                        if 0.5 < delta < 480:
+                            durations_minutes.append(delta)
+            # ----------------------------------------------------------
 
         elif o_type_str == "Pickup":
             count_pickups += 1
