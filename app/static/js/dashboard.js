@@ -336,7 +336,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         data.forEach((o, index) => {
 
-            // --- NUEVO: LÓGICA DE AGRUPACIÓN VISUAL ---
+            // ------------------------------------------
+            // 1. LÓGICA DE AGRUPACIÓN VISUAL (MULTI-CARRITO)
+            // ------------------------------------------
             let isMultiCart = false;
             let isHead = false; // ¿Es el primero del grupo?
             let multiClass = "";
@@ -362,19 +364,25 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
             lastCustomer = o.customer_name;
+
             // ------------------------------------------
-            // =========================================================
-            // 1. DEFINICIÓN DE VARIABLES
-            // =========================================================
+            // 2. DETECCIÓN PEDIDO VIVO (LATIDO)
+            // ------------------------------------------
+            let rowClass = "";
+            // Si el pedido NO ha terminado (ni entregado ni cancelado), le ponemos el latido
+            if (o.current_status !== 'delivered' && o.current_status !== 'canceled') {
+                rowClass = "live-row";
+            }
 
             // =========================================================
-            // A. ESTADO (PALETA DE COLORES SEMÁNTICA)
+            // 3. DEFINICIÓN DE VARIABLES DE ESTADO
             // =========================================================
             let statusBadge = '';
             let isFinal = false;
 
             // Configuración Visual por Estado
             const statusConfig = {
+                'created': { color: 'dark', icon: 'fa-asterisk', label: 'Creado' },
                 'pending': { color: 'secondary', icon: 'fa-clock', label: 'Pendiente' },
                 'processing': { color: 'warning', icon: 'fa-file-invoice-dollar', label: 'Facturando' },
                 'confirmed': { color: 'primary', icon: 'fa-tower-broadcast', label: 'Solicitando' },

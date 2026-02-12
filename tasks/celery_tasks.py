@@ -383,7 +383,10 @@ def process_drone_data(db, data: dict):
             # ACTUALIZAR EXISTENTE
 
             # 1. Cambio de Estatus
-            if order.current_status != db_status:
+            if order.current_status != db_status and order.current_status not in [
+                "delivered",
+                "canceled",
+            ]:
                 logger.info(
                     f"🔄 Cambio #{external_id}: {order.current_status} -> {db_status}"
                 )
@@ -393,6 +396,14 @@ def process_drone_data(db, data: dict):
                     )
                 )
                 order.current_status = db_status
+            elif (
+                order.current_status in ["delivered", "canceled"]
+                and db_status != order.current_status
+            ):
+                # Si ya estaba finalizado, ignoramos cualquier "retroceso" a pendiente que intente el robot
+                logger.warning(
+                    f"🚫 Intento de cambio de estado inválido en #{external_id}: {order.current_status} -> {db_status} (Ignorado)"
+                )
 
             # 2. Updates Financieros
             order.total_amount = data.get("total_amount", order.total_amount)
