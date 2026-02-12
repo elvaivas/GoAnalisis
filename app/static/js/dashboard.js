@@ -2149,37 +2149,45 @@ document.addEventListener('DOMContentLoaded', function () {
         const link = document.getElementById('dynamic-favicon');
         if (!link || !faviconImg.complete) return;
 
+        // 1. Aumentamos a 64x64 para mayor nitidez
         const canvas = document.createElement('canvas');
-        canvas.width = 32;
-        canvas.height = 32;
+        canvas.width = 64;
+        canvas.height = 64;
         const ctx = canvas.getContext('2d');
 
-        // Dibujar el icono base
-        ctx.drawImage(faviconImg, 0, 0, 32, 32);
+        // 2. Dibujar el icono ocupando TODO el espacio (Zoom 100%)
+        // Si tu icono tiene bordes transparentes, esto lo estira al máximo
+        ctx.drawImage(faviconImg, 0, 0, 64, 64);
 
-        // Si hay pedidos vivos, dibujar burbuja roja
+        // 3. Si hay pedidos vivos, dibujar burbuja
         if (count > 0) {
             const text = count > 9 ? '9+' : count.toString();
 
-            // Círculo Rojo
+            // Coordenadas para la esquina inferior derecha
+            const circleX = 46;
+            const circleY = 46;
+            const radius = 16; // Tamaño proporcional
+
+            // Círculo Rojo Intenso
             ctx.beginPath();
-            ctx.arc(22, 22, 10, 0, 2 * Math.PI);
-            ctx.fillStyle = '#dc3545';
+            ctx.arc(circleX, circleY, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ff0000';
             ctx.fill();
 
-            // Borde Blanco
-            ctx.lineWidth = 1.5;
+            // Borde Blanco grueso para que resalte (Efecto WhatsApp)
+            ctx.lineWidth = 3;
             ctx.strokeStyle = '#ffffff';
             ctx.stroke();
 
-            // Número blanco
-            ctx.font = 'bold 14px Arial';
+            // Texto más grande y centrado
+            ctx.font = 'bold 22px Arial'; // Letra bien grande
             ctx.fillStyle = '#ffffff';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(text, 22, 23);
+            ctx.fillText(text, circleX, circleY + 2);
         }
 
+        // 4. Actualizar link
         link.href = canvas.toDataURL('image/png');
     }
 
