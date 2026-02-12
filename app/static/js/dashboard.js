@@ -333,6 +333,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         let html = '';
         let lastCustomer = "";
+        let activeCount = 0;
 
         data.forEach((o, index) => {
 
@@ -372,6 +373,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // Si el pedido NO ha terminado (ni entregado ni cancelado), le ponemos el latido
             if (o.current_status !== 'delivered' && o.current_status !== 'canceled') {
                 rowClass = "live-row";
+                activeCount++;
             }
 
             // =========================================================
@@ -605,6 +607,15 @@ document.addEventListener('DOMContentLoaded', function () {
         timelineCharts = {};
 
         tableBody.innerHTML = html;
+        Object.values(timelineCharts).forEach(chart => chart.destroy());
+        timelineCharts = {};
+
+        tableBody.innerHTML = html;
+
+        // --- ACTUALIZAR AVISOS EN PESTAÑA ---
+        updateDynamicFavicon(activeCount);
+        document.title = activeCount > 0 ? `(${activeCount}) GoAnalisis` : "GoAnalisis Pro";
+
         startLiveTimers();
     }
 
@@ -2126,5 +2137,50 @@ document.addEventListener('DOMContentLoaded', function () {
             alert("Error de conexión.");
         }
     };
+    const faviconImg = new Image();
+    // Agregamos ?v=1 para que el navegador ignore la caché anterior
+    faviconImg.src = '/static/img/icono.png?v=' + Date.now();
+
+    // Log de seguridad para que veas en la consola si cargó bien
+    faviconImg.onload = () => console.log("🖼️ Icono cargado para el Favicon Dinámico");
+    faviconImg.onerror = () => console.error("❌ No se pudo cargar /static/img/icono.png");
+
+    function updateDynamicFavicon(count) {
+        const link = document.getElementById('dynamic-favicon');
+        if (!link || !faviconImg.complete) return;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext('2d');
+
+        // Dibujar el icono base
+        ctx.drawImage(faviconImg, 0, 0, 32, 32);
+
+        // Si hay pedidos vivos, dibujar burbuja roja
+        if (count > 0) {
+            const text = count > 9 ? '9+' : count.toString();
+
+            // Círculo Rojo
+            ctx.beginPath();
+            ctx.arc(22, 22, 10, 0, 2 * Math.PI);
+            ctx.fillStyle = '#dc3545';
+            ctx.fill();
+
+            // Borde Blanco
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+
+            // Número blanco
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 22, 23);
+        }
+
+        link.href = canvas.toDataURL('image/png');
+    }
 
 }); // <--- FINAL DEL ARCHIVO (ASEGÚRATE DE QUE ESTÉ)
