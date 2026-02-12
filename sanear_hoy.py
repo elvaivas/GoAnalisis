@@ -1,31 +1,23 @@
 import logging
-from datetime import datetime, time
+from sqlalchemy import asc
 from app.db.session import SessionLocal
 from app.db.base import Order, OrderStatusLog
-from sqlalchemy import asc
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def cleanup_today_logs():
+def sanear_historial_completo():
     db = SessionLocal()
+    print("\n🧹 INICIANDO SANEAMIENTO INTELIGENTE DE LOGS 🧹")
+    print("====================================================")
 
-    # --- CONFIGURACIÓN DEL RANGO: HOY ---
-    # Definimos el inicio del día 12 de Febrero (Hora local servidor)
-    hoy_inicio = datetime.combine(datetime.utcnow().date(), time.min)
-
-    print(f"🛡️ INICIANDO SANEAMIENTO CONTROLADO ({hoy_inicio.date()})")
-    print("======================================================")
-
-    # 1. Buscamos solo pedidos de hoy
-    orders = db.query(Order).filter(Order.created_at >= hoy_inicio).all()
-    print(f"🔍 Analizando {len(orders)} pedidos realizados hoy...")
-
-    total_deleted = 0
+    # Traemos todos los pedidos que tienen más de 1 log
+    orders = db.query(Order).all()
+    total_borrados = 0
+    pedidos_afectados = 0
 
     for o in orders:
-        # 2. Obtenemos logs de este pedido ordenados por tiempo
         logs = (
             db.query(OrderStatusLog)
             .filter(OrderStatusLog.order_id == o.id)
@@ -36,45 +28,59 @@ def cleanup_today_logs():
         if len(logs) <= 1:
             continue
 
-        last_status = None
-        to_delete_ids = []
+        logs_a_borrar = []
+        estados_vistos = set()
+        estado_final_alcanzado = False
 
         for log in logs:
-            current_status = log.status.lower().strip()
+            estado_actual = log.status.lower().strip()
 
-            # Comparamos estatus con el anterior
-            if current_status == last_status:
-                # Es un duplicado consecutivo. Lo marcamos para borrar.
-                to_delete_ids.append(log.id)
-            else:
-                last_status = current_status
+            # REGLA 1: Si ya habíamos llegado a un estado final (entregado/cancelado)
+            # cualquier log que aparezca después (incluso otro entregado) es basura de re-escaneo.
+            if estado_final_alcanzado:
+                logs_a_borrar.append(log)
+                continue
 
-        # 3. Ejecutar borrado para este pedido
-        if to_delete_ids:
+            # REGLA 2: Si este estado ya lo habíamos pasado antes (Ej: volvemos a Pending)
+            # es un "rebote" del robot (falso positivo). Lo borramos.
+            if estado_actual in estados_vistos:
+                logs_a_borrar.append(log)
+                continue
+
+            # Si pasa las pruebas, es un log legítimo. Lo anotamos como "visto".
+            estados_vistos.add(estado_actual)
+
+            # Si este log legítimo es el final, activamos la bandera para matar todo lo que siga.
+            if estado_actual in ["delivered", "canceled"]:
+                estado_final_alcanzado = True
+
+        # Ejecutamos el borrado para este pedido
+        if logs_a_borrar:
             print(
-                f"✅ Pedido #{o.external_id}: Identificados {len(to_delete_ids)} duplicados."
+                f"📦 Pedido #{o.external_id}: Borrando {len(logs_a_borrar)} logs (Rebotes/Zombies)."
             )
-            db.query(OrderStatusLog).filter(
-                OrderStatusLog.id.in_(to_delete_ids)
-            ).delete(synchronize_session=False)
-            total_deleted += len(to_delete_ids)
+            for basura in logs_a_borrar:
+                db.delete(basura)
+            total_borrados += len(logs_a_borrar)
+            pedidos_afectados += 1
 
-    # 4. Confirmación final
-    if total_deleted > 0:
-        confirm = input(
-            f"\n⚠️ SE BORRARÁN {total_deleted} REGISTROS. ¿Proceder? (s/n): "
+    if total_borrados > 0:
+        print(
+            f"\n⚠️ RESUMEN: Se borrarán {total_borrados} logs en {pedidos_afectados} pedidos."
         )
+        confirm = input("¿Proceder con la amputación? (s/n): ")
+
         if confirm.lower() == "s":
             db.commit()
-            print("\n🚀 Cambios aplicados exitosamente.")
+            print("✅ Limpieza Quirúrgica completada.")
         else:
             db.rollback()
-            print("\n❌ Operación cancelada. No se movió nada.")
+            print("❌ Operación cancelada. No se tocó la BD.")
     else:
-        print("\n✨ No se encontraron logs duplicados para hoy.")
+        print("\n✨ La Base de Datos está inmaculada. No hay rebotes.")
 
     db.close()
 
 
 if __name__ == "__main__":
-    cleanup_today_logs()
+    sanear_historial_completo()
