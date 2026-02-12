@@ -1,8 +1,29 @@
+import re
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date, or_
 from typing import Dict, Any, Optional
 from datetime import date, datetime, timedelta
 from app.db.base import Order, Store, Customer
+
+
+def _parse_duration_to_numeric(duration_str: str) -> float:
+    """Convierte '1h 8m' o '33m' en minutos flotantes (68.0 o 33.0)"""
+    if not duration_str or duration_str == "--":
+        return 0.0
+    try:
+        minutes = 0.0
+        s = duration_str.lower()
+        # Buscar horas
+        h_match = re.search(r"(\d+)\s*(h|hr|hora)", s)
+        if h_match:
+            minutes += float(h_match.group(1)) * 60
+        # Buscar minutos
+        m_match = re.search(r"(\d+)\s*(m|min)", s)
+        if m_match:
+            minutes += float(m_match.group(1))
+        return minutes
+    except:
+        return 0.0
 
 
 def get_main_kpis(
@@ -96,32 +117,37 @@ def get_main_kpis(
         # 3. Lógica de Conteo y Acumulación por Tipo
         if o_type_str == "Delivery":
             count_deliveries += 1
-            # Sumamos SOLO el costo del envío para el KPI
             total_delivery_fees_only += delivery_real
 
-            # --- CORRECCIÓN DE TIEMPOS (TICKET #107365 y similares) ---
+            # --- CORRECCIÓN DE TIEMPO PROMEDIO ---
             if o.current_status == "delivered":
-                # Caso A: El scraper leyó el tiempo correctamente
-                if o.delivery_time_minutes and o.delivery_time_minutes > 0:
-                    durations_minutes.append(o.delivery_time_minutes)
+                duration_val = 0.0
 
-                # Caso B: Fallback - Calculamos nosotros por logs
-                else:
-                    # Buscamos en la relación logs el que sea 'delivered'
+                # Nivel 1: Valor ya calculado en DB
+                if o.delivery_time_minutes and o.delivery_time_minutes > 0:
+                    duration_val = o.delivery_time_minutes
+
+                # Nivel 2: Parsear texto 'duration' (Ej: "33m", "1h 8m")
+                if duration_val == 0 and o.duration:
+                    duration_val = _parse_duration_to_numeric(o.duration)
+
+                # Nivel 3: Cálculo matemático por logs (Fin - Inicio)
+                if duration_val == 0:
                     done_log = next(
                         (l for l in o.status_logs if l.status == "delivered"), None
                     )
                     if done_log:
-                        # created_at es local (-4), done_log.timestamp es UTC.
-                        # Sumamos 4h a la creación para comparar peras con peras.
+                        # Ajuste 4h (VET -> UTC)
                         created_utc = o.created_at + timedelta(hours=4)
                         delta = (
                             done_log.timestamp - created_utc
                         ).total_seconds() / 60.0
+                        if 0.5 < delta < 600:
+                            duration_val = delta
 
-                        # Filtro de seguridad: evitar tiempos negativos o errores de más de 8 horas
-                        if 0.5 < delta < 480:
-                            durations_minutes.append(delta)
+                # Solo si encontramos un tiempo válido lo metemos al promedio
+                if duration_val > 0:
+                    durations_minutes.append(duration_val)
             # ----------------------------------------------------------
 
         elif o_type_str == "Pickup":
