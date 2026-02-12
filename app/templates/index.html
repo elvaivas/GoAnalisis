@@ -87,6 +87,30 @@
             font-weight: 600;
             line-height: 1.2;
         }
+
+        /* Animación de Pedido Vivo (Latido Suave) */
+        @keyframes row-pulse {
+            0% {
+                background-color: rgba(255, 255, 255, 1);
+                box-shadow: inset 3px 0 0 0 transparent;
+            }
+
+            50% {
+                background-color: rgba(13, 202, 240, 0.08);
+                box-shadow: inset 3px 0 0 0 #0dcaf0;
+            }
+
+            /* Azul suave */
+            100% {
+                background-color: rgba(255, 255, 255, 1);
+                box-shadow: inset 3px 0 0 0 transparent;
+            }
+        }
+
+        .live-row {
+            animation: row-pulse 3s infinite ease-in-out;
+            transition: all 0.3s;
+        }
     </style>
 </head>
 
@@ -616,6 +640,19 @@
     </div>
     <!-- ESTILOS DE IMPRESIÓN (Para que salga limpia la hoja) -->
     <style>
+        /* Estilo para Multi-Carritos */
+        .multi-cart-row {
+            border-left: 5px solid #6610f2 !important;
+            /* Borde grueso morado */
+            background-color: rgba(102, 16, 242, 0.03) !important;
+            /* Fondo lila muy suave */
+        }
+
+        .multi-cart-connector {
+            border-top: 1px dashed rgba(102, 16, 242, 0.3) !important;
+            /* Línea punteada entre pedidos */
+        }
+
         @media print {
             body * {
                 visibility: hidden;

@@ -332,8 +332,37 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         let html = '';
+        let lastCustomer = "";
 
-        data.forEach(o => {
+        data.forEach((o, index) => {
+
+            // --- NUEVO: LÓGICA DE AGRUPACIÓN VISUAL ---
+            let isMultiCart = false;
+            let isHead = false; // ¿Es el primero del grupo?
+            let multiClass = "";
+            let multiLabel = "";
+
+            // Miramos el siguiente pedido en la lista
+            const nextOrder = data[index + 1];
+            const isNextSame = nextOrder && nextOrder.customer_name === o.customer_name && o.customer_name !== "Anónimo";
+            const isPrevSame = o.customer_name === lastCustomer && o.customer_name !== "Anónimo";
+
+            if (isNextSame || isPrevSame) {
+                isMultiCart = true;
+                multiClass = "multi-cart-row"; // Aplicamos el estilo de bloque
+
+                if (!isPrevSame) {
+                    // Es el PRIMERO del grupo (Cabeza)
+                    isHead = true;
+                    multiLabel = `<span class="badge bg-indigo text-white ms-2 shadow-sm" style="font-size:0.6rem; background-color: #6610f2;">📦 Multi-Pedido (Inicio)</span>`;
+                } else {
+                    // Es uno de los SIGUIENTES (Cola)
+                    multiClass += " multi-cart-connector"; // Línea punteada arriba
+                    multiLabel = `<span class="text-indigo ms-2 fw-bold small" style="color: #6610f2; font-size:0.7rem;">↳ Parte del pedido anterior</span>`;
+                }
+            }
+            lastCustomer = o.customer_name;
+            // ------------------------------------------
             // =========================================================
             // 1. DEFINICIÓN DE VARIABLES
             // =========================================================
@@ -361,6 +390,8 @@ document.addEventListener('DOMContentLoaded', function () {
             // Determinamos si es estado final (para el cronómetro)
             if (o.current_status === 'delivered' || o.current_status === 'canceled') {
                 isFinal = true;
+            } else {
+                rowClass = 'live-row'; // <--- ESTO ACTIVA EL LATIDO
             }
 
             // Generamos el HTML del Badge
@@ -463,35 +494,38 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // FILA PRINCIPAL
             html += `
-                <tr id="row-${o.id}" style="cursor: pointer; transition: background 0.2s;" onclick="toggleOrderDetails('${o.id}')">
+                <tr id="row-${o.id}" class="${rowClass} ${multiClass}" style="cursor: pointer; transition: background 0.2s;" onclick="toggleOrderDetails('${o.id}')">
                     <td class="ps-4">
                         <div class="d-flex align-items-center">
                             <i id="icon-${o.id}" class="fa-solid fa-chevron-right text-muted me-2 small" style="width: 15px; transition: transform 0.2s;"></i>
                             <div>
                                 <div class="d-flex align-items-center">
-                                    <div class="d-flex align-items-center">
                                     <div class="fw-bold text-dark">#${o.external_id}</div>
-                                    
-                                    <!-- INDICADOR DE GESTIÓN (PUNTICO) -->
-                                    ${o.has_audit ? `
-                                        <span class="ms-2 badge bg-indigo text-white rounded-pill border border-white shadow-sm" 
-                                              style="font-size: 0.6rem; background-color: #6610f2;" 
-                                              title="Incidencia Gestionada / Auditada">
-                                            <i class="fa-solid fa-check"></i>
-                                        </span>
-                                    ` : ''}
-                                    <!-- ------------------------------ -->
-
+                                    <!-- PUNTICO VIOLETA -->
+                                    ${o.has_audit ? `<span class="ms-2 badge bg-indigo text-white rounded-pill border border-white shadow-sm" style="font-size: 0.6rem; background-color: #6610f2;" title="Incidencia Gestionada"><i class="fa-solid fa-check"></i></span>` : ''}
                                     ${resyncButtonHtml}
                                 </div>
+                                
+                                <!-- NUEVO: RELOJ -->
+                                <div class="d-flex align-items-center text-muted small mt-1" title="Hora de Creación">
+                                    <i class="fa-regular fa-clock me-1 text-primary" style="font-size: 0.7rem;"></i>
+                                    <span class="font-monospace" style="font-size: 0.75rem;">
+                                        ${new Date(o.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                    </span>
                                 </div>
-                                <span class="badge bg-light text-secondary border fw-normal" style="font-size:0.7rem">${o.store_name}</span>
+
+                                <span class="badge bg-light text-secondary border fw-normal mt-1" style="font-size:0.7rem">${o.store_name}</span>
                             </div>
                         </div>
-                    </td>
+                
                     <td>
-                        <div class="fw-bold text-dark" style="font-size: 0.95rem;">${o.customer_name}</div>
+                        <div class="fw-bold text-dark" style="font-size: 0.95rem;">
+                            ${o.customer_name}
+                            <!-- Etiqueta Visual de Multi-Pedido -->
+                            ${multiLabel} 
+                        </div>
                         <div class="d-flex align-items-center mt-1 gap-2">
+                             <!-- (El resto sigue igual: Tier badge, Teléfono...) -->
                             ${tierBadge}
                             ${o.customer_phone ? `<a href="https://wa.me/${o.customer_phone.replace(/\D/g, '')}" target="_blank" onclick="event.stopPropagation()" class="text-success small text-decoration-none"><i class="fa-brands fa-whatsapp"></i></a>` : ''}
                         </div>
