@@ -670,7 +670,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const realAvg = (calcTotalMins / calcTotalCount).toFixed(1);
             const kpiElement = document.getElementById('kpi-avg-time');
             if (kpiElement) {
-                kpiElement.innerHTML = `${realAvg} min <small class="text-success" style="font-size:0.5em">✔ Real</small>`;
+                kpiElement.innerHTML = `${realAvg} min <small class="text-success" style="font-size:0.5em"></small>`;
             }
         } else {
             // Si no hay pedidos entregados aún
