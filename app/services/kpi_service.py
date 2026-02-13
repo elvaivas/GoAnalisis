@@ -6,22 +6,20 @@ from datetime import date, datetime, timedelta
 from app.db.base import Order, Store, Customer
 
 
-def _parse_duration_to_minutes(duration_str: str) -> float:
-    if not duration_str or duration_str == "--":
+def _parse_duration_to_minutes(s: str) -> float:
+    if not s or s == "--":
         return 0.0
     try:
         minutes = 0.0
-        s = duration_str.lower()
-        # 1. Buscar Horas (soporta 'h', 'hr', 'hora', 'horas')
-        h_match = re.search(r"(\d+)\s*(h|hr|hora)", s)
+        s = s.lower()
+        # Busca cualquier número seguido de 'h' (horas, hrs, h)
+        h_match = re.search(r"(\d+)\s*h", s)
         if h_match:
             minutes += float(h_match.group(1)) * 60
-
-        # 2. Buscar Minutos (soporta 'm', 'min', 'minuto', 'minutos')
-        m_match = re.search(r"(\d+)\s*(m|min)", s)
+        # Busca cualquier número seguido de 'm' (minutos, mins, m)
+        m_match = re.search(r"(\d+)\s*m", s)
         if m_match:
             minutes += float(m_match.group(1))
-
         return minutes
     except:
         return 0.0
@@ -131,25 +129,33 @@ def get_main_kpis(
                 if duration_val == 0 and o.duration:
                     duration_val = _parse_duration_to_minutes(o.duration)
 
-                # Nivel 3: Cálculo matemático por logs (Fin - Inicio)
-                if duration_val == 0:
-                    done_log = next(
-                        (l for l in o.status_logs if l.status == "delivered"), None
-                    )
-                    if done_log:
-                        created_utc = o.created_at + timedelta(hours=4)
-                        delta = (
-                            done_log.timestamp - created_utc
-                        ).total_seconds() / 60.0
+                # 3. Lógica de Conteo y Acumulación por Tipo
+        if o_type_str == "Delivery":
+            count_deliveries += 1
+            total_delivery_fees_only += delivery_real
 
-                        # FILTRO DE SEGURIDAD:
-                        # Si el sistema estuvo "ciego", el delta será gigante (ej. 5 horas).
-                        # Solo confiamos en el log si es menor a 180 min (3 horas).
-                        # Si es mayor, preferimos no promediarlo hasta que el Dron traiga el texto real.
-                        if 0.5 < delta < 180:
-                            duration_val = delta
+            if o.current_status == "delivered":
+                duration_val = 0.0
 
-                # Solo si rescatamos un tiempo mayor a 0, lo metemos al promedio
+                # NIVEL 1: Valor numérico (Prioridad)
+                if o.delivery_time_minutes and o.delivery_time_minutes > 0:
+                    duration_val = float(o.delivery_time_minutes)
+
+                # NIVEL 2: Texto de la DB (Ej: "33m", "1 Horas 5 Minutos")
+                if duration_val == 0 and o.duration:
+                    duration_val = _parse_duration_to_minutes(o.duration)
+
+                # NIVEL 3: Cálculo Directo (state_start_at - created_at)
+                # Como el pedido está DELIVERED, state_start_at es la fecha de entrega
+                if duration_val == 0 and o.state_start_at:
+                    # Ajuste de 4 horas (VET -> UTC)
+                    c_utc = o.created_at + timedelta(hours=4)
+                    delta = (o.state_start_at - c_utc).total_seconds() / 60.0
+
+                    # Filtro de seguridad (entre 1 min y 12 horas)
+                    if 1.0 < delta < 720:
+                        duration_val = delta
+
                 if duration_val > 0:
                     durations_minutes.append(duration_val)
             # ----------------------------------------------------------

@@ -294,48 +294,106 @@ document.addEventListener('DOMContentLoaded', function () {
         const tableBody = document.getElementById('recent-orders-table-body');
         if (!tableBody) return;
 
+        let calcTotalMins = 0;
+        let calcTotalCount = 0;
+
         const cleanFinalTime = (text) => {
             if (!text) return "--";
             try {
-                const h = text.match(/(\d+)\s*Horas?/i)?.[1] || 0;
-                const m = text.match(/(\d+)\s*Minutos?/i)?.[1] || 0;
+                // Regex blindado para singular/plural y mayúsculas
+                const hMatch = text.match(/(\d+)\s*(?:Horas?|Hours?|Hrs?|h)/i);
+                const mMatch = text.match(/(\d+)\s*(?:Minutos?|Minutes?|Mins?|m)/i);
+
+                const h = hMatch ? parseInt(hMatch[1], 10) : 0;
+                const m = mMatch ? parseInt(mMatch[1], 10) : 0;
+
                 if (h > 0) return `${h}h ${m}m`;
                 return `${m}m`;
             } catch (e) { return text; }
         };
 
         const calcDiff = (start, end) => {
-            if (!start || !end) return "--";
+            if (!start || !end) return "0m";
 
-            // FECHA 1 (Inicio/Creación): Viene del Scraper en Hora Local Venezuela.
-            // NO le ponemos 'Z' para que el navegador sepa que es hora local.
             const d1 = new Date(start);
-
-            // FECHA 2 (Fin/Log): Viene del Servidor en UTC.
-            // SÍ le ponemos 'Z' (si falta) para que el navegador sepa que es UTC
-            // y la convierta automáticamente a hora Venezuela al restar.
+            // Aseguramos UTC en el fin
             const endString = end.endsWith('Z') ? end : end + 'Z';
             const d2 = new Date(endString);
 
-            const diffMs = d2 - d1;
+            let diffMs = d2 - d1;
 
-            // Validación: Si da negativo o muy pequeño, algo anda mal con la data
-            if (isNaN(diffMs) || diffMs < 0) return "0m";
+            // FIX CRÍTICO: Si da negativo, asumimos que ambos eran locales y recalculamos
+            if (diffMs < 0) {
+                const d2_local = new Date(end.replace('Z', ''));
+                diffMs = d2_local - d1;
+            }
 
-            const totalSecs = Math.floor(Math.abs(diffMs) / 1000);
+            if (isNaN(diffMs) || diffMs <= 0) return "0m";
+
+            const totalSecs = Math.floor(diffMs / 1000);
             const h = Math.floor(totalSecs / 3600);
             const m = Math.floor((totalSecs % 3600) / 60);
-            const s = Math.floor(totalSecs % 60); // Opcional si quieres segundos
 
             if (h > 0) return `${h}h ${m}m`;
             return `${m}m`;
         };
+
+        const getMinutesFromOrder = (o) => {
+            // 1. Prioridad: Texto del Legacy (La verdad absoluta)
+            if (o.duration_text) {
+                const hMatch = o.duration_text.match(/(\d+)\s*(?:Horas?|Hours?|Hrs?|h)/i);
+                const mMatch = o.duration_text.match(/(\d+)\s*(?:Minutos?|Minutes?|Mins?|m)/i);
+                const h = hMatch ? parseInt(hMatch[1], 10) : 0;
+                const m = mMatch ? parseInt(mMatch[1], 10) : 0;
+                if (h > 0 || m > 0) return (h * 60) + m;
+            }
+            // 2. Fallback: Cálculo de fechas
+            if (o.created_at && o.state_start_at) {
+                const d1 = new Date(o.created_at);
+                const endString = o.state_start_at.endsWith('Z') ? o.state_start_at : o.state_start_at + 'Z';
+                const d2 = new Date(endString);
+                let diffMs = d2 - d1;
+                if (diffMs < 0) diffMs = new Date(o.state_start_at.replace('Z', '')) - d1;
+
+                if (diffMs > 0) return Math.floor(diffMs / 60000);
+            }
+            return 0;
+        };
+
 
         let html = '';
         let lastCustomer = "";
         let activeCount = 0;
 
         data.forEach((o, index) => {
+
+            if (o.current_status === 'delivered' && o.order_type === 'Delivery') {
+                let minutes = 0;
+
+                // 1. Intentamos sacar los minutos del texto oficial del Legacy
+                if (o.duration_text) {
+                    const h = o.duration_text.match(/(\d+)\s*(?:Horas?|Hours?|Hrs?|h)/i)?.[1] || 0;
+                    const m = o.duration_text.match(/(\d+)\s*(?:Minutos?|Minutes?|Mins?|m)/i)?.[1] || 0;
+                    minutes = (parseInt(h) * 60) + parseInt(m);
+                }
+
+                // 2. Si no hay texto, calculamos por fechas (Fallback)
+                if (minutes === 0 && o.created_at && o.state_start_at) {
+                    const d1 = new Date(o.created_at);
+                    const endStr = o.state_start_at.endsWith('Z') ? o.state_start_at : o.state_start_at + 'Z';
+                    const d2 = new Date(endStr);
+                    let diff = d2 - d1;
+                    if (diff < 0) diff = new Date(o.state_start_at.replace('Z', '')) - d1; // Fix negativo
+                    minutes = Math.floor(diff / 60000);
+                }
+
+                // Sumamos si el tiempo es válido (mayor a 0 y menor a 1000 min para evitar errores locos)
+                if (minutes > 0 && minutes < 1000) {
+                    calcTotalMins += minutes;
+                    calcTotalCount++;
+                }
+            }
+            // -----------------------------------------------------
 
             // ------------------------------------------
             // 1. LÓGICA DE AGRUPACIÓN VISUAL (MULTI-CARRITO)
@@ -607,11 +665,19 @@ document.addEventListener('DOMContentLoaded', function () {
         timelineCharts = {};
 
         tableBody.innerHTML = html;
-        Object.values(timelineCharts).forEach(chart => chart.destroy());
-        timelineCharts = {};
-
-        tableBody.innerHTML = html;
-
+        // Sobrescribimos el KPI falso del backend con nuestro cálculo real
+        if (calcTotalCount > 0) {
+            const realAvg = (calcTotalMins / calcTotalCount).toFixed(1);
+            const kpiElement = document.getElementById('kpi-avg-time');
+            if (kpiElement) {
+                kpiElement.innerHTML = `${realAvg} min <small class="text-success" style="font-size:0.5em">✔ Real</small>`;
+            }
+        } else {
+            // Si no hay pedidos entregados aún
+            const kpiElement = document.getElementById('kpi-avg-time');
+            if (kpiElement) kpiElement.innerText = "-- min";
+        }
+        // -----------------------------------------------------
         // --- ACTUALIZAR AVISOS EN PESTAÑA ---
         updateDynamicFavicon(activeCount);
         document.title = activeCount > 0 ? `(${activeCount}) GoAnalisis` : "GoAnalisis Pro";
