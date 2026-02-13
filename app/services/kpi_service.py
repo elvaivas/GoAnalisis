@@ -96,19 +96,22 @@ def get_main_kpis(
     durations_minutes = []
 
     for o in orders:
-        # 1. Cancelados
+        # 1. Filtro inicial: Cancelados (Se cuentan aparte)
         if o.current_status == "canceled":
             count_canceled += 1
-            lost_revenue += o.total_amount or 0.0
+            lost_revenue += float(o.total_amount or 0.0)
             continue
 
-        # Casting seguro de tipo
+        # --- CORRECCIÓN DE TIPO BLINDADA (Case-Insensitive) ---
         raw = o.order_type
-        o_type_str = raw.value if hasattr(raw, "value") else str(raw)
-        if not o_type_str or o_type_str == "None":
-            o_type_str = "Delivery"
+        # Sacamos el valor del Enum o el String, lo pasamos a minúsculas y limpiamos
+        o_type_clean = str(raw.value if hasattr(raw, "value") else raw).lower().strip()
 
-        # 2. Valores Base (Sanitizados)
+        # Fallback: Si es nulo o no se reconoce, lo tratamos como Delivery (90% de la operación)
+        if not o_type_clean or o_type_clean == "none":
+            o_type_clean = "delivery"
+
+        # 2. Valores Financieros Base (Sanitizados)
         total_amt = float(o.total_amount or 0.0)
         delivery_real = float(
             o.gross_delivery_fee
@@ -119,55 +122,47 @@ def get_main_kpis(
         prod_price = float(o.product_price or 0.0)
         svc_fee = float(o.service_fee or 0.0)
 
-        # 3. Lógica de Conteo y Tiempos
-        if o.current_status == "delivered":
-            duration_val = 0.0
-
-            # PRIORIDAD 1: Texto del Legacy (Lo que ve el usuario)
-            # Ej: "1h 4m" -> 64.0
-            duration_val = _parse_duration_to_minutes(o.duration)
-            # --- DEBUG TEMPORAL ---
-            print(
-                f"DEBUG: ID {o.external_id} | Txt: '{o.duration}' -> Mins: {duration_val}"
-            )
-
-            # PRIORIDAD 2: Valor numérico guardado (Si no hay texto)
-            # Ej: 60.9
-            if (
-                duration_val == 0
-                and o.delivery_time_minutes
-                and o.delivery_time_minutes > 0
-            ):
-                duration_val = float(o.delivery_time_minutes)
-
-            if duration_val == 0:
-                done_log = next(
-                    (l for l in o.status_logs if l.status == "delivered"), None
-                )
-                if done_log and o.created_at:
-                    created_utc = o.created_at + timedelta(hours=4)
-
-                    # Diferencia total en segundos
-                    total_seconds = (done_log.timestamp - created_utc).total_seconds()
-
-                    # Simular lógica JS: Math.floor(secs / 60)
-                    # Esto trunca los segundos y decimales
-                    if total_seconds > 0:
-                        duration_val = int(total_seconds / 60)  # Entero, sin decimales
-
-                    # Filtro de seguridad
-                    if not (0 < duration_val < 1000):
-                        duration_val = 0
-
-            # Sumar al promedio
-            if duration_val > 0:
-                durations_minutes.append(duration_val)
-        # -------------------------------------------
-
-        elif o_type_str == "Pickup":
+        # 3. Lógica de Conteo por Tipo (FUERA de la validación de 'delivered')
+        if "pickup" in o_type_clean:
             count_pickups += 1
+        else:
+            # Es Delivery
+            count_deliveries += 1
+            total_delivery_fees_only += delivery_real
 
-        # 4. Acumuladores Globales
+            # --- CÁLCULO DE TIEMPOS (SOLO PARA ENTREGADOS) ---
+            if o.current_status == "delivered":
+                duration_val = 0.0
+                # PRIORIDAD 1: Texto del Legacy (Ej: "1h 4m")
+                if o.duration:
+                    duration_val = _parse_duration_to_minutes(o.duration)
+
+                # PRIORIDAD 2: Valor numérico guardado
+                if (
+                    duration_val == 0
+                    and o.delivery_time_minutes
+                    and o.delivery_time_minutes > 0
+                ):
+                    duration_val = float(o.delivery_time_minutes)
+
+                # PRIORIDAD 3: Cálculo matemático por logs
+                if duration_val == 0:
+                    done_log = next(
+                        (l for l in o.status_logs if l.status == "delivered"), None
+                    )
+                    if done_log and o.created_at:
+                        created_utc = o.created_at + timedelta(hours=4)
+                        total_seconds = (
+                            done_log.timestamp - created_utc
+                        ).total_seconds()
+                        if total_seconds > 0:
+                            duration_val = int(total_seconds / 60)  # Minutos enteros
+
+                # Filtro de seguridad (entre 1 min y 10 horas)
+                if 0 < duration_val < 600:
+                    durations_minutes.append(duration_val)
+
+        # 4. Acumuladores Globales (Para pedidos no cancelados)
         total_revenue += total_amt
         total_fees_gross += delivery_real
         total_coupons += coupon
