@@ -11,15 +11,22 @@ def _parse_duration_to_minutes(s: str) -> float:
         return 0.0
     try:
         minutes = 0.0
-        s = s.lower()
-        # Busca horas (h, hr, hora)
-        h_match = re.search(r"(\d+)\s*(?:h|hr|hora)", s)
+        # Normalizamos a minúsculas y quitamos acentos básicos por si acaso
+        text = s.lower().replace("á", "a").strip()
+
+        # PATRONES ROBUSTOS (Iguales al Frontend)
+        # Busca: Numero + espacios + (horas, hora, hrs, hr, h)
+        h_match = re.search(r"(\d+)\s*(?:horas?|hours?|hrs?|h)", text)
+
+        # Busca: Numero + espacios + (minutos, minuto, mins, min, m)
+        m_match = re.search(r"(\d+)\s*(?:minutos?|minutes?|mins?|min|m)", text)
+
         if h_match:
             minutes += float(h_match.group(1)) * 60
-        # Busca minutos (m, min, minuto)
-        m_match = re.search(r"(\d+)\s*(?:m|min)", s)
+
         if m_match:
             minutes += float(m_match.group(1))
+
         return minutes
     except:
         return 0.0
@@ -118,8 +125,11 @@ def get_main_kpis(
 
             # PRIORIDAD 1: Texto del Legacy (Lo que ve el usuario)
             # Ej: "1h 4m" -> 64.0
-            if o.duration:
-                duration_val = _parse_duration_to_minutes(o.duration)
+            duration_val = _parse_duration_to_minutes(o.duration)
+            # --- DEBUG TEMPORAL ---
+            print(
+                f"DEBUG: ID {o.external_id} | Txt: '{o.duration}' -> Mins: {duration_val}"
+            )
 
             # PRIORIDAD 2: Valor numérico guardado (Si no hay texto)
             # Ej: 60.9
@@ -130,16 +140,24 @@ def get_main_kpis(
             ):
                 duration_val = float(o.delivery_time_minutes)
 
-            # PRIORIDAD 3: Cálculo matemático por Logs (Último recurso)
             if duration_val == 0:
                 done_log = next(
                     (l for l in o.status_logs if l.status == "delivered"), None
                 )
                 if done_log and o.created_at:
                     created_utc = o.created_at + timedelta(hours=4)
-                    delta = (done_log.timestamp - created_utc).total_seconds() / 60.0
-                    if 0.5 < delta < 1440:
-                        duration_val = delta
+
+                    # Diferencia total en segundos
+                    total_seconds = (done_log.timestamp - created_utc).total_seconds()
+
+                    # Simular lógica JS: Math.floor(secs / 60)
+                    # Esto trunca los segundos y decimales
+                    if total_seconds > 0:
+                        duration_val = int(total_seconds / 60)  # Entero, sin decimales
+
+                    # Filtro de seguridad
+                    if not (0 < duration_val < 1000):
+                        duration_val = 0
 
             # Sumar al promedio
             if duration_val > 0:
