@@ -1,5 +1,5 @@
 import re
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, cast, Date, or_
 from typing import Dict, Any, Optional
 from datetime import date, datetime, timedelta
@@ -12,12 +12,12 @@ def _parse_duration_to_minutes(s: str) -> float:
     try:
         minutes = 0.0
         s = s.lower()
-        # Busca cualquier número seguido de 'h' (horas, hrs, h)
-        h_match = re.search(r"(\d+)\s*h", s)
+        # Busca horas (h, hr, hora)
+        h_match = re.search(r"(\d+)\s*(?:h|hr|hora)", s)
         if h_match:
             minutes += float(h_match.group(1)) * 60
-        # Busca cualquier número seguido de 'm' (minutos, mins, m)
-        m_match = re.search(r"(\d+)\s*m", s)
+        # Busca minutos (m, min, minuto)
+        m_match = re.search(r"(\d+)\s*(?:m|min)", s)
         if m_match:
             minutes += float(m_match.group(1))
         return minutes
@@ -33,8 +33,10 @@ def get_main_kpis(
     search_query: Optional[str] = None,
 ) -> Dict[str, Any]:
 
-    base_query = db.query(Order)
-
+    # OPTIMIZACIÓN: Cargar logs y tienda en la misma consulta para evitar el problema N+1
+    base_query = db.query(Order).options(
+        joinedload(Order.status_logs), joinedload(Order.store)
+    )
     # --- CORRECCIÓN DE ZONA HORARIA (VENEZUELA) ---
     local_created_at = func.timezone(
         "America/Caracas", func.timezone("UTC", Order.created_at)
@@ -71,8 +73,7 @@ def get_main_kpis(
     total_coupons = 0.0
     total_service_fee_accum = 0.0
 
-    # Acumulador específico para KPI de Costo de Envío
-    total_delivery_fees_only = 0.0
+    total_delivery_fees_only = 0.0  # KPI Costo Envío
 
     driver_payout = 0.0
     profit_delivery = 0.0
@@ -97,13 +98,11 @@ def get_main_kpis(
         # Casting seguro de tipo
         raw = o.order_type
         o_type_str = raw.value if hasattr(raw, "value") else str(raw)
-        if o_type_str == "None":
+        if not o_type_str or o_type_str == "None":
             o_type_str = "Delivery"
 
         # 2. Valores Base (Sanitizados)
         total_amt = float(o.total_amount or 0.0)
-
-        # OJO: Obtenemos el Fee real del envío (Gross o normal)
         delivery_real = float(
             o.gross_delivery_fee
             if o.gross_delivery_fee and o.gross_delivery_fee > 0
@@ -113,52 +112,43 @@ def get_main_kpis(
         prod_price = float(o.product_price or 0.0)
         svc_fee = float(o.service_fee or 0.0)
 
-        # 3. Lógica de Conteo y Acumulación por Tipo
+        # 3. Lógica de Conteo y Tiempos
         if o_type_str == "Delivery":
             count_deliveries += 1
             total_delivery_fees_only += delivery_real
 
+            # --- CÁLCULO DE TIEMPO BLINDADO (V2 - FORZAR RECÁLCULO) ---
             if o.current_status == "delivered":
                 duration_val = 0.0
 
-                # NIVEL 1: Valor numérico ya calculado (Prioridad)
-                if o.delivery_time_minutes and o.delivery_time_minutes > 0:
-                    duration_val = float(o.delivery_time_minutes)
+                # ESTRATEGIA: No confiamos en el dato numérico viejo de la DB (o.delivery_time_minutes).
+                # Recalculamos siempre para garantizar que coincida con el Dashboard.
 
-                # NIVEL 2: Parsear el texto "duration" (Ej: "33m", "1h 8m")
-                if duration_val == 0 and o.duration:
+                # PRIORIDAD 1: Texto del Legacy (La verdad absoluta)
+                # Ej: "1h 33m", "45 Minutos"
+                if o.duration:
                     duration_val = _parse_duration_to_minutes(o.duration)
 
-                # 3. Lógica de Conteo y Acumulación por Tipo
-        if o_type_str == "Delivery":
-            count_deliveries += 1
-            total_delivery_fees_only += delivery_real
+                # PRIORIDAD 2: Cálculo matemático por Logs (Si no hay texto)
+                if duration_val == 0:
+                    done_log = next(
+                        (l for l in o.status_logs if l.status == "delivered"), None
+                    )
+                    if done_log:
+                        # Ajuste VET -> UTC
+                        created_utc = o.created_at + timedelta(hours=4)
+                        delta = (
+                            done_log.timestamp - created_utc
+                        ).total_seconds() / 60.0
 
-            if o.current_status == "delivered":
-                duration_val = 0.0
+                        # Filtro de seguridad (entre 1 min y 12 horas)
+                        if 1.0 < delta < 720:
+                            duration_val = delta
 
-                # NIVEL 1: Valor numérico (Prioridad)
-                if o.delivery_time_minutes and o.delivery_time_minutes > 0:
-                    duration_val = float(o.delivery_time_minutes)
-
-                # NIVEL 2: Texto de la DB (Ej: "33m", "1 Horas 5 Minutos")
-                if duration_val == 0 and o.duration:
-                    duration_val = _parse_duration_to_minutes(o.duration)
-
-                # NIVEL 3: Cálculo Directo (state_start_at - created_at)
-                # Como el pedido está DELIVERED, state_start_at es la fecha de entrega
-                if duration_val == 0 and o.state_start_at:
-                    # Ajuste de 4 horas (VET -> UTC)
-                    c_utc = o.created_at + timedelta(hours=4)
-                    delta = (o.state_start_at - c_utc).total_seconds() / 60.0
-
-                    # Filtro de seguridad (entre 1 min y 12 horas)
-                    if 1.0 < delta < 720:
-                        duration_val = delta
-
+                # Solo si calculamos algo válido lo sumamos
                 if duration_val > 0:
                     durations_minutes.append(duration_val)
-            # ----------------------------------------------------------
+            # ---------------------------------------------------------
 
         elif o_type_str == "Pickup":
             count_pickups += 1
@@ -170,56 +160,42 @@ def get_main_kpis(
         total_service_fee_accum += svc_fee
 
         # --- FÓRMULAS FINANCIERAS ---
-        # A. GANANCIA DELIVERY
         driver_payout += delivery_real * 0.80
         profit_delivery += (delivery_real * 0.20) / 1.16
 
-        # B. GANANCIA SERVICIO
         iva_prod = prod_price * 0.16
         base_service = prod_price + iva_prod + delivery_real + svc_fee
         profit_service += (base_service * 0.05) / 1.16
 
-        # C. GANANCIA COMISIÓN
         rate = 0.0
         if o.store and o.store.commission_rate:
             rate = float(o.store.commission_rate)
         profit_commission += prod_price * (rate / 100.0)
 
     # --- RESULTADOS FINALES ---
-
-    # Ganancia Neta
     real_net_profit = (
         profit_delivery + profit_service + profit_commission
     ) - total_coupons
 
-    # Promedios de Tiempo
     avg_time = (
         sum(durations_minutes) / len(durations_minutes) if durations_minutes else 0.0
     )
 
-    # --- CÁLCULO DE PROMEDIOS ---
     valid_orders_count = count_deliveries + count_pickups
 
-    # Ticket Promedio Global (Venta Total / Pedidos)
     avg_ticket = (total_revenue / valid_orders_count) if valid_orders_count > 0 else 0.0
-
-    # Valor Promedio de Envío (Total Fees Delivery / Cantidad Deliveries)
     avg_delivery_fee_value = (
         (total_delivery_fees_only / count_deliveries) if count_deliveries > 0 else 0.0
     )
-
-    # Tarifa Servicio Promedio
     avg_service_fee = (
         (total_service_fee_accum / valid_orders_count)
         if valid_orders_count > 0
         else 0.0
     )
 
-    # Métricas de Usuarios
     total_users_historic = db.query(Customer).count()
     unique_customers = {o.customer_id for o in orders if o.customer_id}
 
-    # FIX: Las fechas de registro vienen planas, no aplicar timezone
     local_joined_at = func.date(Customer.joined_at)
     new_users_q = db.query(Customer)
     if start_date:
@@ -240,7 +216,6 @@ def get_main_kpis(
         "lost_revenue": round(lost_revenue, 2),
         "avg_delivery_minutes": round(avg_time, 1),
         "avg_ticket": round(avg_ticket, 2),
-        # AQUI ESTÁ EL CAMBIO IMPORTANTE:
         "avg_delivery_ticket": round(avg_delivery_fee_value, 2),
         "avg_service_fee": round(avg_service_fee, 2),
         "total_users_historic": total_users_historic,
