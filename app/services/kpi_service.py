@@ -113,22 +113,38 @@ def get_main_kpis(
         svc_fee = float(o.service_fee or 0.0)
 
         # 3. Lógica de Conteo y Tiempos
-        if o_type_str == "Delivery":
-            count_deliveries += 1
-            total_delivery_fees_only += delivery_real
+        if o.current_status == "delivered":
+            duration_val = 0.0
 
-            # --- CÁLCULO OPTIMIZADO (POST-MIGRACIÓN) ---
-            # Como ya corrimos el script 'migrate_times.py', confiamos en la DB.
-            # Solo si la DB falla (es 0), intentamos calcular al vuelo.
+            # PRIORIDAD 1: Texto del Legacy (Lo que ve el usuario)
+            # Ej: "1h 4m" -> 64.0
+            if o.duration:
+                duration_val = _parse_duration_to_minutes(o.duration)
 
-            val = o.delivery_time_minutes or 0.0
+            # PRIORIDAD 2: Valor numérico guardado (Si no hay texto)
+            # Ej: 60.9
+            if (
+                duration_val == 0
+                and o.delivery_time_minutes
+                and o.delivery_time_minutes > 0
+            ):
+                duration_val = float(o.delivery_time_minutes)
 
-            if val == 0 and o.duration:
-                val = _parse_duration_to_minutes(o.duration)
+            # PRIORIDAD 3: Cálculo matemático por Logs (Último recurso)
+            if duration_val == 0:
+                done_log = next(
+                    (l for l in o.status_logs if l.status == "delivered"), None
+                )
+                if done_log and o.created_at:
+                    created_utc = o.created_at + timedelta(hours=4)
+                    delta = (done_log.timestamp - created_utc).total_seconds() / 60.0
+                    if 0.5 < delta < 1440:
+                        duration_val = delta
 
-            if val > 0:
-                durations_minutes.append(val)
-            # -------------------------------------------
+            # Sumar al promedio
+            if duration_val > 0:
+                durations_minutes.append(duration_val)
+        # -------------------------------------------
 
         elif o_type_str == "Pickup":
             count_pickups += 1
