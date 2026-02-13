@@ -117,38 +117,18 @@ def get_main_kpis(
             count_deliveries += 1
             total_delivery_fees_only += delivery_real
 
-            # --- CÁLCULO DE TIEMPO BLINDADO (V2 - FORZAR RECÁLCULO) ---
-            if o.current_status == "delivered":
-                duration_val = 0.0
+            # --- CÁLCULO OPTIMIZADO (POST-MIGRACIÓN) ---
+            # Como ya corrimos el script 'migrate_times.py', confiamos en la DB.
+            # Solo si la DB falla (es 0), intentamos calcular al vuelo.
 
-                # ESTRATEGIA: No confiamos en el dato numérico viejo de la DB (o.delivery_time_minutes).
-                # Recalculamos siempre para garantizar que coincida con el Dashboard.
+            val = o.delivery_time_minutes or 0.0
 
-                # PRIORIDAD 1: Texto del Legacy (La verdad absoluta)
-                # Ej: "1h 33m", "45 Minutos"
-                if o.duration:
-                    duration_val = _parse_duration_to_minutes(o.duration)
+            if val == 0 and o.duration:
+                val = _parse_duration_to_minutes(o.duration)
 
-                # PRIORIDAD 2: Cálculo matemático por Logs (Si no hay texto)
-                if duration_val == 0:
-                    done_log = next(
-                        (l for l in o.status_logs if l.status == "delivered"), None
-                    )
-                    if done_log:
-                        # Ajuste VET -> UTC
-                        created_utc = o.created_at + timedelta(hours=4)
-                        delta = (
-                            done_log.timestamp - created_utc
-                        ).total_seconds() / 60.0
-
-                        # Filtro de seguridad (entre 1 min y 12 horas)
-                        if 1.0 < delta < 720:
-                            duration_val = delta
-
-                # Solo si calculamos algo válido lo sumamos
-                if duration_val > 0:
-                    durations_minutes.append(duration_val)
-            # ---------------------------------------------------------
+            if val > 0:
+                durations_minutes.append(val)
+            # -------------------------------------------
 
         elif o_type_str == "Pickup":
             count_pickups += 1

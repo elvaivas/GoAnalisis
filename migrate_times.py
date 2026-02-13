@@ -1,60 +1,94 @@
-# migrate_times.py
+import logging
 import re
+from datetime import datetime, timedelta
+from sqlalchemy import func
 from app.db.session import SessionLocal
-from app.db.base import Order
+from app.db.base import Order, OrderStatusLog
 
-def parse_duration_to_minutes(duration_str: str):
-    if not duration_str: return None
+# Configuración
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+
+def _parse_duration_to_minutes(duration_str: str) -> float:
+    if not duration_str or duration_str == "--":
+        return 0.0
     try:
-        # Formatos esperados en tu DB:
-        # "Entregado: ... 55 Minutos 39 segundos"
-        # "Entregado: ... 1 Horas 1 Minutos ..."
-        
-        # 1. Buscar Horas
-        hours = 0
-        h_match = re.search(r'(\d+)\s*Horas', duration_str, re.IGNORECASE)
+        minutes = 0.0
+        s = duration_str.lower()
+        h_match = re.search(r"(\d+)\s*(?:h|hr|hora)", s)
         if h_match:
-            hours = int(h_match.group(1))
-            
-        # 2. Buscar Minutos
-        minutes = 0
-        m_match = re.search(r'(\d+)\s*Minutos', duration_str, re.IGNORECASE)
+            minutes += float(h_match.group(1)) * 60
+        m_match = re.search(r"(\d+)\s*(?:m|min)", s)
         if m_match:
-            minutes = int(m_match.group(1))
-            
-        # 3. Buscar Segundos (Opcional, sumamos como decimal)
-        seconds = 0
-        s_match = re.search(r'(\d+)\s*segundos', duration_str, re.IGNORECASE)
-        if s_match:
-            seconds = int(s_match.group(1))
-
-        total_minutes = (hours * 60) + minutes + (seconds / 60)
-        return round(total_minutes, 2)
+            minutes += float(m_match.group(1))
+        return minutes
     except:
-        return None
+        return 0.0
 
-def run():
+
+def run_migration():
     db = SessionLocal()
-    # Solo procesamos Deliverys Entregados que tengan texto de duración pero no cálculo numérico
-    orders = db.query(Order).filter(
-        Order.current_status == 'delivered',
-        Order.order_type == 'Delivery',
-        Order.duration != None,
-        Order.delivery_time_minutes == None
-    ).all()
-    
-    print(f"🔄 Procesando {len(orders)} pedidos para conversión de tiempo...")
-    
-    count = 0
-    for order in orders:
-        minutes = parse_duration_to_minutes(order.duration)
-        if minutes:
-            order.delivery_time_minutes = minutes
-            count += 1
-            
-    db.commit()
+    logger.info("🚀 INICIANDO MIGRACIÓN MASIVA DE TIEMPOS DE ENTREGA")
+    logger.info("===================================================")
+
+    # 1. Obtener todos los pedidos entregados
+    orders = db.query(Order).filter(Order.current_status == "delivered").all()
+    logger.info(f"📦 Analizando {len(orders)} pedidos entregados...")
+
+    updated_count = 0
+
+    for o in orders:
+        original_val = o.delivery_time_minutes or 0.0
+        new_val = 0.0
+
+        # --- LÓGICA DE CÁLCULO BLINDADA (La misma del KPI) ---
+
+        # A. Intentar Texto del Legacy (Prioridad 1)
+        if o.duration:
+            new_val = _parse_duration_to_minutes(o.duration)
+
+        # B. Intentar Logs (Prioridad 2)
+        if new_val == 0:
+            # Buscar log de entrega (usando query directa para precisión)
+            done_log = (
+                db.query(OrderStatusLog)
+                .filter(
+                    OrderStatusLog.order_id == o.id,
+                    OrderStatusLog.status == "delivered",
+                )
+                .order_by(OrderStatusLog.timestamp.desc())
+                .first()
+            )  # El último delivered válido
+
+            if done_log and o.created_at:
+                # Ajuste VET -> UTC
+                created_utc = o.created_at + timedelta(hours=4)
+                delta = (done_log.timestamp - created_utc).total_seconds() / 60.0
+
+                # Filtro de cordura (entre 1 min y 24 horas)
+                if 1.0 < delta < 1440:
+                    new_val = delta
+
+        # --- ACTUALIZACIÓN ---
+        # Si el valor nuevo es válido y diferente al viejo (o el viejo era 0/None)
+        if new_val > 0 and abs(new_val - original_val) > 0.1:
+            o.delivery_time_minutes = round(new_val, 2)
+            updated_count += 1
+
+            if updated_count % 100 == 0:
+                logger.info(f"⚡ Procesados {updated_count} cambios...")
+
+    # Confirmación
+    if updated_count > 0:
+        logger.info(f"💾 Guardando {updated_count} correcciones en la Base de Datos...")
+        db.commit()
+        logger.info("✅ MIGRACIÓN COMPLETADA EXITOSAMENTE.")
+    else:
+        logger.info("✨ La base de datos ya estaba perfecta. No hubo cambios.")
+
     db.close()
-    print(f"✅ Éxito: {count} pedidos actualizados con tiempo numérico.")
+
 
 if __name__ == "__main__":
-    run()
+    run_migration()
