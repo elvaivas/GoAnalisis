@@ -6,21 +6,22 @@ from datetime import date, datetime, timedelta
 from app.db.base import Order, Store, Customer
 
 
-def _parse_duration_to_numeric(duration_str: str) -> float:
-    """Convierte '1h 8m' o '33m' en minutos flotantes (68.0 o 33.0)"""
+def _parse_duration_to_minutes(duration_str: str) -> float:
     if not duration_str or duration_str == "--":
         return 0.0
     try:
         minutes = 0.0
         s = duration_str.lower()
-        # Buscar horas
+        # 1. Buscar Horas (soporta 'h', 'hr', 'hora', 'horas')
         h_match = re.search(r"(\d+)\s*(h|hr|hora)", s)
         if h_match:
             minutes += float(h_match.group(1)) * 60
-        # Buscar minutos
+
+        # 2. Buscar Minutos (soporta 'm', 'min', 'minuto', 'minutos')
         m_match = re.search(r"(\d+)\s*(m|min)", s)
         if m_match:
             minutes += float(m_match.group(1))
+
         return minutes
     except:
         return 0.0
@@ -119,17 +120,16 @@ def get_main_kpis(
             count_deliveries += 1
             total_delivery_fees_only += delivery_real
 
-            # --- CORRECCIÓN DE TIEMPO PROMEDIO ---
             if o.current_status == "delivered":
                 duration_val = 0.0
 
-                # Nivel 1: Valor ya calculado en DB
+                # NIVEL 1: Valor numérico ya calculado (Prioridad)
                 if o.delivery_time_minutes and o.delivery_time_minutes > 0:
-                    duration_val = o.delivery_time_minutes
+                    duration_val = float(o.delivery_time_minutes)
 
-                # Nivel 2: Parsear texto 'duration' (Ej: "33m", "1h 8m")
+                # NIVEL 2: Parsear el texto "duration" (Ej: "33m", "1h 8m")
                 if duration_val == 0 and o.duration:
-                    duration_val = _parse_duration_to_numeric(o.duration)
+                    duration_val = _parse_duration_to_minutes(o.duration)
 
                 # Nivel 3: Cálculo matemático por logs (Fin - Inicio)
                 if duration_val == 0:
@@ -137,15 +137,19 @@ def get_main_kpis(
                         (l for l in o.status_logs if l.status == "delivered"), None
                     )
                     if done_log:
-                        # Ajuste 4h (VET -> UTC)
                         created_utc = o.created_at + timedelta(hours=4)
                         delta = (
                             done_log.timestamp - created_utc
                         ).total_seconds() / 60.0
-                        if 0.5 < delta < 600:
+
+                        # FILTRO DE SEGURIDAD:
+                        # Si el sistema estuvo "ciego", el delta será gigante (ej. 5 horas).
+                        # Solo confiamos en el log si es menor a 180 min (3 horas).
+                        # Si es mayor, preferimos no promediarlo hasta que el Dron traiga el texto real.
+                        if 0.5 < delta < 180:
                             duration_val = delta
 
-                # Solo si encontramos un tiempo válido lo metemos al promedio
+                # Solo si rescatamos un tiempo mayor a 0, lo metemos al promedio
                 if duration_val > 0:
                     durations_minutes.append(duration_val)
             # ----------------------------------------------------------
