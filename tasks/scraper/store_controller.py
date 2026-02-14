@@ -101,45 +101,73 @@ class StoreControllerScraper:
             self.driver.get(self.LIST_URL)
             wait = WebDriverWait(self.driver, 10)
 
-            # 1. LIMPIEZA DE NOMBRE INTELIGENTE
-            parts = (
+            # 1. LIMPIEZA DE NOMBRE PARA BÚSQUEDA
+            # Quitamos siglas y usamos las primeras 2 palabras para ser específicos pero flexibles
+            clean_name = (
                 store_name.replace("C.A.", "")
                 .replace("S.A.", "")
                 .replace(",", "")
                 .replace(".", "")
-                .split()
+                .strip()
             )
+            parts = clean_name.split()
 
-            # Si la primera palabra es genérica, usamos la segunda que es la importante
-            generics = ["FARMACIA", "FARMACIAS", "SUCURSAL", "INVERSIONES", "GRUPO"]
+            # Si el nombre es "GRUPO FARMAYA", buscamos "FARMAYA" (la palabra más única)
+            # Si es "FARMACIA MUÑOZ", buscamos "MUÑOZ"
+            generics = [
+                "FARMACIA",
+                "FARMACIAS",
+                "SUCURSAL",
+                "INVERSIONES",
+                "GRUPO",
+                "SUCURLSAL",
+            ]
             if parts[0].upper() in generics and len(parts) > 1:
-                search_term = parts[1]  # Ej: GMAXCLINIC o MUÑOZ
+                search_term = parts[1]
             else:
                 search_term = parts[0]
 
-            logger.info(
-                f"🔍 Buscando por palabra clave: '{search_term}' (Nombre original: {store_name})"
+            logger.info(f"🔍 Buscando por palabra clave: '{search_term}'...")
+
+            search_input = wait.until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "input[type='search']")
+                )
             )
+            search_input.clear()
+            search_input.send_keys(search_term)
 
-            # 2. IDENTIFICAR EL ID REAL (XPath más flexible)
+            # Esperamos que la tabla termine de filtrar (Flutter/DataTables delay)
+            time.sleep(5)
+
+            # 2. IDENTIFICAR EL ID REAL (Búsqueda por coincidencia de texto)
             try:
-                # Buscamos la fila que contiene el término de búsqueda
-                # Usamos un XPath que ignora mayúsculas/minúsculas y busca coincidencias parciales
-                xpath_row = f"//tr[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{search_term.lower()}')]"
-                row_element = self.driver.find_element(By.XPATH, xpath_row)
+                # Buscamos todas las filas visibles
+                rows = self.driver.find_elements(
+                    By.XPATH, "//tr[contains(@role, 'row')]"
+                )
+                real_legacy_id = None
 
-                # Extraemos el ID
-                id_match = re.search(r"ID:(\d+)", row_element.text)
-                if not id_match:
-                    raise Exception("ID no encontrado en el texto de la fila")
+                for row in rows:
+                    row_text = row.text.upper()
+                    # Si la fila contiene la palabra clave Y el nombre original (parcialmente)
+                    if search_term.upper() in row_text:
+                        id_match = re.search(r"ID:(\d+)", row.text)
+                        if id_match:
+                            real_legacy_id = id_match.group(1)
+                            break
 
-                real_legacy_id = id_match.group(1)
+                if not real_legacy_id:
+                    raise Exception(
+                        f"No se encontró el patrón ID:XX en los resultados de '{search_term}'"
+                    )
+
                 logger.info(
                     f"🎯 ID Correcto detectado para '{store_name}': {real_legacy_id}"
                 )
             except Exception as e:
                 self.driver.save_screenshot(f"/tmp/error_{search_term}.png")
-                logger.error(f"❌ No se pudo encontrar la fila para: {search_term}")
+                logger.error(f"❌ Error buscando ID para {store_name}: {e}")
                 return False
 
             # 3. LOCALIZAR EL INTERRUPTOR
@@ -157,14 +185,20 @@ class StoreControllerScraper:
             # 5. ACTUAR (SOLO APAGAR)
             if not desired_status_bool and is_on:
                 logger.info(f"🔌 [ACCIÓN REAL] Apagando {store_name}...")
-
                 label = self.driver.find_element(
                     By.CSS_SELECTOR, f"label[for='{checkbox_id}']"
                 )
-                self.driver.execute_script("arguments[0].scrollIntoView();", label)
+
+                # Asegurar visibilidad
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'center'});", label
+                )
                 time.sleep(0.5)
+
+                # Clic Humano
                 self._super_click(label, label.location["x"], label.location["y"])
 
+                # 6. CONFIRMAR ALERTA
                 try:
                     confirm = WebDriverWait(self.driver, 5).until(
                         EC.element_to_be_clickable((By.CSS_SELECTOR, ".swal2-confirm"))
@@ -174,12 +208,11 @@ class StoreControllerScraper:
                 except:
                     pass
 
-                return True  # <--- DEVOLVEMOS TRUE PORQUE SÍ HUBO CAMBIO
+                return True
 
-            else:
-                logger.info(f"⏹️ {store_name} ya estaba apagada. No se requiere acción.")
-                return False  # <--- DEVOLVEMOS FALSE PORQUE NO SE TOCÓ NADA
+            logger.info(f"⏹️ {store_name} ya estaba apagada.")
+            return False
 
         except Exception as e:
-            logger.error(f"❌ Error en tienda {store_name}: {e}")
+            logger.error(f"❌ Error crítico en {store_name}: {e}")
             return False
