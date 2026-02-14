@@ -101,8 +101,8 @@ class StoreControllerScraper:
             self.driver.get(self.LIST_URL)
             wait = WebDriverWait(self.driver, 10)
 
-            # 1. LIMPIEZA DE NOMBRE PARA BÚSQUEDA
-            # Quitamos siglas y usamos las primeras 2 palabras para ser específicos pero flexibles
+            # 1. GENERAR TÉRMINO DE BÚSQUEDA INTELIGENTE
+            # Quitamos siglas y puntos
             clean_name = (
                 store_name.replace("C.A.", "")
                 .replace("S.A.", "")
@@ -110,24 +110,31 @@ class StoreControllerScraper:
                 .replace(".", "")
                 .strip()
             )
-            parts = clean_name.split()
+            words = clean_name.split()
 
-            # Si el nombre es "GRUPO FARMAYA", buscamos "FARMAYA" (la palabra más única)
-            # Si es "FARMACIA MUÑOZ", buscamos "MUÑOZ"
-            generics = [
+            # Filtro de palabras prohibidas (demasiado cortas o genéricas)
+            forbidden = [
+                "EL",
+                "LA",
+                "LOS",
+                "LAS",
+                "DE",
+                "DEL",
+                "Y",
                 "FARMACIA",
-                "FARMACIAS",
                 "SUCURSAL",
-                "INVERSIONES",
                 "GRUPO",
+                "INVERSIONES",
                 "SUCURLSAL",
             ]
-            if parts[0].upper() in generics and len(parts) > 1:
-                search_term = parts[1]
-            else:
-                search_term = parts[0]
 
-            logger.info(f"🔍 Buscando por palabra clave: '{search_term}'...")
+            # Buscamos la primera palabra que NO sea genérica
+            search_term = next(
+                (w for w in words if w.upper() not in forbidden and len(w) > 2),
+                words[0],
+            )
+
+            logger.info(f"🔍 Buscando por palabra clave única: '{search_term}'...")
 
             search_input = wait.until(
                 EC.presence_of_element_located(
@@ -136,34 +143,36 @@ class StoreControllerScraper:
             )
             search_input.clear()
             search_input.send_keys(search_term)
+            time.sleep(5)  # Espera a que la tabla filtre
 
-            # Esperamos que la tabla termine de filtrar (Flutter/DataTables delay)
-            time.sleep(5)
-
-            # 2. IDENTIFICAR EL ID REAL (Búsqueda por coincidencia de texto)
+            # 2. IDENTIFICAR EL ID REAL EN LA FILA CORRECTA
             try:
-                # Buscamos todas las filas visibles
-                rows = self.driver.find_elements(
-                    By.XPATH, "//tr[contains(@role, 'row')]"
-                )
+                # Buscamos la fila que contenga el nombre de la tienda
+                xpath_row = f"//tr[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{search_term.lower()}')]"
+                rows = self.driver.find_elements(By.XPATH, xpath_row)
+
                 real_legacy_id = None
 
+                if not rows:
+                    raise Exception(
+                        f"No se encontró ninguna fila con el texto: {search_term}"
+                    )
+
+                # Si hay varias filas, buscamos la que mejor coincida
                 for row in rows:
-                    row_text = row.text.upper()
-                    # Si la fila contiene la palabra clave Y el nombre original (parcialmente)
-                    if search_term.upper() in row_text:
-                        id_match = re.search(r"ID:(\d+)", row.text)
-                        if id_match:
-                            real_legacy_id = id_match.group(1)
+                    # Buscamos el patrón "ID: 3" o "ID:3" o "ID : 3"
+                    id_match = re.search(r"ID\s*:\s*(\d+)", row.text)
+                    if id_match:
+                        real_legacy_id = id_match.group(1)
+                        # Verificación extra: ¿El nombre está en esta fila?
+                        if search_term.upper() in row.text.upper():
                             break
 
                 if not real_legacy_id:
-                    raise Exception(
-                        f"No se encontró el patrón ID:XX en los resultados de '{search_term}'"
-                    )
+                    raise Exception("No se encontró el patrón ID numérico en la fila.")
 
                 logger.info(
-                    f"🎯 ID Correcto detectado para '{store_name}': {real_legacy_id}"
+                    f"🎯 ID Real Detectado para '{store_name}': {real_legacy_id}"
                 )
             except Exception as e:
                 self.driver.save_screenshot(f"/tmp/error_{search_term}.png")
@@ -188,20 +197,18 @@ class StoreControllerScraper:
                 label = self.driver.find_element(
                     By.CSS_SELECTOR, f"label[for='{checkbox_id}']"
                 )
-
-                # Asegurar visibilidad
                 self.driver.execute_script(
                     "arguments[0].scrollIntoView({block: 'center'});", label
                 )
                 time.sleep(0.5)
-
-                # Clic Humano
                 self._super_click(label, label.location["x"], label.location["y"])
 
-                # 6. CONFIRMAR ALERTA
                 try:
+                    # Aceptar el SweetAlert de confirmación
                     confirm = WebDriverWait(self.driver, 5).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, ".swal2-confirm"))
+                        EC.element_to_be_clickable(
+                            (By.CSS_SELECTOR, ".swal2-confirm, .confirm")
+                        )
                     )
                     confirm.click()
                     time.sleep(2)
