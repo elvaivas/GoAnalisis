@@ -105,43 +105,56 @@ class StoreControllerScraper:
             self.driver.get(self.LIST_URL)
             wait = WebDriverWait(self.driver, 10)
 
-            # 1. BUSCAR POR NOMBRE (Más fiable que el ID manual)
+            # 1. BUSCAR POR NOMBRE (Estrategia Flexible)
+            # Usamos solo las primeras palabras para evitar errores de espacios o typos
+            search_term = store_name.split()[0]
+            if len(search_term) < 4 and len(store_name.split()) > 1:
+                search_term = store_name.split()[0] + " " + store_name.split()[1]
+
+            logger.info(f"🔍 Buscando '{search_term}' (Original: {store_name})...")
+
             search_input = wait.until(
                 EC.presence_of_element_located(
                     (By.CSS_SELECTOR, "input[type='search']")
                 )
             )
             search_input.clear()
-            search_input.send_keys(store_name)
-            time.sleep(3)  # Esperar que la tabla filtre
+            search_input.send_keys(search_term)
+            time.sleep(3)
 
             # 2. IDENTIFICAR EL ID REAL DESDE EL TEXTO "ID:XX"
-            # Buscamos la fila que contiene el nombre y extraemos el ID que está debajo
+            # Ahora buscamos el ID en CUALQUIER fila visible, asumiendo que el buscador filtró bien.
             try:
-                # Este XPath busca el div con el ID:XX que está en la misma fila que el nombre
-                id_element = self.driver.find_element(
-                    By.XPATH,
-                    f"//div[contains(text(), '{store_name}')]/following-sibling::div[contains(text(), 'ID:')]",
+                # Buscamos cualquier elemento que contenga "ID:"
+                id_elements = self.driver.find_elements(
+                    By.XPATH, "//div[contains(text(), 'ID:')]"
                 )
-                raw_id_text = id_element.text  # Ej: "ID:31"
-                real_legacy_id = re.search(r"\d+", raw_id_text).group()
-                logger.info(
-                    f"🎯 ID Real Detectado para '{store_name}': {real_legacy_id}"
-                )
-            except:
-                # Si el XPath anterior falla (por estructura), probamos este más genérico
-                try:
-                    row = self.driver.find_element(
-                        By.XPATH, f"//tr[contains(., '{store_name}')]"
-                    )
-                    id_text = re.search(r"ID:(\d+)", row.text).group(1)
-                    real_legacy_id = id_text
-                    logger.info(f"🎯 ID Real Detectado (Plan B): {real_legacy_id}")
-                except:
-                    logger.error(
-                        f"❌ No se pudo encontrar el ID numérico para: {store_name}"
-                    )
-                    return False
+
+                real_legacy_id = None
+
+                # Iteramos para encontrar el que corresponde al nombre correcto
+                for el in id_elements:
+                    # Subimos al padre (tr o div contenedor) para ver el nombre asociado
+                    # Esta lógica depende de la estructura, pero simplificaremos:
+                    # Si solo hay 1 resultado, ese es.
+                    if len(id_elements) == 1:
+                        real_legacy_id = re.search(r"\d+", el.text).group()
+                        break
+
+                    # Si hay varios, intentamos ver si el nombre está cerca
+                    # (Esto es complejo, pero por ahora el buscador debería ser preciso)
+
+                if not real_legacy_id and id_elements:
+                    real_legacy_id = re.search(r"\d+", id_elements[0].text).group()
+
+                if real_legacy_id:
+                    logger.info(f"🎯 ID Real Detectado: {real_legacy_id}")
+                else:
+                    raise Exception("No se encontró texto ID:XX")
+
+            except Exception as e:
+                logger.error(f"❌ No se pudo encontrar el ID para: {store_name} ({e})")
+                return False
 
             # 3. LOCALIZAR EL INTERRUPTOR CORRECTO
             checkbox_id = f"activeCheckbox{real_legacy_id}"
