@@ -92,11 +92,16 @@ def enforce_schedules(self):
                 else:
                     break
 
-            logger.info(f"🛡️ Vigilante: Aplicando restricción a {store.name}...")
-            if controller.enforce_store_status(store.name, desired_status_bool=False):
+            was_switched_off = controller.enforce_store_status(
+                store.name, desired_status_bool=False
+            )
+
+            if was_switched_off:
                 changes_count += 1
 
     if login_done:
         controller.close()
     db.close()
-    return f"Vigilancia completada. Tiendas apagadas: {changes_count}"
+
+    # Reporte final más honesto
+    return f"Vigilancia completada. Se forzó el cierre de {changes_count} tiendas que estaban abiertas indebidamente."

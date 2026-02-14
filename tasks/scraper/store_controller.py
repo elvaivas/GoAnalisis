@@ -101,29 +101,25 @@ class StoreControllerScraper:
             self.driver.get(self.LIST_URL)
             wait = WebDriverWait(self.driver, 10)
 
-            # 1. LIMPIEZA DEL NOMBRE PARA BÚSQUEDA
-            # Eliminamos C.A, S.A, puntos y comas para que la búsqueda sea genérica
-            clean_name = (
+            # 1. LIMPIEZA DE NOMBRE INTELIGENTE
+            parts = (
                 store_name.replace("C.A.", "")
                 .replace("S.A.", "")
                 .replace(",", "")
                 .replace(".", "")
-                .strip()
+                .split()
             )
-            # Tomamos solo las primeras 3 palabras si el nombre es muy largo
-            search_term = " ".join(clean_name.split()[:3])
 
-            logger.info(f"🔍 Buscando '{search_term}' (Original: {store_name})...")
+            # Si la primera palabra es genérica, usamos la segunda que es la importante
+            generics = ["FARMACIA", "FARMACIAS", "SUCURSAL", "INVERSIONES", "GRUPO"]
+            if parts[0].upper() in generics and len(parts) > 1:
+                search_term = parts[1]  # Ej: GMAXCLINIC o MUÑOZ
+            else:
+                search_term = parts[0]
 
-            search_input = wait.until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "input[type='search']")
-                )
+            logger.info(
+                f"🔍 Buscando por palabra clave: '{search_term}' (Nombre original: {store_name})"
             )
-            search_input.clear()
-            search_input.send_keys(search_term)
-
-            time.sleep(4)  # Espera a que la tabla filtre
 
             # 2. IDENTIFICAR EL ID REAL (XPath más flexible)
             try:
@@ -160,7 +156,8 @@ class StoreControllerScraper:
 
             # 5. ACTUAR (SOLO APAGAR)
             if not desired_status_bool and is_on:
-                logger.info(f"🔌 APAGANDO App para {store_name}...")
+                logger.info(f"🔌 [ACCIÓN REAL] Apagando {store_name}...")
+
                 label = self.driver.find_element(
                     By.CSS_SELECTOR, f"label[for='{checkbox_id}']"
                 )
@@ -168,20 +165,20 @@ class StoreControllerScraper:
                 time.sleep(0.5)
                 self._super_click(label, label.location["x"], label.location["y"])
 
-                # 6. CONFIRMAR ALERTA
                 try:
                     confirm = WebDriverWait(self.driver, 5).until(
                         EC.element_to_be_clickable((By.CSS_SELECTOR, ".swal2-confirm"))
                     )
                     confirm.click()
-                    logger.info("✅ Confirmación aceptada.")
                     time.sleep(2)
                 except:
                     pass
 
-                return True
+                return True  # <--- DEVOLVEMOS TRUE PORQUE SÍ HUBO CAMBIO
 
-            return True
+            else:
+                logger.info(f"⏹️ {store_name} ya estaba apagada. No se requiere acción.")
+                return False  # <--- DEVOLVEMOS FALSE PORQUE NO SE TOCÓ NADA
 
         except Exception as e:
             logger.error(f"❌ Error en tienda {store_name}: {e}")
