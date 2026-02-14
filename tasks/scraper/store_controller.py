@@ -101,48 +101,59 @@ class StoreControllerScraper:
             self.driver.get(self.LIST_URL)
             wait = WebDriverWait(self.driver, 10)
 
-            # 1. BUSCAR POR NOMBRE
-            # Usamos el nombre lo más completo posible para que el Legacy filtre bien
+            # 1. LIMPIEZA DEL NOMBRE PARA BÚSQUEDA
+            # Eliminamos C.A, S.A, puntos y comas para que la búsqueda sea genérica
+            clean_name = (
+                store_name.replace("C.A.", "")
+                .replace("S.A.", "")
+                .replace(",", "")
+                .replace(".", "")
+                .strip()
+            )
+            # Tomamos solo las primeras 3 palabras si el nombre es muy largo
+            search_term = " ".join(clean_name.split()[:3])
+
+            logger.info(f"🔍 Buscando '{search_term}' (Original: {store_name})...")
+
             search_input = wait.until(
                 EC.presence_of_element_located(
                     (By.CSS_SELECTOR, "input[type='search']")
                 )
             )
             search_input.clear()
-            search_input.send_keys(store_name)
+            search_input.send_keys(search_term)
 
-            # ESPERA CRÍTICA: Esperamos a que la tabla se actualice y SOLO muestre la tienda deseada
-            # Buscamos el texto del nombre dentro de la tabla
-            time.sleep(4)
+            time.sleep(4)  # Espera a que la tabla filtre
 
-            # 2. IDENTIFICAR EL ID REAL (Búsqueda exacta en la fila)
+            # 2. IDENTIFICAR EL ID REAL (XPath más flexible)
             try:
-                # Buscamos la fila (tr) que contiene el nombre exacto de la tienda
-                # y de esa misma fila sacamos el ID
-                xpath_row = f"//tr[contains(., '{store_name}')]"
+                # Buscamos la fila que contiene el término de búsqueda
+                # Usamos un XPath que ignora mayúsculas/minúsculas y busca coincidencias parciales
+                xpath_row = f"//tr[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{search_term.lower()}')]"
                 row_element = self.driver.find_element(By.XPATH, xpath_row)
 
-                # Extraemos el ID solo de esa fila
-                id_text = re.search(r"ID:(\d+)", row_element.text).group(1)
-                real_legacy_id = id_text
+                # Extraemos el ID
+                id_match = re.search(r"ID:(\d+)", row_element.text)
+                if not id_match:
+                    raise Exception("ID no encontrado en el texto de la fila")
+
+                real_legacy_id = id_match.group(1)
                 logger.info(
                     f"🎯 ID Correcto detectado para '{store_name}': {real_legacy_id}"
                 )
             except Exception as e:
-                logger.error(
-                    f"❌ No se pudo encontrar la fila o el ID para: {store_name}"
-                )
+                self.driver.save_screenshot(f"/tmp/error_{search_term}.png")
+                logger.error(f"❌ No se pudo encontrar la fila para: {search_term}")
                 return False
 
-            # 3. LOCALIZAR EL INTERRUPTOR (App Online/Offline)
+            # 3. LOCALIZAR EL INTERRUPTOR
             checkbox_id = f"activeCheckbox{real_legacy_id}"
             checkbox = self.driver.find_element(By.ID, checkbox_id)
 
-            # 4. EVALUAR ESTADO REAL (Vía Propiedad JS, más fiable que atributos)
+            # 4. EVALUAR ESTADO REAL
             is_on = self.driver.execute_script(
                 f"return document.getElementById('{checkbox_id}').checked;"
             )
-
             logger.info(
                 f"Estado de {store_name} (#{real_legacy_id}): {'ON' if is_on else 'OFF'}"
             )
@@ -150,28 +161,21 @@ class StoreControllerScraper:
             # 5. ACTUAR (SOLO APAGAR)
             if not desired_status_bool and is_on:
                 logger.info(f"🔌 APAGANDO App para {store_name}...")
-
-                # Clic en el label que controla ese checkbox ID
                 label = self.driver.find_element(
                     By.CSS_SELECTOR, f"label[for='{checkbox_id}']"
                 )
-
-                # Scroll hasta el elemento para que sea visible y clickeable
                 self.driver.execute_script("arguments[0].scrollIntoView();", label)
                 time.sleep(0.5)
+                self._super_click(label, label.location["x"], label.location["y"])
 
-                # Clic Humano
-                loc = label.location
-                self._super_click(label, loc["x"], loc["y"])
-
-                # 6. CONFIRMAR ALERTA (SweetAlert)
+                # 6. CONFIRMAR ALERTA
                 try:
                     confirm = WebDriverWait(self.driver, 5).until(
                         EC.element_to_be_clickable((By.CSS_SELECTOR, ".swal2-confirm"))
                     )
                     confirm.click()
                     logger.info("✅ Confirmación aceptada.")
-                    time.sleep(2)  # Esperar que el servidor procese el cambio
+                    time.sleep(2)
                 except:
                     pass
 
