@@ -296,13 +296,17 @@ def process_drone_data(db, data: dict):
                 .first()
             )
             if not customer:
+                # AQUÍ ESTÁ EL CAMBIO: Asignamos fecha de hoy para que cuente en el KPI
                 customer = Customer(
                     name=data["customer_name"],
                     external_id=f"cust_{data['customer_name']}",
+                    joined_at=datetime.utcnow(),
                 )
                 db.add(customer)
                 db.commit()
                 db.refresh(customer)
+
+            # Actualizar teléfono si viene nuevo
             if data.get("customer_phone"):
                 customer.phone = data["customer_phone"]
 
