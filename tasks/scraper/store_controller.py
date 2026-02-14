@@ -94,10 +94,6 @@ class StoreControllerScraper:
             return False
 
     def enforce_store_status(self, store_name, desired_status_bool):
-        """
-        store_name: Nombre de la farmacia (ej: 'INVERSIONES LENOY')
-        desired_status_bool: True (Encender) / False (Apagar)
-        """
         if not self.driver:
             self.login()
 
@@ -105,86 +101,77 @@ class StoreControllerScraper:
             self.driver.get(self.LIST_URL)
             wait = WebDriverWait(self.driver, 10)
 
-            # 1. BUSCAR POR NOMBRE (Estrategia Flexible)
-            # Usamos solo las primeras palabras para evitar errores de espacios o typos
-            search_term = store_name.split()[0]
-            if len(search_term) < 4 and len(store_name.split()) > 1:
-                search_term = store_name.split()[0] + " " + store_name.split()[1]
-
-            logger.info(f"🔍 Buscando '{search_term}' (Original: {store_name})...")
-
+            # 1. BUSCAR POR NOMBRE
+            # Usamos el nombre lo más completo posible para que el Legacy filtre bien
             search_input = wait.until(
                 EC.presence_of_element_located(
                     (By.CSS_SELECTOR, "input[type='search']")
                 )
             )
             search_input.clear()
-            search_input.send_keys(search_term)
-            time.sleep(3)
+            search_input.send_keys(store_name)
 
-            # 2. IDENTIFICAR EL ID REAL DESDE EL TEXTO "ID:XX"
-            # Ahora buscamos el ID en CUALQUIER fila visible, asumiendo que el buscador filtró bien.
+            # ESPERA CRÍTICA: Esperamos a que la tabla se actualice y SOLO muestre la tienda deseada
+            # Buscamos el texto del nombre dentro de la tabla
+            time.sleep(4)
+
+            # 2. IDENTIFICAR EL ID REAL (Búsqueda exacta en la fila)
             try:
-                # Buscamos cualquier elemento que contenga "ID:"
-                id_elements = self.driver.find_elements(
-                    By.XPATH, "//div[contains(text(), 'ID:')]"
+                # Buscamos la fila (tr) que contiene el nombre exacto de la tienda
+                # y de esa misma fila sacamos el ID
+                xpath_row = f"//tr[contains(., '{store_name}')]"
+                row_element = self.driver.find_element(By.XPATH, xpath_row)
+
+                # Extraemos el ID solo de esa fila
+                id_text = re.search(r"ID:(\d+)", row_element.text).group(1)
+                real_legacy_id = id_text
+                logger.info(
+                    f"🎯 ID Correcto detectado para '{store_name}': {real_legacy_id}"
                 )
-
-                real_legacy_id = None
-
-                # Iteramos para encontrar el que corresponde al nombre correcto
-                for el in id_elements:
-                    # Subimos al padre (tr o div contenedor) para ver el nombre asociado
-                    # Esta lógica depende de la estructura, pero simplificaremos:
-                    # Si solo hay 1 resultado, ese es.
-                    if len(id_elements) == 1:
-                        real_legacy_id = re.search(r"\d+", el.text).group()
-                        break
-
-                    # Si hay varios, intentamos ver si el nombre está cerca
-                    # (Esto es complejo, pero por ahora el buscador debería ser preciso)
-
-                if not real_legacy_id and id_elements:
-                    real_legacy_id = re.search(r"\d+", id_elements[0].text).group()
-
-                if real_legacy_id:
-                    logger.info(f"🎯 ID Real Detectado: {real_legacy_id}")
-                else:
-                    raise Exception("No se encontró texto ID:XX")
-
             except Exception as e:
-                logger.error(f"❌ No se pudo encontrar el ID para: {store_name} ({e})")
+                logger.error(
+                    f"❌ No se pudo encontrar la fila o el ID para: {store_name}"
+                )
                 return False
 
-            # 3. LOCALIZAR EL INTERRUPTOR CORRECTO
+            # 3. LOCALIZAR EL INTERRUPTOR (App Online/Offline)
             checkbox_id = f"activeCheckbox{real_legacy_id}"
             checkbox = self.driver.find_element(By.ID, checkbox_id)
 
-            # 4. EVALUAR ESTADO
-            is_on = checkbox.get_attribute("checked") is not None
+            # 4. EVALUAR ESTADO REAL (Vía Propiedad JS, más fiable que atributos)
+            is_on = self.driver.execute_script(
+                f"return document.getElementById('{checkbox_id}').checked;"
+            )
+
             logger.info(
                 f"Estado de {store_name} (#{real_legacy_id}): {'ON' if is_on else 'OFF'}"
             )
 
             # 5. ACTUAR (SOLO APAGAR)
             if not desired_status_bool and is_on:
-                logger.info(f"🔌 APAGANDO {store_name}...")
+                logger.info(f"🔌 APAGANDO App para {store_name}...")
 
+                # Clic en el label que controla ese checkbox ID
                 label = self.driver.find_element(
                     By.CSS_SELECTOR, f"label[for='{checkbox_id}']"
                 )
 
-                # Clic Humano (Pointer Events)
+                # Scroll hasta el elemento para que sea visible y clickeable
+                self.driver.execute_script("arguments[0].scrollIntoView();", label)
+                time.sleep(0.5)
+
+                # Clic Humano
                 loc = label.location
                 self._super_click(label, loc["x"], loc["y"])
 
-                # Confirmar SweetAlert
+                # 6. CONFIRMAR ALERTA (SweetAlert)
                 try:
                     confirm = WebDriverWait(self.driver, 5).until(
                         EC.element_to_be_clickable((By.CSS_SELECTOR, ".swal2-confirm"))
                     )
                     confirm.click()
-                    logger.info(f"✅ {store_name} apagada exitosamente.")
+                    logger.info("✅ Confirmación aceptada.")
+                    time.sleep(2)  # Esperar que el servidor procese el cambio
                 except:
                     pass
 
@@ -193,5 +180,5 @@ class StoreControllerScraper:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error controlando {store_name}: {e}")
+            logger.error(f"❌ Error en tienda {store_name}: {e}")
             return False
