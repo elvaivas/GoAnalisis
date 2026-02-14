@@ -2257,4 +2257,151 @@ document.addEventListener('DOMContentLoaded', function () {
         link.href = canvas.toDataURL('image/png');
     }
 
+    // =========================================================
+    // ⏰ GESTOR DE HORARIOS
+    // =========================================================
+    const daysMap = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+
+    // 1. Cargar Tiendas en el Select
+    async function loadStoresForSchedule() {
+        const selWeekly = document.getElementById('schedStore');
+        const selHoli = document.getElementById('holiStore'); // El nuevo select
+
+        const res = await authFetch('/api/data/stores-locations');
+        if (res && res.ok) {
+            const stores = await res.json();
+            const optionsHtml = stores.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+
+            if (selWeekly) selWeekly.innerHTML = optionsHtml;
+            if (selHoli) selHoli.innerHTML = '<option value="all">🌍 Todas las Tiendas</option>' + optionsHtml;
+        }
+    }
+
+
+    // 2. Cargar Reglas Existentes
+    async function loadSchedules() {
+        const tbody = document.getElementById('schedulesTableBody');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Cargando...</td></tr>';
+
+        const res = await authFetch('/api/schedules/');
+        if (res && res.ok) {
+            const rules = await res.json();
+            if (rules.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Sin reglas configuradas.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = rules.map(r => `
+                <tr>
+                    <td class="fw-bold small">${r.store_name}</td>
+                    <td><span class="badge bg-light text-dark border">${daysMap[r.day_of_week]}</span></td>
+                    <td>${r.open_time} - ${r.close_time}</td>
+                    <td class="text-danger small">-${r.buffer_minutes} min</td>
+                    <td class="text-end">
+                        <button class="btn btn-link text-danger p-0" onclick="deleteSchedule(${r.id})">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+    }
+
+    // 3. Guardar Regla
+    document.getElementById('formSchedule')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+            store_id: document.getElementById('schedStore').value,
+            day_of_week: document.getElementById('schedDay').value,
+            open_time: document.getElementById('schedOpen').value,
+            close_time: document.getElementById('schedClose').value,
+            buffer_minutes: 60 // Fijo por ahora
+        };
+
+        const res = await authFetch('/api/schedules/', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            loadSchedules(); // Recargar tabla
+            alert("✅ Regla guardada.");
+        } else {
+            alert("Error al guardar.");
+        }
+    });
+
+    // 4. Borrar
+    window.deleteSchedule = async (id) => {
+        if (!confirm("¿Eliminar esta regla?")) return;
+        await authFetch(`/api/schedules/${id}`, { method: 'DELETE' });
+        loadSchedules();
+    };
+    // --- GESTIÓN DE FERIADOS (NUEVO) ---
+
+    // 1. Cargar Lista de Feriados
+    async function loadHolidays() {
+        const container = document.getElementById('holidaysList');
+        if (!container) return;
+
+        const res = await authFetch('/api/holidays/');
+        if (res && res.ok) {
+            const data = await res.json(); // Ahora recibimos una lista de dicts planos
+
+            if (data.length === 0) {
+                container.innerHTML = '<div class="text-center py-3 text-muted fst-italic">No hay feriados programados.</div>';
+                return;
+            }
+
+            container.innerHTML = data.map(h => `
+                <div class="d-flex justify-content-between align-items-center bg-soft-danger p-2 mb-2 rounded border border-danger border-opacity-10">
+                    <div>
+                        <span class="badge bg-danger me-2" style="font-size:0.65rem">${h.store_name}</span>
+                        <strong class="text-dark">${new Date(h.date).toLocaleDateString('es-ES', { timeZone: 'UTC', day: '2-digit', month: 'long' })}</strong>
+                        <span class="text-muted ms-2">— ${h.description}</span>
+                    </div>
+                    <button class="btn btn-sm btn-link text-danger" onclick="deleteHoliday(${h.id})">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+    }
+
+    // 2. Modificar el guardado del feriado
+    document.getElementById('formHoliday')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const storeVal = document.getElementById('holiStore').value;
+        const payload = {
+            date: document.getElementById('holiDate').value,
+            description: document.getElementById('holiDesc').value,
+            store_id: storeVal === 'all' ? null : parseInt(storeVal) // Enviamos null si es global
+        };
+
+        const res = await authFetch('/api/holidays/', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            loadHolidays();
+            alert("✅ Excepción de cierre guardada.");
+        }
+    });
+
+    // 3. Borrar Feriado
+    window.deleteHoliday = async (id) => {
+        if (!confirm("¿Eliminar este feriado? Las tiendas volverán a su horario normal ese día.")) return;
+        const res = await authFetch(`/api/holidays/${id}`, { method: 'DELETE' });
+        if (res.ok) loadHolidays();
+    };
+
+    // Evento al abrir el modal para cargar datos frescos
+    document.getElementById('modalSchedules')?.addEventListener('show.bs.modal', () => {
+        loadStoresForSchedule();
+        loadSchedules();
+        loadHolidays();
+    });
+
+
 }); // <--- FINAL DEL ARCHIVO (ASEGÚRATE DE QUE ESTÉ)

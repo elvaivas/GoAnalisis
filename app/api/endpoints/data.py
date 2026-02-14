@@ -196,7 +196,11 @@ def get_top_customers_data(
 @router.get("/stores-locations")
 def get_stores_locations(db: Session = Depends(deps.get_db)):
     stores = db.query(Store).filter(Store.latitude != None).all()
-    return [{"name": s.name, "lat": s.latitude, "lng": s.longitude} for s in stores]
+    # Agregamos "id": s.id
+    return [
+        {"id": s.id, "name": s.name, "lat": s.latitude, "lng": s.longitude}
+        for s in stores
+    ]
 
 
 @router.get("/all-stores-names")

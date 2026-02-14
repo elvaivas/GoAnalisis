@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from app.api.endpoints import analysis, kpis, data, auth, audit
+from app.api.endpoints import analysis, kpis, data, auth, audit, schedules, holidays
 from pathlib import Path
 import os
 
@@ -39,6 +39,8 @@ app.include_router(kpis.router, prefix="/api/kpi", tags=["KPIs"])
 app.include_router(data.router, prefix="/api/data", tags=["Data"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
+app.include_router(schedules.router, prefix="/api/schedules", tags=["schedules"])
+app.include_router(holidays.router, prefix="/api/holidays", tags=["holidays"])
 
 
 @app.get("/login", response_class=HTMLResponse)

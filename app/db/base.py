@@ -4,6 +4,7 @@ from sqlalchemy import (
     String,
     Float,
     DateTime,
+    Date,
     ForeignKey,
     Enum,
     Boolean,
@@ -169,3 +170,47 @@ class OrderAudit(Base):
     # Relaciones
     order = relationship("Order", back_populates="audits")
     user = relationship("User")
+
+
+class StoreSchedule(Base):
+    __tablename__ = "store_schedules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False)
+
+    # 0=Lunes, 1=Martes... 6=Domingo
+    day_of_week = Column(Integer, nullable=False)
+
+    # Hora militar (ej: "08:00", "20:00")
+    open_time = Column(String, nullable=False)
+    close_time = Column(String, nullable=False)
+
+    # Minutos antes del cierre real para "matar" la app (Ej: 60 min)
+    buffer_minutes = Column(Integer, default=60)
+
+    # Interruptor maestro para activar/desactivar esta regla
+    is_active = Column(Boolean, default=True)
+
+    # Relación
+    store = relationship("Store")
+
+
+class StoreHoliday(Base):
+    __tablename__ = "store_holidays"
+
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer, ForeignKey("stores.id"), nullable=True
+    )  # NULL significa "Todas las tiendas"
+
+    date = Column(Date, nullable=False)  # Fecha específica: 2026-04-19
+
+    is_closed_all_day = Column(Boolean, default=True)  # ¿Cierra todo el día?
+
+    # Si no cierra todo el día, podemos definir un horario especial para ese feriado
+    open_time = Column(String, nullable=True)  # Ej: "09:00"
+    close_time = Column(String, nullable=True)  # Ej: "14:00"
+
+    description = Column(String, nullable=True)  # Ej: "Semana Santa"
+
+    store = relationship("Store")
