@@ -9,7 +9,13 @@ celery_app = Celery(
     "goanalisis_tasks",
     broker=broker_url,
     backend=broker_url,
-    include=["tasks.celery_tasks"],
+    # --- CORRECCIÓN AQUÍ ---
+    # Debes listar TODOS los archivos que contienen tareas (@shared_task)
+    include=[
+        "tasks.celery_tasks", 
+        "tasks.ops_tasks",    # <--- FALTABA ESTE
+        "tasks.maintenance"   # <--- FALTABA ESTE (para el nightly-healing)
+    ],
 )
 
 celery_app.conf.update(
