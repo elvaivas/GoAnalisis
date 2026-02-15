@@ -5,7 +5,7 @@ import re
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys  # <--- IMPORTANTE: Importar Keys
+from selenium.webdriver.common.keys import Keys  # <--- NECESARIO
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
@@ -35,16 +35,15 @@ class StoreControllerScraper:
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--disable-blink-features=AutomationControlled")
 
-        # Preferencias para evitar caché y errores de renderizado
+        # Opciones extra para estabilidad
         options.add_argument("--disable-gpu")
-        options.add_argument("--disable-extensions")
+        options.add_argument("--ignore-certificate-errors")
 
         try:
             driver_path = ChromeDriverManager().install()
             service = Service(executable_path=driver_path)
             self.driver = webdriver.Chrome(service=service, options=options)
         except:
-            # Fallback para servidor linux
             service = Service(executable_path="/usr/bin/chromedriver")
             self.driver = webdriver.Chrome(service=service, options=options)
 
@@ -54,7 +53,7 @@ class StoreControllerScraper:
         try:
             self.driver.get(self.LOGIN_URL)
             wait = WebDriverWait(self.driver, 15)
-            email = wait.until(EC.presence_of_element_located((By.NAME, "email")))
+            email = wait.until(EC.element_to_be_clickable((By.NAME, "email")))
             email.clear()
             email.send_keys(settings.GOPHARMA_EMAIL)
 
@@ -64,12 +63,10 @@ class StoreControllerScraper:
 
             btn = self.driver.find_element(By.XPATH, "//button[@type='submit']")
             self.driver.execute_script("arguments[0].click();", btn)
-
-            # Esperar a que la URL cambie o aparezca un elemento del dashboard
             time.sleep(5)
             return True
         except Exception as e:
-            logger.error(f"Login fallido: {e}")
+            logger.error(f"Error Login: {e}")
             return False
 
     def close(self):
@@ -81,7 +78,7 @@ class StoreControllerScraper:
             self.driver = None
 
     def _super_click(self, element, x, y):
-        """Simula presión humana sobre un elemento específico"""
+        """Simula presión humana sobre un elemento"""
         try:
             js_down = f"""
                 var target = arguments[0];
@@ -103,32 +100,18 @@ class StoreControllerScraper:
         except:
             return False
 
-    def _find_rows_by_text(self, text_to_find):
-        """Helper para encontrar filas que contengan el texto, ignorando mayúsculas"""
-        # XPath mejorado: usa normalize-space para ignorar espacios extra y busca en toda la fila
-        xpath_row = (
-            f"//tr[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), "
-            f"'{text_to_find.lower()}')]"
-        )
-        return self.driver.find_elements(By.XPATH, xpath_row)
-
     def enforce_store_status(self, store_name, desired_status_bool):
         if not self.driver:
             self.login()
 
         try:
-            # Ir a la lista solo si no estamos ya ahí (pequeña optimización)
-            if self.LIST_URL not in self.driver.current_url:
+            # Solo navegar si no estamos ya en la lista
+            if "/admin/store/list" not in self.driver.current_url:
                 self.driver.get(self.LIST_URL)
 
             wait = WebDriverWait(self.driver, 10)
-            search_input = wait.until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "input[type='search']")
-                )
-            )
 
-            # 1. PREPARACIÓN DE NOMBRES
+            # 1. LIMPIEZA DEL NOMBRE
             clean_name = (
                 store_name.replace("C.A.", "")
                 .replace("S.A.", "")
@@ -138,6 +121,7 @@ class StoreControllerScraper:
             )
             words = clean_name.split()
 
+            # Palabras comunes a ignorar para generar el término de búsqueda
             forbidden = [
                 "EL",
                 "LA",
@@ -150,123 +134,122 @@ class StoreControllerScraper:
                 "SUCURSAL",
                 "GRUPO",
                 "INVERSIONES",
-                "SUCURLSAL",
                 "DROGUERIA",
-                "COMERCIAL",
-                "CORPORACION",
             ]
 
-            # Búsqueda inteligente (palabra clave)
-            smart_search_term = next(
+            # Buscar palabra clave más fuerte
+            search_term = next(
                 (w for w in words if w.upper() not in forbidden and len(w) > 2),
-                words[0],
+                words[0],  # Si todas son prohibidas, usar la primera (ej: GRUPO)
             )
 
-            # --- INTENTO 1: Búsqueda por palabra clave ---
-            logger.info(
-                f"🔍 [Intento 1] Buscando '{store_name}' usando clave: '{smart_search_term}'"
-            )
+            logger.info(f"🔍 Buscando '{store_name}' con término: '{search_term}'")
+
+            # 2. SELECCIONAR EL INPUT CORRECTO (ID ESPECÍFICO)
+            # Usamos datatableSearch_ porque es el que hace la búsqueda global en el servidor
+            try:
+                search_input = wait.until(
+                    EC.element_to_be_clickable((By.ID, "datatableSearch_"))
+                )
+            except:
+                # Fallback por si cambian el ID
+                search_input = self.driver.find_element(
+                    By.CSS_SELECTOR, "input[type='search']"
+                )
 
             search_input.clear()
-            search_input.send_keys(smart_search_term)
-            # A veces el JS requiere un Enter o un pequeño delay extra
-            # search_input.send_keys(Keys.ENTER)
+            search_input.send_keys(search_term)
+            time.sleep(1)
+            search_input.send_keys(Keys.ENTER)  # Importante: Presionar Enter
+
+            # Esperar a que la tabla se actualice
             time.sleep(4)
 
-            rows = self._find_rows_by_text(smart_search_term)
+            # 3. IDENTIFICAR FILAS Y EXTRAER ID
+            # Buscamos en el tbody con ID "set-rows"
+            tbody = self.driver.find_element(By.ID, "set-rows")
+            rows = tbody.find_elements(By.TAG_NAME, "tr")
 
-            # --- INTENTO 2: Fallback al nombre completo (si falló el anterior) ---
-            if not rows:
-                logger.warning(
-                    f"⚠️ No se encontraron filas con '{smart_search_term}'. Probando nombre completo limpio: '{clean_name}'"
-                )
-                search_input.clear()
-                # Truco: enviar caracter por caracter a veces despierta filtros JS perezosos
-                # Pero enviar todo + espacio suele funcionar
-                search_input.send_keys(clean_name)
-                time.sleep(4)
-
-                # Buscamos usando clean_name, o si es muy largo, la primera palabra de clean_name
-                rows = self._find_rows_by_text(clean_name)
-
-                # Si aun falla, probar con la primera palabra absoluta (aunque sea 'GRUPO')
-                if not rows and len(words) > 0:
-                    first_word = words[0]
-                    logger.warning(
-                        f"⚠️ Fallback final: Buscando por primera palabra '{first_word}'"
-                    )
-                    search_input.clear()
-                    search_input.send_keys(first_word)
-                    time.sleep(4)
-                    rows = self._find_rows_by_text(first_word)
-
-            if not rows:
-                raise Exception(
-                    f"No se encontró ninguna fila para {store_name} tras múltiples intentos."
-                )
-
-            # 2. IDENTIFICAR EL ID REAL
             real_legacy_id = None
 
-            # Iteramos sobre las filas encontradas
+            if not rows or (len(rows) == 1 and "No data found" in rows[0].text):
+                # INTENTO 2: Si falló, buscar por el nombre limpio completo (ej: "GRUPO FARMAYA")
+                logger.warning(
+                    f"⚠️ Falló búsqueda por '{search_term}'. Intentando nombre completo: '{clean_name}'"
+                )
+                search_input.clear()
+                search_input.send_keys(clean_name)
+                search_input.send_keys(Keys.ENTER)
+                time.sleep(4)
+                tbody = self.driver.find_element(By.ID, "set-rows")
+                rows = tbody.find_elements(By.TAG_NAME, "tr")
+
             for row in rows:
-                row_text = row.text
-                # Buscamos patrón ID
-                id_match = re.search(r"ID\s*:\s*(\d+)", row_text)
-                if id_match:
-                    # Si encontramos ID, verificamos que el nombre de la tienda tenga sentido
-                    # (que contenga al menos una parte del nombre original para evitar falsos positivos de IDs similares)
-                    # Convertimos todo a mayúsculas para comparar
-                    if (
-                        smart_search_term.upper() in row_text.upper()
-                        or clean_name.upper() in row_text.upper()
-                    ):
+                # Obtenemos todo el texto de la fila. Selenium concatena los divs.
+                # En tu HTML: GRUPO FARMAYA C.A. \n ID:3
+                row_text = row.text.upper()
+
+                # Buscamos coincidencia flexible
+                if search_term.upper() in row_text or clean_name.upper() in row_text:
+                    # Regex para capturar el ID. En tu HTML es "ID:3" o "ID: 3"
+                    id_match = re.search(r"ID\s*:\s*(\d+)", row.text)
+                    if id_match:
                         real_legacy_id = id_match.group(1)
                         break
 
-                    # Si la búsqueda fue muy genérica (ej. "GRUPO"), guardamos el ID pero seguimos buscando mejor match
-                    real_legacy_id = id_match.group(1)
+            if not real_legacy_id:
+                # Último recurso: si solo hay 1 fila y buscamos algo muy específico, asumimos que es esa
+                if len(rows) == 1:
+                    id_match = re.search(r"ID\s*:\s*(\d+)", rows[0].text)
+                    if id_match:
+                        real_legacy_id = id_match.group(1)
+                        logger.warning(
+                            f"⚠️ Match forzado por fila única para {store_name} -> ID {real_legacy_id}"
+                        )
 
             if not real_legacy_id:
                 raise Exception(
-                    "Se encontraron filas pero no se pudo extraer el ID numérico."
+                    f"No se encontró el ID numérico para {store_name} en la tabla."
                 )
 
             logger.info(f"🎯 ID Real Detectado para '{store_name}': {real_legacy_id}")
 
-            # 3. LOCALIZAR EL INTERRUPTOR
+            # 4. INTERACTUAR CON EL SWITCH
+            # Basado en tu HTML: id="activeCheckbox3"
             checkbox_id = f"activeCheckbox{real_legacy_id}"
-            try:
-                checkbox = self.driver.find_element(By.ID, checkbox_id)
-            except:
-                raise Exception(f"No se encontró el checkbox con ID {checkbox_id}")
 
-            # 4. EVALUAR ESTADO
+            # Verificar estado actual vía JS para exactitud
             is_on = self.driver.execute_script(
-                f"return document.getElementById('{checkbox_id}').checked;"
+                f"return document.getElementById('{checkbox_id}') != null && document.getElementById('{checkbox_id}').checked;"
             )
 
-            # 5. ACTUAR
+            logger.info(
+                f"Estado de {store_name} (#{real_legacy_id}): {'ON' if is_on else 'OFF'}"
+            )
+
+            # 5. EJECUTAR CAMBIO SI ES NECESARIO (Solo APAGAR según tu lógica original)
             if not desired_status_bool and is_on:
-                logger.info(f"🔌 [ACCIÓN] Apagando {store_name}...")
+                logger.info(f"🔌 [ACCIÓN REAL] Apagando {store_name}...")
+
+                # Buscamos el LABEL que es lo que recibe el click visualmente
                 label = self.driver.find_element(
                     By.CSS_SELECTOR, f"label[for='{checkbox_id}']"
                 )
 
+                # Scroll para asegurar visibilidad
                 self.driver.execute_script(
                     "arguments[0].scrollIntoView({block: 'center'});", label
                 )
                 time.sleep(0.5)
 
-                success_click = self._super_click(
+                # Click potente
+                clicked = self._super_click(
                     label, label.location["x"], label.location["y"]
                 )
+                if not clicked:
+                    label.click()
 
-                if not success_click:
-                    # Fallback click normal si falla el super click
-                    self.driver.execute_script("arguments[0].click();", label)
-
-                # Manejo de SweetAlert (Confirmación)
+                # Confirmar SweetAlert
                 try:
                     confirm = WebDriverWait(self.driver, 3).until(
                         EC.element_to_be_clickable(
@@ -279,22 +262,18 @@ class StoreControllerScraper:
                     confirm.click()
                     time.sleep(2)
                 except:
-                    # A veces no sale alerta, o ya se cerró
                     pass
                 return True
 
-            elif desired_status_bool and not is_on:
-                # Lógica para encender si alguna vez la necesitas
-                pass
-
-            logger.info(f"⏹️ {store_name} ya estaba en el estado correcto (OFF).")
+            logger.info(f"⏹️ {store_name} ya estaba en estado correcto.")
             return False
 
         except Exception as e:
-            # Guardar captura de error para debug visual
+            # Captura de pantalla para debug
             try:
-                safe_name = "".join(x for x in store_name if x.isalnum())
-                self.driver.save_screenshot(f"/tmp/error_{safe_name}.png")
+                self.driver.save_screenshot(
+                    f"/tmp/debug_error_{store_name.replace(' ', '_')}.png"
+                )
             except:
                 pass
             logger.error(f"❌ Error crítico en {store_name}: {e}")
