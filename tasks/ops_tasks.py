@@ -12,14 +12,17 @@ logger = logging.getLogger(__name__)
 
 @shared_task(bind=True)
 def enforce_schedules(self):
+    """
+    Tarea que revisa horarios y apaga farmacias.
+    Pasa nombre e ID externo para una búsqueda híbrida infalible.
+    """
     db = SessionLocal()
     now_vet = datetime.utcnow() - timedelta(hours=4)
     today_date = now_vet.date()
     current_day = now_vet.weekday()
     current_minutes_total = now_vet.hour * 60 + now_vet.minute
 
-    # 1. BUSCAR TIENDAS ACTIVAS
-    # Para cada tienda, decidiremos qué regla aplicar
+    # 1. Buscamos todas las tiendas
     all_stores = db.query(Store).filter(Store.external_id != None).all()
 
     controller = StoreControllerScraper()
@@ -27,9 +30,7 @@ def enforce_schedules(self):
     changes_count = 0
 
     for store in all_stores:
-        # --- LÓGICA DE PRECEDENCIA ---
-
-        # A. ¿Hay un feriado para esta tienda hoy (o un feriado global)?
+        # A. Verificar si hoy es feriado (Regla de Precedencia)
         holiday = (
             db.query(StoreHoliday)
             .filter(
@@ -39,27 +40,21 @@ def enforce_schedules(self):
             .first()
         )
 
-        rule_to_apply = None
+        is_forbidden_time = False
 
         if holiday:
-            logger.info(f"🎊 Hoy es feriado para {store.name}: {holiday.description}")
             if holiday.is_closed_all_day:
-                # Forzar apagado todo el día
                 is_forbidden_time = True
             else:
-                # Usar horario especial del feriado
-                start_min = int(holiday.open_time.split(":")[0]) * 60 + int(
-                    holiday.open_time.split(":")[1]
-                )
-                end_min = (
-                    int(holiday.close_time.split(":")[0]) * 60
-                    + int(holiday.close_time.split(":")[1])
-                ) - 60
+                h_open_h, h_open_m = map(int, holiday.open_time.split(":"))
+                h_close_h, h_close_m = map(int, holiday.close_time.split(":"))
+                start_min = h_open_h * 60 + h_open_m
+                end_min = (h_close_h * 60 + h_close_m) - 60
                 is_forbidden_time = (current_minutes_total < start_min) or (
                     current_minutes_total >= end_min
                 )
         else:
-            # B. Si no es feriado, buscar regla semanal normal
+            # B. Si no es feriado, buscar regla semanal
             rule = (
                 db.query(StoreSchedule)
                 .filter(
@@ -71,20 +66,17 @@ def enforce_schedules(self):
             )
 
             if not rule:
-                continue  # No hay reglas para esta tienda hoy
+                continue
 
-            start_min = int(rule.open_time.split(":")[0]) * 60 + int(
-                rule.open_time.split(":")[1]
-            )
-            end_min = (
-                int(rule.close_time.split(":")[0]) * 60
-                + int(rule.close_time.split(":")[1])
-            ) - rule.buffer_minutes
+            r_open_h, r_open_m = map(int, rule.open_time.split(":"))
+            r_close_h, r_close_m = map(int, rule.close_time.split(":"))
+            start_min = r_open_h * 60 + r_open_m
+            end_min = (r_close_h * 60 + r_close_m) - rule.buffer_minutes
             is_forbidden_time = (current_minutes_total < start_min) or (
                 current_minutes_total >= end_min
             )
 
-        # --- EJECUCIÓN DEL APAGADO ---
+        # --- EJECUCIÓN ---
         if is_forbidden_time:
             if not login_done:
                 if controller.login():
@@ -92,8 +84,15 @@ def enforce_schedules(self):
                 else:
                     break
 
+            logger.info(
+                f"🛡️ Vigilante: Auditando {store.name} (ID Externo: {store.external_id})..."
+            )
+
+            # ENVIAMOS AMBOS DATOS AL CONTROLADOR
             was_switched_off = controller.enforce_store_status(
-                store.name, desired_status_bool=False
+                store_name=store.name,
+                store_external_id=store.external_id,
+                desired_status_bool=False,
             )
 
             if was_switched_off:
@@ -102,6 +101,4 @@ def enforce_schedules(self):
     if login_done:
         controller.close()
     db.close()
-
-    # Reporte final más honesto
-    return f"Vigilancia completada. Se forzó el cierre de {changes_count} tiendas que estaban abiertas indebidamente."
+    return f"Vigilancia completada. Se forzaron {changes_count} cierres."

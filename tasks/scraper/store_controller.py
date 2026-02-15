@@ -93,133 +93,63 @@ class StoreControllerScraper:
         except:
             return False
 
-    def enforce_store_status(self, store_name, desired_status_bool):
-        if not self.driver:
-            self.login()
-
+    def enforce_store_status(self, store_name, store_external_id, desired_status_bool):
+        if not self.driver: self.login()
+        
         try:
             self.driver.get(self.LIST_URL)
             wait = WebDriverWait(self.driver, 10)
+            
+            # 1. EXTRAER EL NÚMERO DE ID DE TU DB (store_3 -> 3)
+            real_id_to_find = re.search(r'\d+', store_external_id).group()
 
-            # 1. GENERAR TÉRMINO DE BÚSQUEDA INTELIGENTE
-            # Quitamos siglas y puntos
-            clean_name = (
-                store_name.replace("C.A.", "")
-                .replace("S.A.", "")
-                .replace(",", "")
-                .replace(".", "")
-                .strip()
-            )
-            words = clean_name.split()
-
-            # Filtro de palabras prohibidas (demasiado cortas o genéricas)
-            forbidden = [
-                "EL",
-                "LA",
-                "LOS",
-                "LAS",
-                "DE",
-                "DEL",
-                "Y",
-                "FARMACIA",
-                "SUCURSAL",
-                "GRUPO",
-                "INVERSIONES",
-                "SUCURLSAL",
-            ]
-
-            # Buscamos la primera palabra que NO sea genérica
-            search_term = next(
-                (w for w in words if w.upper() not in forbidden and len(w) > 2),
-                words[0],
-            )
-
-            logger.info(f"🔍 Buscando por palabra clave única: '{search_term}'...")
-
-            search_input = wait.until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "input[type='search']")
-                )
-            )
+            # 2. GENERAR TÉRMINO DE BÚSQUEDA POR NOMBRE (Para que el Legacy filtre)
+            clean_name = store_name.replace("C.A.", "").replace("S.A.", "").replace(",", "").replace(".", "").strip()
+            search_term = clean_name.split()[0] # Usamos solo la primera palabra para que aparezca sí o sí
+            
+            logger.info(f"🔍 Buscando '{search_term}' en página para encontrar ID Legacy: {real_id_to_find}")
+            
+            search_input = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='search']")))
             search_input.clear()
             search_input.send_keys(search_term)
-            time.sleep(5)  # Espera a que la tabla filtre
+            time.sleep(4) 
 
-            # 2. IDENTIFICAR EL ID REAL EN LA FILA CORRECTA
+            # 3. LOCALIZAR LA FILA QUE TENGA EL ID EXACTO
+            # Buscamos en la tabla filtrada la fila que contenga "ID:3" o "ID: 3"
             try:
-                # Buscamos la fila que contenga el nombre de la tienda
-                xpath_row = f"//tr[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{search_term.lower()}')]"
-                rows = self.driver.find_elements(By.XPATH, xpath_row)
-
-                real_legacy_id = None
-
-                if not rows:
-                    raise Exception(
-                        f"No se encontró ninguna fila con el texto: {search_term}"
-                    )
-
-                # Si hay varias filas, buscamos la que mejor coincida
-                for row in rows:
-                    # Buscamos el patrón "ID: 3" o "ID:3" o "ID : 3"
-                    id_match = re.search(r"ID\s*:\s*(\d+)", row.text)
-                    if id_match:
-                        real_legacy_id = id_match.group(1)
-                        # Verificación extra: ¿El nombre está en esta fila?
-                        if search_term.upper() in row.text.upper():
-                            break
-
-                if not real_legacy_id:
-                    raise Exception("No se encontró el patrón ID numérico en la fila.")
-
-                logger.info(
-                    f"🎯 ID Real Detectado para '{store_name}': {real_legacy_id}"
-                )
-            except Exception as e:
-                self.driver.save_screenshot(f"/tmp/error_{search_term}.png")
-                logger.error(f"❌ Error buscando ID para {store_name}: {e}")
+                xpath_row = f"//tr[contains(., 'ID:{real_id_to_find}') or contains(., 'ID: {real_id_to_find}')]"
+                row_element = self.driver.find_element(By.XPATH, xpath_row)
+                logger.info(f"🎯 Fila de la tienda #{real_id_to_find} encontrada exitosamente.")
+            except:
+                logger.error(f"❌ El Legacy no muestra ninguna tienda con ID: {real_id_to_find} al buscar '{search_term}'")
                 return False
 
-            # 3. LOCALIZAR EL INTERRUPTOR
-            checkbox_id = f"activeCheckbox{real_legacy_id}"
+            # 4. LOCALIZAR EL INTERRUPTOR DENTRO DE ESA FILA
+            checkbox_id = f"activeCheckbox{real_id_to_find}"
             checkbox = self.driver.find_element(By.ID, checkbox_id)
 
-            # 4. EVALUAR ESTADO REAL
-            is_on = self.driver.execute_script(
-                f"return document.getElementById('{checkbox_id}').checked;"
-            )
-            logger.info(
-                f"Estado de {store_name} (#{real_legacy_id}): {'ON' if is_on else 'OFF'}"
-            )
-
-            # 5. ACTUAR (SOLO APAGAR)
+            # 5. EVALUAR ESTADO
+            is_on = self.driver.execute_script(f"return document.getElementById('{checkbox_id}').checked;")
+            
+            # 6. ACTUAR (SOLO APAGAR)
             if not desired_status_bool and is_on:
-                logger.info(f"🔌 [ACCIÓN REAL] Apagando {store_name}...")
-                label = self.driver.find_element(
-                    By.CSS_SELECTOR, f"label[for='{checkbox_id}']"
-                )
-                self.driver.execute_script(
-                    "arguments[0].scrollIntoView({block: 'center'});", label
-                )
+                logger.info(f"🔌 [ACCIÓN REAL] Apagando {store_name} (#{real_id_to_find})...")
+                label = self.driver.find_element(By.CSS_SELECTOR, f"label[for='{checkbox_id}']")
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", label)
                 time.sleep(0.5)
-                self._super_click(label, label.location["x"], label.location["y"])
-
+                self._super_click(label, label.location['x'], label.location['y'])
+                
                 try:
-                    # Aceptar el SweetAlert de confirmación
                     confirm = WebDriverWait(self.driver, 5).until(
-                        EC.element_to_be_clickable(
-                            (By.CSS_SELECTOR, ".swal2-confirm, .confirm")
-                        )
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, ".swal2-confirm, .confirm"))
                     )
                     confirm.click()
-                    time.sleep(2)
-                except:
-                    pass
-
+                    time.sleep(2) 
+                except: pass
                 return True
-
-            logger.info(f"⏹️ {store_name} ya estaba apagada.")
+            
             return False
 
         except Exception as e:
-            logger.error(f"❌ Error crítico en {store_name}: {e}")
+            logger.error(f"❌ Error en auditoría de {store_name}: {e}")
             return False
