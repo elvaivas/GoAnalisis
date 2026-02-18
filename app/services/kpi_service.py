@@ -11,14 +11,9 @@ def _parse_duration_to_minutes(s: str) -> float:
         return 0.0
     try:
         minutes = 0.0
-        # Normalizamos a minúsculas y quitamos acentos básicos por si acaso
         text = s.lower().replace("á", "a").strip()
 
-        # PATRONES ROBUSTOS (Iguales al Frontend)
-        # Busca: Numero + espacios + (horas, hora, hrs, hr, h)
         h_match = re.search(r"(\d+)\s*(?:horas?|hours?|hrs?|h)", text)
-
-        # Busca: Numero + espacios + (minutos, minuto, mins, min, m)
         m_match = re.search(r"(\d+)\s*(?:minutos?|minutes?|mins?|min|m)", text)
 
         if h_match:
@@ -40,11 +35,13 @@ def get_main_kpis(
     search_query: Optional[str] = None,
 ) -> Dict[str, Any]:
 
-    # OPTIMIZACIÓN: Cargar logs y tienda en la misma consulta para evitar el problema N+1
+    # OPTIMIZACIÓN: Eager Loading
     base_query = db.query(Order).options(
         joinedload(Order.status_logs), joinedload(Order.store)
     )
-    # --- CORRECCIÓN DE ZONA HORARIA (VENEZUELA) ---
+
+    # --- CORRECCIÓN DE ZONA HORARIA (PEDIDOS) ---
+    # Los pedidos SÍ tienen hora exacta, así que mantenemos la lógica VET
     local_created_at = func.timezone(
         "America/Caracas", func.timezone("UTC", Order.created_at)
     )
@@ -71,47 +68,35 @@ def get_main_kpis(
             )
         )
 
-    # --- CÁLCULO DE DATOS ---
     orders = base_query.all()
 
-    # Inicialización de Acumuladores
+    # Inicialización
     total_revenue = 0.0
     total_fees_gross = 0.0
     total_coupons = 0.0
     total_service_fee_accum = 0.0
-
-    total_delivery_fees_only = 0.0  # KPI Costo Envío
-
+    total_delivery_fees_only = 0.0
     driver_payout = 0.0
     profit_delivery = 0.0
     profit_service = 0.0
     profit_commission = 0.0
-
-    # Contadores
     count_deliveries = 0
     count_pickups = 0
     count_canceled = 0
     lost_revenue = 0.0
-
     durations_minutes = []
 
     for o in orders:
-        # 1. Filtro inicial: Cancelados (Se cuentan aparte)
         if o.current_status == "canceled":
             count_canceled += 1
             lost_revenue += float(o.total_amount or 0.0)
             continue
 
-        # --- CORRECCIÓN DE TIPO BLINDADA (Case-Insensitive) ---
         raw = o.order_type
-        # Sacamos el valor del Enum o el String, lo pasamos a minúsculas y limpiamos
         o_type_clean = str(raw.value if hasattr(raw, "value") else raw).lower().strip()
-
-        # Fallback: Si es nulo o no se reconoce, lo tratamos como Delivery (90% de la operación)
         if not o_type_clean or o_type_clean == "none":
             o_type_clean = "delivery"
 
-        # 2. Valores Financieros Base (Sanitizados)
         total_amt = float(o.total_amount or 0.0)
         delivery_real = float(
             o.gross_delivery_fee
@@ -122,30 +107,21 @@ def get_main_kpis(
         prod_price = float(o.product_price or 0.0)
         svc_fee = float(o.service_fee or 0.0)
 
-        # 3. Lógica de Conteo por Tipo (FUERA de la validación de 'delivered')
         if "pickup" in o_type_clean:
             count_pickups += 1
         else:
-            # Es Delivery
             count_deliveries += 1
             total_delivery_fees_only += delivery_real
-
-            # --- CÁLCULO DE TIEMPOS (SOLO PARA ENTREGADOS) ---
             if o.current_status == "delivered":
                 duration_val = 0.0
-                # PRIORIDAD 1: Texto del Legacy (Ej: "1h 4m")
                 if o.duration:
                     duration_val = _parse_duration_to_minutes(o.duration)
-
-                # PRIORIDAD 2: Valor numérico guardado
                 if (
                     duration_val == 0
                     and o.delivery_time_minutes
                     and o.delivery_time_minutes > 0
                 ):
                     duration_val = float(o.delivery_time_minutes)
-
-                # PRIORIDAD 3: Cálculo matemático por logs
                 if duration_val == 0:
                     done_log = next(
                         (l for l in o.status_logs if l.status == "delivered"), None
@@ -156,42 +132,31 @@ def get_main_kpis(
                             done_log.timestamp - created_utc
                         ).total_seconds()
                         if total_seconds > 0:
-                            duration_val = int(total_seconds / 60)  # Minutos enteros
-
-                # Filtro de seguridad (entre 1 min y 10 horas)
+                            duration_val = int(total_seconds / 60)
                 if 0 < duration_val < 600:
                     durations_minutes.append(duration_val)
 
-        # 4. Acumuladores Globales (Para pedidos no cancelados)
         total_revenue += total_amt
         total_fees_gross += delivery_real
         total_coupons += coupon
         total_service_fee_accum += svc_fee
-
-        # --- FÓRMULAS FINANCIERAS ---
         driver_payout += delivery_real * 0.80
         profit_delivery += (delivery_real * 0.20) / 1.16
-
         iva_prod = prod_price * 0.16
         base_service = prod_price + iva_prod + delivery_real + svc_fee
         profit_service += (base_service * 0.05) / 1.16
-
         rate = 0.0
         if o.store and o.store.commission_rate:
             rate = float(o.store.commission_rate)
         profit_commission += prod_price * (rate / 100.0)
 
-    # --- RESULTADOS FINALES ---
     real_net_profit = (
         profit_delivery + profit_service + profit_commission
     ) - total_coupons
-
     avg_time = (
         sum(durations_minutes) / len(durations_minutes) if durations_minutes else 0.0
     )
-
     valid_orders_count = count_deliveries + count_pickups
-
     avg_ticket = (total_revenue / valid_orders_count) if valid_orders_count > 0 else 0.0
     avg_delivery_fee_value = (
         (total_delivery_fees_only / count_deliveries) if count_deliveries > 0 else 0.0
@@ -205,11 +170,11 @@ def get_main_kpis(
     total_users_historic = db.query(Customer).count()
     unique_customers = {o.customer_id for o in orders if o.customer_id}
 
-    # 1. Convertimos UTC a VET antes de sacar la fecha
-    local_joined_at_ts = func.timezone(
-        "America/Caracas", func.timezone("UTC", Customer.joined_at)
-    )
-    local_joined_at = func.date(local_joined_at_ts)
+    # --- CORRECCIÓN QUIRÚRGICA AQUÍ ---
+    # El Scraper guarda 'joined_at' como fecha sin hora (00:00:00).
+    # Si aplicamos timezone("America/Caracas"), restamos 4h y retrocedemos al día anterior.
+    # SOLUCIÓN: Usamos cast directo a Date.
+    local_joined_at = cast(Customer.joined_at, Date)
 
     new_users_q = db.query(Customer)
     if start_date:
