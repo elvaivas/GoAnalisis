@@ -205,7 +205,12 @@ def get_main_kpis(
     total_users_historic = db.query(Customer).count()
     unique_customers = {o.customer_id for o in orders if o.customer_id}
 
-    local_joined_at = func.date(Customer.joined_at)
+    # 1. Convertimos UTC a VET antes de sacar la fecha
+    local_joined_at_ts = func.timezone(
+        "America/Caracas", func.timezone("UTC", Customer.joined_at)
+    )
+    local_joined_at = func.date(local_joined_at_ts)
+
     new_users_q = db.query(Customer)
     if start_date:
         new_users_q = new_users_q.filter(local_joined_at >= start_date)
