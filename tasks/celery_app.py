@@ -9,14 +9,14 @@ celery_app = Celery(
     "goanalisis_tasks",
     broker=broker_url,
     backend=broker_url,
-    # --- CORRECCIÓN AQUÍ ---
-    # Debes listar TODOS los archivos que contienen tareas (@shared_task)
+    # 👇👇 AQUÍ ESTÁ LA CLAVE: Debes agregar el nuevo archivo a esta lista 👇👇
     include=[
-        "tasks.celery_tasks", 
-        "tasks.ops_tasks",    # <--- FALTABA ESTE
-        "tasks.maintenance"   # <--- FALTABA ESTE (para el nightly-healing)
+        "tasks.celery_tasks",
+        "tasks.ops_tasks",  # <--- ¡ESTE FALTABA!
+        "tasks.maintenance",  # <--- Este también para la tarea de las 4 AM
     ],
 )
+
 
 celery_app.conf.update(
     task_serializer="json",
@@ -53,7 +53,7 @@ celery_app.conf.beat_schedule = {
     "customer-surveillance-daily": {
         "task": "tasks.celery_tasks.sync_customer_database",
         "schedule": crontab(hour=3, minute=0),
-        "kwargs": {"limit_pages": 10},
+        "kwargs": {"limit_pages": 50},
     },
     # 4. AUTOREPARACIÓN DE SISTEMA
     # 4:00 AM todos los días
