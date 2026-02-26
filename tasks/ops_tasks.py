@@ -1,15 +1,17 @@
 import logging
-import re
 from datetime import datetime, timedelta
 from celery import shared_task
 from app.db.session import SessionLocal
 from app.db.base import Store, StoreSchedule, StoreHoliday
 from tasks.scraper.store_controller import StoreControllerScraper
-import logging
 
 logger = logging.getLogger(__name__)
 
 
+# ==========================================
+# 1. EL ORQUESTADOR (El que piensa)
+# Se ejecuta cada 5 minutos por Celery Beat
+# ==========================================
 @shared_task(bind=True)
 def enforce_schedules(self):
     db = SessionLocal()
@@ -18,18 +20,11 @@ def enforce_schedules(self):
     current_day = now_vet.weekday()
     current_minutes_total = now_vet.hour * 60 + now_vet.minute
 
-    # 1. BUSCAR TIENDAS ACTIVAS
-    # Para cada tienda, decidiremos qué regla aplicar
     all_stores = db.query(Store).filter(Store.external_id != None).all()
 
-    controller = StoreControllerScraper()
-    login_done = False
-    changes_count = 0
+    stores_to_shutdown = []
 
     for store in all_stores:
-        # --- LÓGICA DE PRECEDENCIA ---
-
-        # A. ¿Hay un feriado para esta tienda hoy (o un feriado global)?
         holiday = (
             db.query(StoreHoliday)
             .filter(
@@ -39,15 +34,12 @@ def enforce_schedules(self):
             .first()
         )
 
-        rule_to_apply = None
+        is_forbidden_time = False
 
         if holiday:
-            logger.info(f"🎊 Hoy es feriado para {store.name}: {holiday.description}")
             if holiday.is_closed_all_day:
-                # Forzar apagado todo el día
                 is_forbidden_time = True
             else:
-                # Usar horario especial del feriado
                 start_min = int(holiday.open_time.split(":")[0]) * 60 + int(
                     holiday.open_time.split(":")[1]
                 )
@@ -59,7 +51,6 @@ def enforce_schedules(self):
                     current_minutes_total >= end_min
                 )
         else:
-            # B. Si no es feriado, buscar regla semanal normal
             rule = (
                 db.query(StoreSchedule)
                 .filter(
@@ -71,7 +62,7 @@ def enforce_schedules(self):
             )
 
             if not rule:
-                continue  # No hay reglas para esta tienda hoy
+                continue
 
             start_min = int(rule.open_time.split(":")[0]) * 60 + int(
                 rule.open_time.split(":")[1]
@@ -80,28 +71,62 @@ def enforce_schedules(self):
                 int(rule.close_time.split(":")[0]) * 60
                 + int(rule.close_time.split(":")[1])
             ) - rule.buffer_minutes
+
             is_forbidden_time = (current_minutes_total < start_min) or (
                 current_minutes_total >= end_min
             )
 
-        # --- EJECUCIÓN DEL APAGADO ---
+        # Si está fuera de horario, la agregamos a la lista de "objetivos"
         if is_forbidden_time:
-            if not login_done:
-                if controller.login():
-                    login_done = True
-                else:
-                    break
-
-            was_switched_off = controller.enforce_store_status(
-                store.name, desired_status_bool=False
+            stores_to_shutdown.append(
+                {"name": store.name, "external_id": store.external_id}
             )
 
-            if was_switched_off:
-                changes_count += 1
-
-    if login_done:
-        controller.close()
     db.close()
 
-    # Reporte final más honesto
-    return f"Vigilancia completada. Se forzó el cierre de {changes_count} tiendas que estaban abiertas indebidamente."
+    # ==========================================
+    # 2. EL FAN-OUT (El ataque en paralelo)
+    # Mandamos una mini-tarea por cada farmacia
+    # ==========================================
+    if not stores_to_shutdown:
+        return "Orquestador: Ninguna farmacia requiere apagado en este momento."
+
+    logger.info(
+        f"🚀 Orquestador: {len(stores_to_shutdown)} farmacias deben estar apagadas. Lanzando ninjas..."
+    )
+
+    for target in stores_to_shutdown:
+        # Llamamos a la sub-tarea asíncrona para que no bloquee este script
+        execute_single_store_shutdown.delay(target["name"], target["external_id"])
+
+    return f"Orquestador: Lanzadas {len(stores_to_shutdown)} tareas de apagado independientes."
+
+
+# ==========================================
+# 3. EL OBRERO / NINJA (El que dispara)
+# Toma 1 sola tienda, entra, hace clic, y se va.
+# ==========================================
+@shared_task(bind=True, max_retries=2)
+def execute_single_store_shutdown(self, store_name, store_external_id):
+    logger.info(f"🥷 Ninja activado para apagar: {store_name}")
+
+    controller = StoreControllerScraper()
+    try:
+        # Forzamos el apagado (desired_status_bool = False)
+        was_switched_off = controller.enforce_store_status(
+            store_name=store_name,
+            desired_status_bool=False,
+            store_external_id=store_external_id,
+        )
+        if was_switched_off:
+            return f"✅ {store_name} APAGADA con éxito."
+        else:
+            return f"ℹ️ {store_name} ya estaba apagada."
+
+    except Exception as e:
+        logger.error(f"❌ Fallo al apagar {store_name}. Reintentando... Error: {e}")
+        # Si falla (ej. Gopharma no carga), la tarea se reintenta automáticamente en 60 segundos
+        raise self.retry(exc=e, countdown=60)
+
+    finally:
+        controller.close()
