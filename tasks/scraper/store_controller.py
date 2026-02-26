@@ -153,17 +153,29 @@ class StoreControllerScraper:
 
                 for row in rows:
                     cols = row.find_elements(By.TAG_NAME, "td")
-                    # El HTML dice que la col 0 es el contador, la col 1 tiene el nombre e ID
                     if len(cols) > 1:
                         cell_text = cols[1].text.strip()
                         if not cell_text:
                             continue
 
-                        # Extraemos la primera línea (El nombre)
-                        lines = cell_text.split("\n")
-                        store_name_in_table = lines[0].strip().upper()
+                        # TRUCO NINJA: Extraer el nombre real oculto en el atributo 'title'
+                        try:
+                            title_div = cols[1].find_element(
+                                By.CSS_SELECTOR, ".text--title"
+                            )
+                            store_name_in_table = (
+                                title_div.get_attribute("title").strip().upper()
+                            )
+                        except:
+                            # Fallback por si la farmacia tiene un nombre corto y no tiene el 'title'
+                            store_name_in_table = (
+                                cell_text.split("\n")[0]
+                                .strip()
+                                .upper()
+                                .replace("...", "")
+                            )
 
-                        # VALIDACIÓN BLINDADA: Tiene que ser idéntico al nombre crudo o limpio
+                        # VALIDACIÓN BLINDADA: Ahora comparamos contra el nombre puro del sistema
                         if (
                             store_name_in_table == store_name.upper()
                             or store_name_in_table == clean_name.upper()
