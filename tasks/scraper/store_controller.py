@@ -152,19 +152,23 @@ class StoreControllerScraper:
                 rows = tbody.find_elements(By.TAG_NAME, "tr")
 
                 for row in rows:
-                    # Obtenemos el nombre exacto de la primera columna (Evitamos mezclar con la columna ID)
                     cols = row.find_elements(By.TAG_NAME, "td")
-                    if len(cols) > 0:
-                        store_name_in_table = (
-                            cols[0].text.split("\n")[0].strip().upper()
-                        )
+                    # El HTML dice que la col 0 es el contador, la col 1 tiene el nombre e ID
+                    if len(cols) > 1:
+                        cell_text = cols[1].text.strip()
+                        if not cell_text:
+                            continue
 
-                        # MATCH EXACTO O EMPIEZA EXACTAMENTE IGUAL (Sin falsos positivos)
+                        # Extraemos la primera línea (El nombre)
+                        lines = cell_text.split("\n")
+                        store_name_in_table = lines[0].strip().upper()
+
+                        # VALIDACIÓN BLINDADA: Tiene que ser idéntico al nombre crudo o limpio
                         if (
-                            store_name_in_table == clean_name.upper()
-                            or store_name.upper() in store_name_in_table
+                            store_name_in_table == store_name.upper()
+                            or store_name_in_table == clean_name.upper()
                         ):
-                            id_regex = re.search(r"ID\s*:\s*(\d+)", row.text)
+                            id_regex = re.search(r"ID\s*:\s*(\d+)", cell_text)
                             if id_regex:
                                 real_legacy_id = id_regex.group(1)
                                 break
