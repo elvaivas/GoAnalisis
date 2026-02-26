@@ -155,6 +155,8 @@ class CustomerScraper:
 
             current_page = 1
             stop_scraping = False
+            old_records_count = 0  # <--- AGREGAR ESTO
+            MAX_OLD_RECORDS = 15
 
             while not stop_scraping:
                 if max_pages and current_page > max_pages:
@@ -197,13 +199,22 @@ class CustomerScraper:
                         )
 
                         if final_date:
-                            # LOGICA DE FRENO INTELIGENTE
+                            # --- NUEVA LÓGICA DE FRENO CON TOLERANCIA ---
                             if final_date < limit_date:
+                                old_records_count += 1
                                 logger.info(
-                                    f"🛑 Encontrado registro antiguo ({final_date.strftime('%d/%m/%Y')}). Deteniendo scraper."
+                                    f"⚠️ Registro antiguo detectado ({final_date.strftime('%d/%m/%Y')} | ID: {gopharma_id}). Racha: {old_records_count}/{MAX_OLD_RECORDS}"
                                 )
-                                stop_scraping = True
-                                break  # Rompe el for de filas
+
+                                if old_records_count >= MAX_OLD_RECORDS:
+                                    logger.info(
+                                        f"🛑 Límite de {MAX_OLD_RECORDS} registros antiguos consecutivos alcanzado. Deteniendo scraper."
+                                    )
+                                    stop_scraping = True
+                                    break  # Rompe el for de filas
+                            else:
+                                # Reseteamos racha si encontramos un usuario nuevo
+                                old_records_count = 0
 
                             customers.append(
                                 {
