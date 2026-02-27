@@ -80,7 +80,7 @@ class DroneScraper:
         if not self.driver:
             self.setup_driver()
         try:
-            self.driver.get("https://ecosistema.gopharma.com.ve/login/admin")
+            self.driver.get(f"{settings.LEGACY_BASE_URL}/login/admin")
             wait = WebDriverWait(self.driver, self.wait_timeout)
             wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(
                 settings.GOPHARMA_EMAIL
