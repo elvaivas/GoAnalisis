@@ -47,13 +47,12 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.celery_tasks.enrich_missing_data",
         "schedule": crontab(minute="*/30"),
     },
-    # 3. VIGILANCIA DE CLIENTES (NUEVO)
+    # 3. VIGILANCIA DE CLIENTES (BARRIDO PROFUNDO)
     # Ejecuta a las 3:00 AM todos los días.
-    # 'kwargs' pasa el argumento limit_pages=10 a la función
     "customer-surveillance-daily": {
         "task": "tasks.celery_tasks.sync_customer_database",
         "schedule": crontab(hour=3, minute=0),
-        "kwargs": {"limit_pages": 50},
+        "kwargs": {"limit_pages": None},  # <--- AHORA ES INFINITO (FULL SYNC)
     },
     # 4. AUTOREPARACIÓN DE SISTEMA
     # 4:00 AM todos los días
