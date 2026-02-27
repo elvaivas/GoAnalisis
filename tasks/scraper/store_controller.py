@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class StoreControllerScraper:
     def __init__(self):
-        self.BASE_URL = "https://ecosistema.gopharma.com.ve"
+        self.BASE_URL = f"{settings.LEGACY_BASE_URL}"
         self.LOGIN_URL = f"{self.BASE_URL}/login/admin"
         self.LIST_URL = f"{self.BASE_URL}/admin/store/list"
         self.driver = None

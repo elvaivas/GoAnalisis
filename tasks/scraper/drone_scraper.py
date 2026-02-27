@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class DroneScraper:
     def __init__(self):
-        self.base_detail_url = "https://ecosistema.gopharma.com.ve/admin/order/details"
+        self.base_detail_url = f"{settings.LEGACY_BASE_URL}/admin/order/details"
         self.driver = None
         self.wait_timeout = 10
 

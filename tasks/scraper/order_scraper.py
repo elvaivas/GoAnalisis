@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class OrderScraper:
     def __init__(self):
-        self.BASE_URL = "https://ecosistema.gopharma.com.ve"
+        self.BASE_URL = f"{settings.LEGACY_BASE_URL}"
         self.LOGIN_URL = f"{self.BASE_URL}/login/admin"
         # --- AGREGAR ESTA LÍNEA ---
         self.orders_url = f"{self.BASE_URL}/admin/order/list/all"

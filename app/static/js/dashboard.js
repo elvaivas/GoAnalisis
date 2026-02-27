@@ -649,7 +649,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         <i class="fa-solid fa-user-doctor me-2"></i>Gestionar Retraso
                                     </button>
 
-                                    <a href="https://ecosistema.gopharma.com.ve/admin/order/list/all?search=${o.external_id}" target="_blank" 
+                                    <a href="https://app.gopharma.dev/admin/order/list/all?search=${o.external_id}" target="_blank" 
                                        onclick="event.stopPropagation()"
                                        class="btn btn-white border btn-sm w-100 text-start">
                                         <i class="fa-solid fa-external-link-alt me-2 text-muted"></i>Ver Legacy

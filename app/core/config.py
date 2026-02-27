@@ -1,6 +1,7 @@
 import os
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     # Variables de entorno para la conexión a PostgreSQL
     # Usamos os.getenv con valores por defecto para asegurar que no falle si falta el .env
@@ -14,10 +15,11 @@ class Settings(BaseSettings):
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
     # Variables para el Scraper
-    LOGIN_URL: str = "https://ecosistema.gopharma.com.ve/login/admin"
+    LEGACY_BASE_URL: str = "https://app.gopharma.dev"
+    LOGIN_URL: str = "https://app.gopharma.dev/login/admin"
     GOPHARMA_EMAIL: str = os.getenv("GOPHARMA_EMAIL", "soporte@gopharma.com.ve")
     GOPHARMA_PASSWORD: str = os.getenv("GOPHARMA_PASSWORD", "GoPharma2024.")
-    SCRAPER_HEADLESS: bool = True 
+    SCRAPER_HEADLESS: bool = True
 
     # --- NUEVAS CREDENCIALES E-COMMERCE ---
     EC_USER: str = os.getenv("EC_USER", "usuario_por_defecto@test.com")
@@ -35,5 +37,6 @@ class Settings(BaseSettings):
         env_file = ".env"
         extra = "ignore"
         case_sensitive = True
+
 
 settings = Settings()
