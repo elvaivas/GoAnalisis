@@ -357,6 +357,9 @@ class OrderScraper:
 
         except Exception as e:
             logger.error(f"Error get_recent: {e}")
+        finally:
+            # 🧟 EXTERMINADOR DE ZOMBIES: Garantiza que Chrome muera siempre
+            self.close_driver()
 
         return orders_found
 
@@ -439,6 +442,9 @@ class OrderScraper:
 
         except Exception as e:
             logger.error(f"Error backfill: {e}")
+        finally:
+            # 🧟 EXTERMINADOR DE ZOMBIES: Garantiza que Chrome muera siempre
+            self.close_driver()
 
         # Deduplicar
         unique = {d["id"]: d for d in all_data}
