@@ -238,3 +238,7 @@ class StoreControllerScraper:
         except Exception as e:
             logger.error(f"❌ Error crítico en {store_name}: {e}")
             return False
+
+        finally:
+            # 🧟 EXTERMINADOR DE ZOMBIES: Garantiza que Chrome muera al terminar con la farmacia
+            self.close()
