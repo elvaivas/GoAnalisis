@@ -580,10 +580,6 @@ def enrich_missing_data(self):
             # 2. Entregados incompletos (Mapa, Fee, Productos)
             if processed < BATCH_SIZE:
                 limit = BATCH_SIZE - processed
-
-                # --- CORRECCIÓN: LÍMITE DE TIEMPO (5 DÍAS) ---
-                # Evita que se quede pegado intentando arreglar pedidos prehistóricos
-                # que tienen errores permanentes.
                 cutoff_days = datetime.utcnow() - timedelta(days=5)
 
                 targets = (
@@ -591,7 +587,7 @@ def enrich_missing_data(self):
                     .filter(
                         Order.created_at >= cutoff_days,
                         Order.current_status == "delivered",
-                        Order.order_type != "Pickup",  # <--- ESTA ES LA CLAVE
+                        Order.order_type != "Pickup",
                         (Order.latitude == None)
                         | (Order.gross_delivery_fee == 0)
                         | (Order.product_price == 0),
@@ -600,19 +596,15 @@ def enrich_missing_data(self):
                     .all()
                 )
 
-                targets = (
-                    db.query(Order)
-                    .filter(
-                        Order.created_at >= cutoff_days,
-                        Order.current_status == "delivered",
-                        Order.order_type != "Pickup",  # <--- ESTA ES LA CLAVE
-                        (Order.latitude == None)
-                        | (Order.gross_delivery_fee == 0)
-                        | (Order.product_price == 0),
-                    )
-                    .limit(limit)
-                    .all()
-                )
+                # 👇 ESTO FALTABA (El robot que los repara) 👇
+                if targets:
+                    if not drone.driver:
+                        drone.login()
+                    for order in targets:
+                        data = drone.scrape_detail(order.external_id, mode="full")
+                        process_drone_data(db, data)
+                        processed += 1
+                    db.commit()
 
             # --- 3. ZOMBIES (Pedidos 'Pendientes' con > 6 horas) ---
             # Esto arregla el caso del pedido 106784 automáticamente
@@ -778,7 +770,7 @@ def sync_store_commissions(self):
         except Exception as e:
             logger.error(f"Error sync stores: {e}")
         finally:
-            # 🧟 EXTERMINADOR: Cierre garantizado
+            # 👇 ESTO FALTABA (Mata el proceso siempre) 👇
             if scraper:
                 scraper.close_driver()
             db.close()
