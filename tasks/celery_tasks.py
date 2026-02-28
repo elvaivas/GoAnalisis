@@ -590,7 +590,7 @@ def enrich_missing_data(self):
                     db.query(Order)
                     .filter(
                         Order.created_at >= cutoff_days,
-                        Order.current_status == "delivered"
+                        Order.current_status == "delivered",
                         Order.order_type != "Pickup",  # <--- ESTA ES LA CLAVE
                         (Order.latitude == None)
                         | (Order.gross_delivery_fee == 0)
