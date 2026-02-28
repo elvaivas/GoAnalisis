@@ -590,7 +590,7 @@ def enrich_missing_data(self):
                     db.query(Order)
                     .filter(
                         Order.created_at >= cutoff_days,
-                        Order.current_status == "delivered",
+                        Order.current_status == "delivered"
                         Order.order_type != "Pickup",  # <--- ESTA ES LA CLAVE
                         (Order.latitude == None)
                         | (Order.gross_delivery_fee == 0)
@@ -759,19 +759,26 @@ def sync_store_commissions(self):
         db = SessionLocal()
         stores = db.query(Store).all()
         scraper = StoreScraper()
-        if not scraper.login():
-            return
-        updated = 0
-        for s in stores:
-            try:
-                real_id = re.search(r"\d+", s.external_id or "").group(0)
-                commission = scraper.scrape_commission(real_id)
-                if commission > 0:
-                    s.commission_rate = commission
-                    updated += 1
-            except:
-                continue
-        db.commit()
-        scraper.close_driver()
-        db.close()
-        return f"Tiendas: {updated}"
+
+        try:
+            if not scraper.login():
+                return
+            updated = 0
+            for s in stores:
+                try:
+                    real_id = re.search(r"\d+", s.external_id or "").group(0)
+                    commission = scraper.scrape_commission(real_id)
+                    if commission > 0:
+                        s.commission_rate = commission
+                        updated += 1
+                except:
+                    continue
+            db.commit()
+            return f"Tiendas: {updated}"
+        except Exception as e:
+            logger.error(f"Error sync stores: {e}")
+        finally:
+            # 🧟 EXTERMINADOR: Cierre garantizado
+            if scraper:
+                scraper.close_driver()
+            db.close()

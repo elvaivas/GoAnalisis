@@ -13,7 +13,7 @@
 LOG_FILE="/root/GoAnalisis/sentinel.log"
 MAX_RAM_USAGE=85
 MAX_DISK_USAGE=90
-MAX_CHROME_PROCESSES=15
+MAX_CHROME_PROCESSES=120
 MAX_REDIS_QUEUE=200 # Si hay más de 200 tareas en cola, algo va mal
 
 # Nombres de contenedores
@@ -87,7 +87,7 @@ if [ "$CHROME_COUNT" -gt "$MAX_CHROME_PROCESSES" ]; then
     docker exec $C_WORKER pkill -f chrome || true
     docker exec $C_WORKER pkill -f chromedriver || true
     
-    if [ "$CHROME_COUNT" -gt 50 ]; then
+    if [ "$CHROME_COUNT" -gt 200 ]; then
         log_msg "☢️ Demasiados zombies. Reinicio fuerte del contenedor."
         cd /root/GoAnalisis && docker compose restart celery_node
     fi
