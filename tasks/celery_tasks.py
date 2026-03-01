@@ -646,10 +646,7 @@ def enrich_missing_data(self):
                     db.commit()
             # -------------------------------------------------------
 
-            if processed > 0:
-                enrich_missing_data.apply_async(countdown=2)
-                return f"Enriched {processed}"
-            return "All Done"
+            return f"Ciclo finalizado. Se intentó reparar {processed} pedidos."
 
         except Exception as e:
             logger.error(f"Drone error: {e}")
