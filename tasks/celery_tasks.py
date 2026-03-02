@@ -507,7 +507,7 @@ def backfill_historical_data(self):
 @shared_task(bind=True)
 def monitor_active_orders(self):
     key = "celery_lock_monitor_active_orders"
-    with redis_lock(key, 55) as acquired:
+    with redis_lock(key, 300) as acquired:
         if not acquired:
             return
         logger.info("📡 Monitor V4...")
@@ -544,7 +544,7 @@ def enrich_missing_data(self):
     Dron de Limpieza: 1. Cancelados, 2. Mapas/Finanzas, 3. Zombies (Pendientes viejos).
     """
     key = "celery_lock_drone_enrichment"
-    with redis_lock(key, 300) as acquired:
+    with redis_lock(key, 900) as acquired:
         if not acquired:
             return "Drone busy"
 
