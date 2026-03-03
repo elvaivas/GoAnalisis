@@ -27,6 +27,7 @@ services:
   api:
     build: .
     container_name: goanalisis_api
+    init: true # <--- 💀 EL ENTERRADOR DE ZOMBIES
     environment:
       - REDIS_URL=redis://redis:6379/0
       - POSTGRES_SERVER=db
@@ -49,6 +50,7 @@ services:
   celery_node:
     build: .
     container_name: goanalisis_celery_node
+    init: true # <--- 💀 EL ENTERRADOR DE ZOMBIES (EL MÁS IMPORTANTE)
     environment:
       - REDIS_URL=redis://redis:6379/0
       - POSTGRES_SERVER=db
@@ -64,13 +66,14 @@ services:
       - redis
       - db
     # AUMENTO DE MEMORIA PARA EVITAR CRASH DE CHROME
-    shm_size: '2gb' 
+    shm_size: '2gb'
     restart: unless-stopped
-    
+
   # 5. Beat (Scheduler)
   celery_beat:
     build: .
     container_name: goanalisis_celery_beat
+    init: true # <--- 💀 EL ENTERRADOR DE ZOMBIES
     environment:
       - REDIS_URL=redis://redis:6379/0
     env_file:
