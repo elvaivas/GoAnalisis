@@ -106,27 +106,19 @@ def enforce_schedules(self):
 # 3. EL OBRERO / NINJA (El que dispara)
 # Toma 1 sola tienda, entra, hace clic, y se va.
 # ==========================================
-@shared_task(bind=True, max_retries=2)
-def execute_single_store_shutdown(self, store_name, store_external_id):
-    logger.info(f"🥷 Ninja activado para apagar: {store_name}")
-
-    controller = StoreControllerScraper()
+@shared_task(bind=True)
+def execute_single_store_shutdown(self, name, external_id):
+    scraper = None
     try:
-        # Forzamos el apagado (desired_status_bool = False)
-        was_switched_off = controller.enforce_store_status(
-            store_name=store_name,
-            desired_status_bool=False,
-            store_external_id=store_external_id,
-        )
-        if was_switched_off:
-            return f"✅ {store_name} APAGADA con éxito."
-        else:
-            return f"ℹ️ {store_name} ya estaba apagada."
+        from tasks.scraper.store_scraper import StoreScraper
 
+        scraper = StoreScraper()
+        if scraper.login():
+            scraper.shutdown_store(external_id)
+            logger.info(f"🔌 APAGANDO: {name}...")
     except Exception as e:
-        logger.error(f"❌ Fallo al apagar {store_name}. Reintentando... Error: {e}")
-        # Si falla (ej. Gopharma no carga), la tarea se reintenta automáticamente en 60 segundos
-        raise self.retry(exc=e, countdown=60)
-
+        logger.error(f"❌ Error crítico en {name}: {e}")
     finally:
-        controller.close()
+        # 👇 El blindaje que faltaba
+        if scraper:
+            scraper.close_driver()
