@@ -507,35 +507,78 @@ def backfill_historical_data(self):
 @shared_task(bind=True)
 def monitor_active_orders(self):
     key = "celery_lock_monitor_active_orders"
-    with redis_lock(key, 300) as acquired:
+
+    # Bloqueo de 55 segundos para asegurar que muere justo antes del siguiente ciclo de Celery
+    with redis_lock(key, 55) as acquired:
         if not acquired:
             return
-        logger.info("📡 Monitor V4...")
+
+        logger.info("🚀 INICIANDO RADAR V5 (Alta Frecuencia - 45s)...")
         ls = OrderScraper()
         drone = DroneScraper()
+        db = SessionLocal()
+
         try:
             if not ls.login():
                 return
-            recent_items = ls.get_recent_order_ids(limit=15)
-            ls.close_driver()
-            if not recent_items:
-                return
             if not drone.login():
                 return
-            db = SessionLocal()
-            for item in recent_items:
-                eid = item["id"]
-                data = drone.scrape_detail(eid, mode="full")
-                data["duration_text"] = item["duration"]
-                process_drone_data(db, data)
-            db.close()
+
+            end_time = time.time() + 45  # El bucle vivirá exactamente 45 segundos
+            processed_low_priority = set()  # Memoria para no saturar pedidos lentos
+
+            while time.time() < end_time:
+                loop_start = time.time()
+
+                # 1. Refresca la tabla principal (Pestaña "All")
+                recent_items = ls.get_recent_order_ids(limit=15)
+
+                if recent_items:
+                    for item in recent_items:
+                        eid = item["id"]
+                        order = db.query(Order).filter(Order.external_id == eid).first()
+
+                        needs_extraction = False
+
+                        # A. ES NUEVO: Extracción inmediata
+                        if not order:
+                            needs_extraction = True
+
+                        # B. ESTÁ PENDIENTE: Extracción agresiva (cada 8 seg) para no perder el salto
+                        elif order.current_status in ["created", "pending"]:
+                            needs_extraction = True
+
+                        # C. ESTÁ EN PROCESO/CAMINO: Extracción pasiva (1 vez por minuto es suficiente)
+                        elif order.current_status not in ["delivered", "canceled"]:
+                            if eid not in processed_low_priority:
+                                needs_extraction = True
+                                processed_low_priority.add(
+                                    eid
+                                )  # Lo marcamos para ignorarlo el resto de los 45s
+
+                        # 2. Mandamos al dron si es necesario
+                        if needs_extraction:
+                            data = drone.scrape_detail(eid, mode="full")
+                            data["duration_text"] = item.get("duration", "")
+                            process_drone_data(db, data)
+
+                # 3. Descanso táctico antes de volver a refrescar la tabla
+                elapsed = time.time() - loop_start
+                sleep_time = max(
+                    0, 8 - elapsed
+                )  # Apuntamos a un barrido cada 8 segundos
+                if time.time() + sleep_time < end_time:
+                    time.sleep(sleep_time)
+
         except Exception as e:
-            logger.error(f"Monitor: {e}")
+            logger.error(f"❌ Monitor Radar Error: {e}")
         finally:
             if ls:
                 ls.close_driver()
             if drone:
                 drone.close_driver()
+            db.close()
+            logger.info("🛑 Radar apagado limpiamente. Esperando siguiente ciclo.")
 
 
 @shared_task(bind=True)
