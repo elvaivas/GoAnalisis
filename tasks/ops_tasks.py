@@ -108,17 +108,18 @@ def enforce_schedules(self):
 # ==========================================
 @shared_task(bind=True)
 def execute_single_store_shutdown(self, name, external_id):
-    scraper = None
+    controller = None
     try:
-        from tasks.scraper.store_scraper import StoreScraper
+        from tasks.scraper.store_controller import StoreControllerScraper
 
-        scraper = StoreScraper()
-        if scraper.login():
-            scraper.shutdown_store(external_id)
-            logger.info(f"🔌 APAGANDO: {name}...")
+        controller = StoreControllerScraper()
+
+        # Le pasamos el nombre, False (para apagar), y el ID
+        controller.enforce_store_status(name, False, external_id)
+
     except Exception as e:
         logger.error(f"❌ Error crítico en {name}: {e}")
     finally:
-        # 👇 El blindaje que faltaba
-        if scraper:
-            scraper.close_driver()
+        # 👇 El blindaje real anti-zombies
+        if controller:
+            controller.close()
