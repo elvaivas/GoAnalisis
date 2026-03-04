@@ -666,17 +666,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
         tableBody.innerHTML = html;
         // Sobrescribimos el KPI falso del backend con nuestro cálculo real
-        if (calcTotalCount > 0) {
-            const realAvg = (calcTotalMins / calcTotalCount).toFixed(1);
-            const kpiElement = document.getElementById('kpi-avg-time');
-            if (kpiElement) {
-                kpiElement.innerHTML = `${realAvg} min <small class="text-success" style="font-size:0.5em"></small>`;
-            }
-        } else {
-            // Si no hay pedidos entregados aún
-            const kpiElement = document.getElementById('kpi-avg-time');
-            if (kpiElement) kpiElement.innerText = "-- min";
-        }
+        //if (calcTotalCount > 0) {
+        //    const realAvg = (calcTotalMins / calcTotalCount).toFixed(1);
+        //    const kpiElement = document.getElementById('kpi-avg-time');
+        //    if (kpiElement) {
+        //        kpiElement.innerHTML = `${realAvg} min <small class="text-success" style="font-size:0.5em"></small>`;
+        //    }
+        //} else {
+        // Si no hay pedidos entregados aún
+        //    const kpiElement = document.getElementById('kpi-avg-time');
+        //    if (kpiElement) kpiElement.innerText = "-- min";
+        //}
         // -----------------------------------------------------
         // --- ACTUALIZAR AVISOS EN PESTAÑA ---
         updateDynamicFavicon(activeCount);
