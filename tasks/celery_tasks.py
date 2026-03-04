@@ -160,17 +160,19 @@ def calculate_distance_km(lat1, lon1, lat2, lon2):
 
 
 def normalize_cancellation_reason(text: str) -> str:
-    """Estandariza los motivos de cancelación."""
+    """Estandariza los motivos de cancelación (Filtro Nivel 2)."""
     if not text or text == "." or len(text) < 3:
         return "Sin especificar"
 
     text = text.replace("del pedido :", "").replace("del pedido", "").strip()
     text_lower = text.lower()
 
+    # 1. Disponibilidad de Producto (Agregados errores ortográficos y variantes)
     if any(
         x in text_lower
         for x in [
-            "disponible",
+            "disponib",
+            "dsiponible",
             "existencia",
             "vencido",
             "dañado",
@@ -180,13 +182,19 @@ def normalize_cancellation_reason(text: str) -> str:
             "inventario",
             "coca cola",
             "falta",
+            "falto",
             "agotado",
             "stock",
             "medicamento",
             "existente",
+            "contamos",
+            "disponen",
+            "disponemos",
         ]
     ):
         return "Producto No Disponible / Dañado"
+
+    # 2. Pagos
     if any(
         x in text_lower
         for x in ["payment", "pago", "transferencia", "zelle", "móvil", "movil"]
@@ -194,6 +202,26 @@ def normalize_cancellation_reason(text: str) -> str:
         if "agotado" in text_lower or "tiempo" in text_lower:
             return "Tiempo de Pago Agotado"
         return "Problemas con el Pago"
+
+    # 3. Récipe Médico (¡NUEVA!)
+    if any(
+        x in text_lower
+        for x in ["recipe", "récipe", "receta", "indicacion", "indicación"]
+    ):
+        return "Requiere Récipe Médico"
+
+    # 4. Zona de Cobertura (¡NUEVA!)
+    if any(
+        x in text_lower
+        for x in ["cobertura", "cubre", "lejos", "valencia", "zona", "delery"]
+    ):
+        return "Fuera de Zona de Cobertura"
+
+    # 5. Fuera de Horario (¡NUEVA!)
+    if any(x in text_lower for x in ["horario", "cierre", "cerrado", "tarde"]):
+        return "Fuera de Horario / Tienda Cerrada"
+
+    # 6. Errores del Cliente
     if any(
         x in text_lower
         for x in [
@@ -204,15 +232,20 @@ def normalize_cancellation_reason(text: str) -> str:
             "código",
             "codigo",
             "error",
+            "guante",
+            "par",
         ]
     ):
         return "Error en Pedido / Descripción"
+
+    # 7. Administrativo
     if any(
         x in text_lower
-        for x in ["nota", "prueba", "test", "orden de", "admin", "traspaso"]
+        for x in ["nota", "prueba", "test", "orden de", "admin", "traspaso", "ajuste"]
     ):
         return "Cancelación Administrativa"
 
+    # Fallback: Si alguien inventa algo MUY nuevo, lo guarda en Capitalize
     return text.title()
 
 
