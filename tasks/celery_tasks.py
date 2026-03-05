@@ -537,7 +537,7 @@ def backfill_historical_data(self):
             db.close()
 
 
-@shared_task(bind=True)
+@shared_task(bind=True, soft_time_limit=55, time_limit=65)
 def monitor_active_orders(self):
     key = "celery_lock_monitor_active_orders"
 
@@ -614,7 +614,7 @@ def monitor_active_orders(self):
             logger.info("🛑 Radar apagado limpiamente. Esperando siguiente ciclo.")
 
 
-@shared_task(bind=True)
+@shared_task(bind=True, soft_time_limit=600, time_limit=660)
 def enrich_missing_data(self):
     """
     Dron de Limpieza: 1. Cancelados, 2. Mapas/Finanzas, 3. Zombies (Pendientes viejos).
@@ -732,7 +732,12 @@ def enrich_missing_data(self):
             db.close()
 
 
-@shared_task(bind=True, name="tasks.celery_tasks.sync_customer_database")
+@shared_task(
+    bind=True,
+    name="tasks.celery_tasks.sync_customer_database",
+    soft_time_limit=5400,
+    time_limit=5500,
+)
 def sync_customer_database(self, limit_pages: int = None):
     """
     Sincroniza la base de datos de clientes.
@@ -815,7 +820,7 @@ def sync_customer_database(self, limit_pages: int = None):
             db.close()
 
 
-@shared_task(bind=True)
+@shared_task(bind=True, soft_time_limit=1200, time_limit=1260)
 def sync_store_commissions(self):
     key = "celery_lock_sync_stores"
     with redis_lock(key, 1800) as acquired:

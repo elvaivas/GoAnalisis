@@ -33,6 +33,9 @@ class ECScraper:
 
         service = Service()
         self.driver = webdriver.Chrome(service=service, options=options)
+        # Escudo SRE: Timeout de 30s contra desconexiones
+        self.driver.set_page_load_timeout(30)
+        self.driver.set_script_timeout(30)
 
         # JAULA DE CRISTAL
         self.driver.execute_cdp_cmd(

@@ -17,6 +17,9 @@ def check_screen():
 
     service = Service()
     driver = webdriver.Chrome(service=service, options=options)
+    # Escudo SRE: Timeout de 30s contra desconexiones
+    driver.set_page_load_timeout(30)
+    driver.set_script_timeout(30)
 
     try:
         logger.info("📏 Midiendo resolución real del Servidor...")

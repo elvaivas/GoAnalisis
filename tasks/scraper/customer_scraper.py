@@ -39,6 +39,9 @@ class CustomerScraper:
 
         service = ChromeService()
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Escudo SRE: Timeout de 30s contra desconexiones
+        self.driver.set_page_load_timeout(30)
+        self.driver.set_script_timeout(30)
 
     def login(self) -> bool:
         if not self.driver:

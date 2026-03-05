@@ -41,9 +41,15 @@ class StoreControllerScraper:
             driver_path = ChromeDriverManager().install()
             service = Service(executable_path=driver_path)
             self.driver = webdriver.Chrome(service=service, options=options)
+            # Escudo SRE: Timeout de 30s contra desconexiones
+            self.driver.set_page_load_timeout(30)
+            self.driver.set_script_timeout(30)
         except:
             service = Service(executable_path="/usr/bin/chromedriver")
             self.driver = webdriver.Chrome(service=service, options=options)
+            # Escudo SRE: Timeout de 30s contra desconexiones
+            self.driver.set_page_load_timeout(30)
+            self.driver.set_script_timeout(30)
 
     def login(self):
         if not self.driver:
