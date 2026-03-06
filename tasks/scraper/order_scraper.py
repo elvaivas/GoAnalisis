@@ -330,32 +330,26 @@ class OrderScraper:
             )
 
             rows = self.driver.find_elements(
-                By.XPATH, "//table[@id='datatable']/tbody/tr"
+                By.XPATH,
+                "//table[@id='datatable']/tbody/tr[td[contains(@class, 'table-column-pl-0')]]",
             )
 
             for row in rows:
                 if len(orders_found) >= limit:
                     break
                 try:
-                    # Ignorar filas basura
-                    if "Carrito" in row.text or "group-separator" in row.get_attribute(
-                        "class"
-                    ):
-                        continue
-
-                    # ID
+                    # ID directo sin leer todo el texto de la fila
                     link = row.find_element(
-                        By.XPATH, ".//a[contains(@href, '/order/details/')]"
+                        By.XPATH, ".//td[contains(@class, 'table-column-pl-0')]/a"
                     )
-                    href = link.get_attribute("href")
-                    order_id = href.split("/")[-1]
+                    order_id = link.get_attribute("href").split("/")[-1]
 
-                    # Duración (La rescatamos aquí)
+                    # Duración
                     duration = self._parse_duration(row)
 
                     if order_id.isdigit():
                         orders_found.append({"id": order_id, "duration": duration})
-                except:
+                except Exception as e:
                     continue
 
         except Exception as e:
@@ -394,17 +388,15 @@ class OrderScraper:
                 logger.info(f"📄 Escaneando pág {current_page}...")
 
                 rows = self.driver.find_elements(
-                    By.XPATH, "//table[@id='datatable']/tbody/tr"
+                    By.XPATH,
+                    "//table[@id='datatable']/tbody/tr[td[contains(@class, 'table-column-pl-0')]]",
                 )
                 page_data = []
 
                 for row in rows:
                     try:
-                        if "Carrito" in row.text:
-                            continue
-
                         link = row.find_element(
-                            By.XPATH, ".//a[contains(@href, '/order/details/')]"
+                            By.XPATH, ".//td[contains(@class, 'table-column-pl-0')]/a"
                         )
                         order_id = link.get_attribute("href").split("/")[-1]
                         duration = self._parse_duration(row)

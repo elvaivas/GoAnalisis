@@ -6,12 +6,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (!token) { window.location.href = '/login'; return; }
 
+    // 1. CANDADO MAESTRO: Ocultar finanzas a todos los que NO sean admin (ATC y Viewers)
     if (role !== 'admin') {
         document.body.classList.add('role-viewer');
         console.log("🔒 Modo Visualizador (Datos financieros ocultos)");
 
         const style = document.createElement('style');
-        // AÑADÍ .admin-only AQUÍ ABAJO PARA GARANTIZAR QUE SE OCULTE
         style.innerHTML = `
             #kpi-total-revenue, #kpi-total-fees, #kpi-total-coupons, 
             #kpi-driver-payout, #kpi-company-profit, #trendsChart, #heatmapContainer,
@@ -20,6 +20,15 @@ document.addEventListener('DOMContentLoaded', function () {
             .col-money { visibility: hidden; } 
         `;
         document.head.appendChild(style);
+    }
+
+    // 2. CANDADO ESPECÍFICO: Ocultar botón de horarios SOLO a los que NO son admin ni ATC
+    if (role !== 'admin' && role !== 'atc') {
+        const styleAtc = document.createElement('style');
+        styleAtc.innerHTML = `
+            .admin-atc-only { display: none !important; }
+        `;
+        document.head.appendChild(styleAtc);
     }
 
     document.getElementById('btn-logout')?.addEventListener('click', () => {

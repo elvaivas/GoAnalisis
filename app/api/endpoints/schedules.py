@@ -4,6 +4,9 @@ from typing import List
 from app.api import deps
 from app.db.base import StoreSchedule, Store, User
 from app.schemas.schedule import ScheduleCreate, ScheduleOut
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -36,10 +39,17 @@ def create_schedule(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
-    if current_user.role != "admin":
+    # 🛡️ Solo Admin y ATC pueden pasar
+    if current_user.role not in ["admin", "atc"]:
         raise HTTPException(
-            status_code=403, detail="Solo administradores pueden configurar horarios"
+            status_code=403,
+            detail="Solo administradores o ATC pueden configurar horarios",
         )
+
+    # 📹 Cámara de seguridad (Queda en los logs de Docker)
+    logger.info(
+        f"🛡️ AUDITORÍA HORARIOS: Usuario '{current_user.username}' (Rol: {current_user.role}) está configurando un horario."
+    )
 
     new_rule = StoreSchedule(**schedule_in.dict())
     db.add(new_rule)
@@ -62,8 +72,14 @@ def delete_schedule(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
-    if current_user.role != "admin":
+    # 🛡️ Solo Admin y ATC pueden pasar
+    if current_user.role not in ["admin", "atc"]:
         raise HTTPException(status_code=403, detail="Permiso denegado")
+
+    # 📹 Cámara de seguridad
+    logger.warning(
+        f"🚨 AUDITORÍA HORARIOS: Usuario '{current_user.username}' (Rol: {current_user.role}) está modificando/eliminando la regla ID: {schedule_id}."
+    )
 
     rule = db.query(StoreSchedule).filter(StoreSchedule.id == schedule_id).first()
     if not rule:
