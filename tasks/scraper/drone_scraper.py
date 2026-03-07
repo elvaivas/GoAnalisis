@@ -190,33 +190,16 @@ class DroneScraper:
 
     def _extract_basic_info(self) -> Dict[str, str]:
         info = {}
-        # --- NUEVO ESCÁNER MULTI-RADAR PARA ESTADOS ---
         try:
-            # Intento 1: El menú desplegable (El más seguro en la nueva vista Admin)
             status_el = self.driver.find_element(
-                By.CSS_SELECTOR, "select[name='order_status'] option:checked"
+                By.XPATH,
+                "//div[contains(@class, 'order-invoice-right')]//span[contains(@class, 'badge')]",
             )
             info["status_text"] = status_el.text.strip()
         except:
-            try:
-                # Intento 2: Badge en el título principal (Muy común en la nueva interfaz)
-                status_el = self.driver.find_element(
-                    By.XPATH,
-                    "//h1[contains(@class, 'page-header-title')]//span[contains(@class, 'badge')]",
-                )
-                info["status_text"] = status_el.text.strip()
-            except:
-                try:
-                    # Intento 3: El diseño viejo (Legacy por si acaso)
-                    status_el = self.driver.find_element(
-                        By.XPATH,
-                        "//div[contains(@class, 'order-invoice-right')]//span[contains(@class, 'badge')]",
-                    )
-                    info["status_text"] = status_el.text.strip()
-                except Exception as e:
-                    logger.warning(f"⚠️ Drone ciego en el estado. Asumiendo 'pending'.")
-                    info["status_text"] = "pending"
-        # ----------------------------------------------
+            info["status_text"] = (
+                ""  # Dejamos vacío en lugar de "pending" para no forzar errores
+            )
 
         try:
             client_el = self.driver.find_element(

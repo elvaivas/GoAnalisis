@@ -338,6 +338,11 @@ class OrderScraper:
                 if len(orders_found) >= limit:
                     break
                 try:
+                    # --- NUEVO: Extraer la clase de la fila para sacar el estado ---
+                    row_class = row.get_attribute("class")
+                    status_match = re.search(r"status-([a-zA-Z0-9_-]+)", row_class)
+                    row_status = status_match.group(1) if status_match else ""
+
                     # ID directo sin leer todo el texto de la fila
                     link = row.find_element(
                         By.XPATH, ".//td[contains(@class, 'table-column-pl-0')]/a"
@@ -348,7 +353,14 @@ class OrderScraper:
                     duration = self._parse_duration(row)
 
                     if order_id.isdigit():
-                        orders_found.append({"id": order_id, "duration": duration})
+                        # NUEVO: Agregamos "list_status" al diccionario
+                        orders_found.append(
+                            {
+                                "id": order_id,
+                                "duration": duration,
+                                "list_status": row_status,
+                            }
+                        )
                 except Exception as e:
                     continue
 

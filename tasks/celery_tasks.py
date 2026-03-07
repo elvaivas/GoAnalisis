@@ -255,38 +255,52 @@ def process_drone_data(db, data: dict):
         if not external_id:
             return
 
-        # --- DIAGNÓSTICO DE ESTATUS (Log visible) ---
+        # --- DIAGNÓSTICO DE ESTATUS (Doble Escudo SRE) ---
+        list_status = data.get("list_status", "").lower()
         raw_status = data.get("status_text", "").strip()
         status_text = raw_status.lower()
 
         db_status = "pending"  # Default
 
-        # 1. Finales (Prioridad Absoluta)
-        if "entregado" in status_text:
-            db_status = "delivered"
-        elif "cancelado" in status_text:
-            db_status = "canceled"
+        # ESCUDO 1: Prioridad Absoluta (El estatus extraído de la tabla principal)
+        if list_status:
+            if list_status == "delivered":
+                db_status = "delivered"
+            elif list_status == "canceled" or list_status == "failed":
+                db_status = "canceled"
+            elif list_status == "confirmed":
+                db_status = "confirmed"
+            elif list_status == "processing":
+                db_status = "processing"
+            elif list_status == "handover":
+                db_status = "driver_assigned"
+            elif list_status in ["item_on_the_way", "picked_up"]:
+                db_status = "on_the_way"
 
-        # 2. Inicial
-        elif "creado" in status_text:
-            db_status = "created"
+        # ESCUDO 2: Fallback (Para escaneos viejos o reparaciones profundas)
+        else:
+            if "entregado" in status_text:
+                db_status = "delivered"
+            elif "cancelado" in status_text:
+                db_status = "canceled"
+            elif "creado" in status_text:
+                db_status = "created"
+            elif "camino" in status_text or "ruta" in status_text:
+                db_status = "on_the_way"
+            elif "asignado" in status_text:
+                db_status = "driver_assigned"
+            elif "proceso" in status_text:
+                db_status = "processing"
+            elif "confirmado" in status_text:
+                db_status = "confirmed"
 
-        # 3. Operativos
-        elif "camino" in status_text or "ruta" in status_text:
-            db_status = "on_the_way"
-
-        # --- CASO ESPECIAL DEL HTML ---
-        elif "entrega" in status_text and "repartidor" in status_text:
-            # "Entrega al repartidor"
-            # Decidimos si es 'Solicitando' o 'Asignado' según si ya tiene nombre
-            has_driver_name = data.get("driver_name") and "N/A" not in data.get(
-                "driver_name"
-            )
-            if has_driver_name:
-                db_status = "driver_assigned"  # Tiene chofer -> Asignado
-            else:
-                db_status = "confirmed"  # No tiene -> Solicitando
-        # -----------------------------
+        # CASO ESPECIAL DEL CHÓFER: Si el HTML dice 'confirmed' pero ya hay chofer
+        has_driver_name = data.get("driver_name") and "N/A" not in data.get(
+            "driver_name"
+        )
+        if db_status == "confirmed" and has_driver_name:
+            db_status = "driver_assigned"
+        # -------------------------------------------------------------
 
         elif "asignado" in status_text:
             db_status = "driver_assigned"
@@ -593,6 +607,8 @@ def monitor_active_orders(self):
                         if needs_extraction:
                             data = drone.scrape_detail(eid, mode="full")
                             data["duration_text"] = item.get("duration", "")
+                            # --- NUEVO: Pasamos el estado de la lista principal ---
+                            data["list_status"] = item.get("list_status", "")
                             process_drone_data(db, data)
 
                 # 3. Descanso táctico antes de volver a refrescar la tabla
