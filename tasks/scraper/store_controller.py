@@ -8,8 +8,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 from app.core.config import settings
 
 logging.basicConfig(
@@ -38,18 +36,17 @@ class StoreControllerScraper:
         options.add_argument("--ignore-certificate-errors")
 
         try:
-            driver_path = ChromeDriverManager().install()
-            service = Service(executable_path=driver_path)
-            self.driver = webdriver.Chrome(service=service, options=options)
+            # Selenium Manager toma el control absoluto
+            self.driver = webdriver.Chrome(options=options)
+
             # Escudo SRE: Timeout de 30s contra desconexiones
             self.driver.set_page_load_timeout(30)
             self.driver.set_script_timeout(30)
-        except:
-            service = Service(executable_path="/usr/bin/chromedriver")
-            self.driver = webdriver.Chrome(service=service, options=options)
-            # Escudo SRE: Timeout de 30s contra desconexiones
-            self.driver.set_page_load_timeout(30)
-            self.driver.set_script_timeout(30)
+
+        except Exception as e:
+            # Si explota, queremos que el log nos diga exactamente por qué
+            print(f"❌ Error fatal iniciando driver nativo en Store Controller: {e}")
+            raise e
 
     def login(self):
         if not self.driver:

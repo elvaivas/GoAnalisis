@@ -13,7 +13,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service as ChromeService
 
-# from webdriver_manager.chrome import ChromeDriverManager
+
 from app.core.config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +39,11 @@ class DroneScraper:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
+        # --- BLINDAJE EXTREMO DE MEMORIA ---
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        # Esta es la joya: No cargar imágenes = -60% consumo de RAM
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
 
         # Configuración de descargas
         self.download_dir = "/tmp/downloads"
@@ -61,8 +66,7 @@ class DroneScraper:
             # Corrección de permisos (a veces baja sin permisos de ejecución)
             os.chmod(driver_path, 0o755)
 
-            service = Service(executable_path=driver_path)
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            self.driver = webdriver.Chrome(options=chrome_options)
             # Escudo SRE: Timeout de 30s contra desconexiones
             self.driver.set_page_load_timeout(30)
             self.driver.set_script_timeout(30)

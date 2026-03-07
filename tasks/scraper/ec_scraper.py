@@ -3,7 +3,6 @@ import time
 import os
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
@@ -31,8 +30,9 @@ class ECScraper:
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
 
-        service = Service()
-        self.driver = webdriver.Chrome(service=service, options=options)
+        # --- INICIO NATIVO SRE ---
+        self.driver = webdriver.Chrome(options=options)
+
         # Escudo SRE: Timeout de 30s contra desconexiones
         self.driver.set_page_load_timeout(30)
         self.driver.set_script_timeout(30)

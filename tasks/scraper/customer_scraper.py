@@ -8,7 +8,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service as ChromeService
 from app.core.config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -37,8 +36,9 @@ class CustomerScraper:
             "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         )
 
-        service = ChromeService()
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        # --- INICIO NATIVO SRE ---
+        self.driver = webdriver.Chrome(options=chrome_options)
+
         # Escudo SRE: Timeout de 30s contra desconexiones
         self.driver.set_page_load_timeout(30)
         self.driver.set_script_timeout(30)

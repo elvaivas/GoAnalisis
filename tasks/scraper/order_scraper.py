@@ -14,7 +14,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
-from selenium.webdriver.chrome.service import Service
 from app.core.config import settings
 
 
@@ -34,9 +33,8 @@ class OrderScraper:
 
     def setup_driver(self):
         # Importaciones locales para no ensuciar el resto del archivo
-        from selenium.webdriver.chrome.service import Service
         from selenium.webdriver.chrome.options import Options
-        from webdriver_manager.chrome import ChromeDriverManager
+
         import logging
 
         chrome_options = Options()
@@ -45,6 +43,11 @@ class OrderScraper:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
+        # --- BLINDAJE EXTREMO DE MEMORIA ---
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        # Esta es la joya: No cargar imágenes = -60% consumo de RAM
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
 
         # Configuración de descargas
         self.download_dir = "/tmp/downloads"
@@ -58,24 +61,20 @@ class OrderScraper:
         }
         chrome_options.add_experimental_option("prefs", prefs)
 
-        # --- INSTALACIÓN AUTOMÁTICA DEL DRIVER ---
+        # --- INSTALACIÓN NATIVA DEL DRIVER (SELENIUM MANAGER) ---
         try:
-            logger.info("🔧 Instalando ChromeDriver compatible...")
-            # Esto descarga la versión exacta para el Chrome que tienes instalado
-            driver_path = ChromeDriverManager().install()
+            logger.info("🚀 Iniciando ChromeDriver nativo (Selenium Manager)...")
 
-            # Corrección de permisos (a veces baja sin permisos de ejecución)
-            os.chmod(driver_path, 0o755)
+            # Selenium >= 4.6 detecta tu Chrome y descarga el driver perfecto en silencio
+            self.driver = webdriver.Chrome(options=chrome_options)
 
-            service = Service(executable_path=driver_path)
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
             # Escudo SRE: Timeout de 30s contra desconexiones
             self.driver.set_page_load_timeout(30)
             self.driver.set_script_timeout(30)
-            logger.info(f"✅ Driver iniciado correctamente desde: {driver_path}")
+            logger.info("✅ Driver iniciado y sincronizado correctamente.")
 
         except Exception as e:
-            logger.error(f"❌ Error fatal iniciando driver: {e}")
+            logger.error(f"❌ Error fatal iniciando driver nativo: {e}")
             raise e
 
         # Comandos CDP finales
