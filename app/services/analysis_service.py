@@ -8,6 +8,13 @@ import re
 from app.db.base import Order, OrderStatusLog, Driver, Store, Customer
 
 
+def _normalize_store_filter(store_name: Optional[str]) -> Optional[str]:
+    """Extrae la sucursal real si viene en formato 'Empresa - Sucursal'"""
+    if not store_name:
+        return None
+    return store_name.split(" - ")[-1] if " - " in store_name else store_name
+
+
 # --- HELPER: BÚSQUEDA GLOBAL ---
 def apply_search(query, search_query: str):
     if search_query:
@@ -76,8 +83,10 @@ def get_daily_trends(
         query = query.filter(date_col <= end_date)
 
     if store_name:
+        # USA EL NORMALIZADOR AQUÍ:
+        real_name = _normalize_store_filter(store_name)
         query = query.join(Store, Order.store_id == Store.id).filter(
-            Store.name == store_name
+            Store.name == real_name
         )
     query = apply_search(query, search_query)
 
@@ -114,8 +123,10 @@ def get_driver_leaderboard(
     if end_date:
         query = query.filter(local_date <= end_date)
     if store_name:
+        # USA EL NORMALIZADOR AQUÍ:
+        real_name = _normalize_store_filter(store_name)
         query = query.join(Store, Order.store_id == Store.id).filter(
-            Store.name == store_name
+            Store.name == real_name
         )
 
     query = apply_search(query, search_query)
@@ -197,15 +208,39 @@ def get_top_stores(
     # QUIRÚRGICO: Eliminar tiendas sin nombre
     query = query.filter(Store.name != None)
 
+    # 1. Aplicamos el filtro normalizado
     if store_name:
-        query = query.filter(Store.name == store_name)
+        real_name = _normalize_store_filter(store_name)
+        query = query.filter(Store.name == real_name)
+
     query = apply_search(query, search_query)
 
+    # 2. IMPORTANTE: Agregamos company_name al group_by para poder usarlo
     results = (
-        query.group_by(Store.name, start_date_subquery.c.first_order_date)
+        query.group_by(
+            Store.name,
+            Store.company_name,  # <--- Agregado para el reporte
+            start_date_subquery.c.first_order_date,
+        )
         .order_by(desc("total_orders"))
         .all()
     )
+
+    # 3. Construimos la respuesta con el formato "Empresa - Sucursal"
+    return [
+        {
+            "name": (
+                f"{row.company_name} - {row.name}" if row.company_name else row.name
+            ),
+            "orders": row.total_orders,
+            "first_seen": (
+                row.first_order_date.strftime("%d/%m/%Y")
+                if row.first_order_date
+                else "N/A"
+            ),
+        }
+        for row in results
+    ]
 
     return [
         {
@@ -246,8 +281,10 @@ def get_heatmap_data(
     if end_date:
         query = query.filter(local_date <= end_date)
     if store_name:
+        # USA EL NORMALIZADOR AQUÍ:
+        real_name = _normalize_store_filter(store_name)
         query = query.join(Store, Order.store_id == Store.id).filter(
-            Store.name == store_name
+            Store.name == real_name
         )
 
     results = query.all()
@@ -281,8 +318,10 @@ def calculate_bottlenecks(
     if end_date:
         query = query.filter(local_date <= end_date)
     if store_name:
+        # USA EL NORMALIZADOR AQUÍ:
+        real_name = _normalize_store_filter(store_name)
         query = query.join(Store, Order.store_id == Store.id).filter(
-            Store.name == store_name
+            Store.name == real_name
         )
     query = apply_search(query, search_query)
 
@@ -408,8 +447,10 @@ def calculate_bottlenecks(
     if end_date:
         query = query.filter(local_date <= end_date)
     if store_name:
+        # USA EL NORMALIZADOR AQUÍ:
+        real_name = _normalize_store_filter(store_name)
         query = query.join(Store, Order.store_id == Store.id).filter(
-            Store.name == store_name
+            Store.name == real_name
         )
     query = apply_search(query, search_query)
 
@@ -536,8 +577,10 @@ def get_top_customers(
     if end_date:
         query = query.filter(local_date <= end_date)
     if store_name:
+        # USA EL NORMALIZADOR AQUÍ:
+        real_name = _normalize_store_filter(store_name)
         query = query.join(Store, Order.store_id == Store.id).filter(
-            Store.name == store_name
+            Store.name == real_name
         )
 
     # Filtro manual
@@ -599,8 +642,10 @@ def get_cancellation_reasons(
     if end_date:
         query = query.filter(local_date <= end_date)
     if store_name:
+        # USA EL NORMALIZADOR AQUÍ:
+        real_name = _normalize_store_filter(store_name)
         query = query.join(Store, Order.store_id == Store.id).filter(
-            Store.name == store_name
+            Store.name == real_name
         )
 
     query = apply_search(query, search_query)
@@ -627,8 +672,10 @@ def get_top_products(
     if end_date:
         query = query.filter(cast(Order.created_at, Date) <= end_date)
     if store_name:
+        # USA EL NORMALIZADOR AQUÍ:
+        real_name = _normalize_store_filter(store_name)
         query = query.join(Store, Order.store_id == Store.id).filter(
-            Store.name == store_name
+            Store.name == real_name
         )
 
     if search_query:
