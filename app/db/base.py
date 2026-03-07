@@ -102,6 +102,9 @@ class Store(Base):
     id = Column(Integer, primary_key=True, index=True)
     external_id = Column(String, unique=True, index=True)
     name = Column(String, nullable=True)
+    # --- NUEVO CAMPO ---
+    company_name = Column(String, nullable=True)
+    # -------------------
     latitude = Column(Float, nullable=True)
     commission_rate = Column(Float, default=0.0)
     longitude = Column(Float, nullable=True)

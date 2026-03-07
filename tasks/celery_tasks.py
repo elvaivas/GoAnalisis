@@ -849,6 +849,25 @@ def sync_store_commissions(self):
         try:
             if not scraper.login():
                 return
+            # --- NUEVA FASE: Sincronizar Perfiles (Empresa y Sucursal) ---
+            logger.info("🏢 Sincronizando Nombres y Empresas de Tiendas...")
+            stores_info = scraper.scrape_store_list()
+
+            for s_data in stores_info:
+                store = (
+                    db.query(Store)
+                    .filter(
+                        (Store.name == s_data["name"])
+                        | (Store.external_id.like(f"%{s_data['id']}%"))
+                    )
+                    .first()
+                )
+
+                if store:
+                    store.company_name = s_data["company_name"]
+                    store.name = s_data["name"]  # Aseguramos el nombre sin recortes
+            db.commit()
+            # -----------------------------------------------------------
             updated = 0
             for s in stores:
                 try:
