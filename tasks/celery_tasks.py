@@ -276,6 +276,12 @@ def process_drone_data(db, data: dict):
                 db_status = "driver_assigned"
             elif list_status in ["item_on_the_way", "picked_up"]:
                 db_status = "on_the_way"
+                # --- NUEVO: Atrapar estado Creado y Pendiente ---
+            elif list_status == "created":
+                db_status = "created"
+            elif list_status == "pending":
+                db_status = "pending"
+            # -------------------------------------------------
 
         # ESCUDO 2: Fallback (Para escaneos viejos o reparaciones profundas)
         else:
@@ -836,10 +842,9 @@ def sync_customer_database(self, limit_pages: int = None):
             db.close()
 
 
-@shared_task(bind=True, soft_time_limit=1200, time_limit=1260)
+@shared_task(bind=True, soft_time_limit=3600, time_limit=3660)
 def sync_store_commissions(self):
-    key = "celery_lock_sync_stores"
-    with redis_lock(key, 1800) as acquired:
+    with redis_lock("celery_lock_sync_stores", 3800) as acquired:
         if not acquired:
             return
         db = SessionLocal()
