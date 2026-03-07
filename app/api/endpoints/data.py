@@ -107,7 +107,11 @@ def get_recent_orders(
                 "current_status": o.current_status,
                 "order_type": o.order_type,
                 "total_amount": o.total_amount,
-                "store_name": o.store.name if o.store else "Sin Tienda",
+                "store_name": (
+                    f"{o.store.company_name} - {o.store.name}"
+                    if o.store and o.store.company_name
+                    else (o.store.name if o.store else "Sin Tienda")
+                ),
                 "customer_name": o.customer.name if o.customer else "Anónimo",
                 "customer_phone": o.customer.phone if o.customer else None,
                 "customer_orders_count": order_count,
