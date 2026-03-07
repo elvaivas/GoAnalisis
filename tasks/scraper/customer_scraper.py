@@ -29,48 +29,78 @@ class CustomerScraper:
         chrome_options = Options()
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
+        # SRE: Mantenemos esto porque Docker lo necesita, pero ya subimos el /dev/shm a 2GB
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--remote-allow-origins=*")
+
+        # SRE: Añadimos tamaño de ventana fijo para evitar que los elementos se "escondan" en headless
+        chrome_options.add_argument("--window-size=1920,1080")
+
+        # SRE: User-Agent actualizado a la versión real de tu servidor (v145)
         chrome_options.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.7632.159 Safari/537.36"
         )
 
-        # --- INICIO NATIVO SRE ---
-        self.driver = webdriver.Chrome(options=chrome_options)
+        try:
+            # INICIO NATIVO 20/20
+            self.driver = webdriver.Chrome(options=chrome_options)
 
-        # Escudo SRE: Timeout de 30s contra desconexiones
-        self.driver.set_page_load_timeout(30)
-        self.driver.set_script_timeout(30)
+            # Escudo de Timeouts: 30s es el estándar de oro
+            self.driver.set_page_load_timeout(30)
+            self.driver.set_script_timeout(30)
+            logger.info("✅ Driver de Clientes iniciado con éxito (Modo SRE).")
+        except Exception as e:
+            logger.error(f"❌ Error fatal iniciando ChromeDriver: {e}")
+            raise e
 
     def login(self) -> bool:
         if not self.driver:
             self.setup_driver()
         try:
+            logger.info(f"🔑 Intentando login en {self.base_url}...")
             self.driver.get(self.base_url)
-            wait = WebDriverWait(self.driver, 10)
-            wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(
-                settings.GOPHARMA_EMAIL
-            )
-            self.driver.find_element(By.NAME, "password").send_keys(
-                settings.GOPHARMA_PASSWORD
-            )
+            wait = WebDriverWait(
+                self.driver, 15
+            )  # Subimos a 15s por si el Legacy está lento
+
+            # Buscamos el campo email
+            email_field = wait.until(EC.presence_of_element_located((By.NAME, "email")))
+            email_field.clear()
+            email_field.send_keys(settings.GOPHARMA_EMAIL)
+
+            password_field = self.driver.find_element(By.NAME, "password")
+            password_field.clear()
+            password_field.send_keys(settings.GOPHARMA_PASSWORD)
+
+            # SRE: Intento de click inteligente
             try:
-                self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
+                submit_btn = self.driver.find_element(
+                    By.XPATH, "//button[@type='submit']"
+                )
+                submit_btn.click()
             except:
-                self.driver.find_element(By.NAME, "password").submit()
-            time.sleep(3)
-            return "login" not in self.driver.current_url
-        except:
+                password_field.submit()
+
+            # SRE: Eliminamos time.sleep(3). En su lugar, esperamos a que el URL cambie
+            # o que aparezca un elemento del Dashboard (ej: el menú lateral)
+            wait.until(lambda d: "login" not in d.current_url)
+
+            logger.info("✅ Login de Clientes exitoso.")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Fallo en el proceso de Login: {e}")
             return False
 
     def close_driver(self):
         if self.driver:
             try:
+                logger.info("🔌 Cerrando ChromeDriver de forma segura...")
                 self.driver.quit()
-            except:
-                pass
-            self.driver = None
+            except Exception as e:
+                logger.warning(f"⚠️ Error al cerrar el driver: {e}")
+            finally:
+                self.driver = None
 
     def _parse_spanish_date(self, text):
         if not text:
