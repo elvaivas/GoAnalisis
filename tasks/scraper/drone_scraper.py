@@ -58,21 +58,19 @@ class DroneScraper:
 
         # --- INSTALACIÓN AUTOMÁTICA DEL DRIVER ---
         try:
-            logger.info("🔧 Instalando ChromeDriver compatible...")
-            # Esto descarga la versión exacta para el Chrome que tienes instalado
-            # driver_path = ChromeDriverManager().install()
+            logger.info("🚀 Iniciando ChromeDriver nativo (Selenium Manager)...")
 
-            # Corrección de permisos (a veces baja sin permisos de ejecución)
-            os.chmod(driver_path, 0o755)
-
+            # Selenium >= 4.6 detecta tu Chrome .159 y gestiona el driver solo.
+            # No necesitamos 'driver_path' ni 'os.chmod'.
             self.driver = webdriver.Chrome(options=chrome_options)
+
             # Escudo SRE: Timeout de 30s contra desconexiones
             self.driver.set_page_load_timeout(30)
             self.driver.set_script_timeout(30)
-            logger.info(f"✅ Driver iniciado correctamente desde: {driver_path}")
+            logger.info("✅ Driver nativo sincronizado y listo para la misión.")
 
         except Exception as e:
-            logger.error(f"❌ Error fatal iniciando driver: {e}")
+            logger.error(f"❌ Error fatal iniciando driver nativo: {e}")
             raise e
 
         # Comandos CDP finales
