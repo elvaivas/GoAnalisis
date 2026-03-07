@@ -196,17 +196,27 @@ def get_top_customers_data(
 @router.get("/stores-locations")
 def get_stores_locations(db: Session = Depends(deps.get_db)):
     stores = db.query(Store).filter(Store.latitude != None).all()
-    # Agregamos "id": s.id
+    # Agregamos "id": s.id y concatenamos Empresa - Sucursal
     return [
-        {"id": s.id, "name": s.name, "lat": s.latitude, "lng": s.longitude}
+        {
+            "id": s.id,
+            "name": f"{s.company_name} - {s.name}" if s.company_name else s.name,
+            "lat": s.latitude,
+            "lng": s.longitude,
+        }
         for s in stores
     ]
 
 
 @router.get("/all-stores-names")
 def get_all_stores_names(db: Session = Depends(deps.get_db)):
-    stores = db.query(Store.name).order_by(Store.name.asc()).all()
-    return [s.name for s in stores if s.name]
+    # Traemos el objeto completo en lugar de solo Store.name para tener acceso a company_name
+    stores = db.query(Store).order_by(Store.name.asc()).all()
+    return [
+        f"{s.company_name} - {s.name}" if s.company_name else s.name
+        for s in stores
+        if s.name
+    ]
 
 
 @router.get(
