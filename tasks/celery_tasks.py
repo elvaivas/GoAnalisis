@@ -782,62 +782,71 @@ def sync_customer_database(self, limit_pages: int = None):
         scraper = CustomerScraper()
         db = SessionLocal()
 
-        # --- CORRECCIÓN: Inicializar variables AQUÍ arriba ---
+        # --- INICIO DE BLOQUE BLINDADO SRE ---
         count_new = 0
         count_updated = 0
-        # ---------------------------------------------------
 
         try:
             users_data = scraper.scrape_customers(max_pages=limit_pages)
             scraper.close_driver()
 
             for u in users_data:
-                # 1. Buscar por ID externo real (Prioridad)
-                customer = None
-                if u.get("id"):
-                    customer = (
-                        db.query(Customer)
-                        .filter(Customer.external_id == u["id"])
-                        .first()
-                    )
+                try:
+                    # 1. Buscar por ID externo real (Prioridad)
+                    customer = None
+                    if u.get("id"):
+                        customer = (
+                            db.query(Customer)
+                            .filter(Customer.external_id == u["id"])
+                            .first()
+                        )
 
-                # 2. Buscar por nombre (Fallback)
-                if not customer:
-                    customer = (
-                        db.query(Customer)
-                        .filter(Customer.name.ilike(f"{u['name']}"))
-                        .first()
-                    )
+                    # 2. Buscar por nombre (Fallback)
+                    if not customer:
+                        customer = (
+                            db.query(Customer)
+                            .filter(Customer.name.ilike(f"{u['name']}"))
+                            .first()
+                        )
 
-                if customer:
-                    # Actualizamos fecha si el scraper trajo una válida
-                    if u["joined_at"]:
-                        customer.joined_at = u["joined_at"]
+                    if customer:
+                        # Actualizamos datos
+                        if u.get("joined_at"):
+                            customer.joined_at = u["joined_at"]
+                        if u.get("phone"):
+                            customer.phone = u["phone"]
+                        if u.get("id") and not customer.external_id:
+                            customer.external_id = u["id"]
+
                         count_updated += 1
+                    else:
+                        # Crear nuevo
+                        new_c = Customer(
+                            name=u["name"],
+                            phone=u.get("phone"),
+                            joined_at=u.get("joined_at"),
+                            external_id=u.get("id")
+                            or f"reg_{int(time.time())}_{count_new}",
+                        )
+                        db.add(new_c)
+                        count_new += 1
 
-                    if u["phone"]:
-                        customer.phone = u["phone"]
+                    # SRE: Guardamos a ESTE usuario inmediatamente
+                    db.commit()
 
-                    # Guardamos el ID real si no lo tenía
-                    if u.get("id") and not customer.external_id:
-                        customer.external_id = u["id"]
-                else:
-                    # Crear nuevo
-                    new_c = Customer(
-                        name=u["name"],
-                        phone=u["phone"],
-                        joined_at=u["joined_at"],
-                        external_id=u.get("id")
-                        or f"reg_{int(time.time())}_{count_new}",
+                except Exception as inner_e:
+                    # SRE: Si este usuario falla (ej. teléfono duplicado), deshacemos SOLO a este
+                    db.rollback()
+                    logger.error(
+                        f"⚠️ Error aislando al cliente {u.get('name')}: {inner_e}"
                     )
-                    db.add(new_c)
-                    count_new += 1
+                    continue  # Y pasamos al siguiente sin abortar la misión
 
-            db.commit()
             return f"Clientes: {count_new} nuevos, {count_updated} actualizados."
 
         except Exception as e:
-            logger.error(f"Sync error: {e}")
+            logger.error(f"❌ Fallo crítico en la tarea de sincronización: {e}")
+            # --- FIN DE BLOQUE BLINDADO SRE ---
             db.rollback()
         finally:
             if scraper:
