@@ -26,8 +26,13 @@ def apply_filters(query, start_date, end_date, store_name, search):
     if end_date:
         query = query.filter(local_date <= end_date)
     if store_name:
+        # --- NORMALIZACIÓN SRE: Si viene en formato 'Empresa - Sucursal', extraemos la sucursal ---
+        real_store_name = (
+            store_name.split(" - ")[-1] if " - " in store_name else store_name
+        )
+
         query = query.join(Store, Order.store_id == Store.id).filter(
-            Store.name == store_name
+            Store.name == real_store_name
         )
     if search:
         term = search.strip()
