@@ -559,7 +559,7 @@ def backfill_historical_data(self):
             db.close()
 
 
-@shared_task(bind=True, soft_time_limit=55, time_limit=65)
+@celery_app.task(bind=True, soft_time_limit=120, time_limit=135)
 def monitor_active_orders(self):
     key = "celery_lock_monitor_active_orders"
 

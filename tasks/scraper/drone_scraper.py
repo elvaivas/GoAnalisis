@@ -30,7 +30,6 @@ class DroneScraper:
         # Importaciones locales para no ensuciar el resto del archivo
         from selenium.webdriver.chrome.service import Service
         from selenium.webdriver.chrome.options import Options
-        from webdriver_manager.chrome import ChromeDriverManager
         import logging
 
         chrome_options = Options()
@@ -61,7 +60,7 @@ class DroneScraper:
         try:
             logger.info("🔧 Instalando ChromeDriver compatible...")
             # Esto descarga la versión exacta para el Chrome que tienes instalado
-            driver_path = ChromeDriverManager().install()
+            # driver_path = ChromeDriverManager().install()
 
             # Corrección de permisos (a veces baja sin permisos de ejecución)
             os.chmod(driver_path, 0o755)
