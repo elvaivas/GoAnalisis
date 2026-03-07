@@ -134,23 +134,43 @@ class StoreControllerScraper:
                         f"🎯 Usando ID Directo desde DB para {store_name}: {real_legacy_id}"
                     )
 
-            # 2. Si no hay ID, buscamos el nombre con BLINDAJE EXACTO
+            # --- BUSCADOR FRANCOTIRADOR SRE ---
+            search_query = ""
+            if real_legacy_id:
+                # Si tenemos el ID, buscar por el número trae la fila exacta al instante
+                search_query = str(real_legacy_id)
+            else:
+                # Si no hay ID, purificamos el nombre para burlar la tokenización del Legacy
+                clean_string = store_name.upper()
+                poison_words = [
+                    "FARMACIA",
+                    "SUCURSAL",
+                    "C.A.",
+                    "S.A.",
+                    "C.A",
+                    "S.A",
+                    "-",
+                    ",",
+                    ".",
+                ]
+                for pw in poison_words:
+                    clean_string = clean_string.replace(pw, " ")
+
+                # Juntamos los espacios extra para que quede impecable (ej. "GMAX ANTIMANO")
+                search_query = " ".join(clean_string.split())
+
+            logger.info(
+                f"🔍 Disparando buscador en Legacy con: '{search_query}' (Original: {store_name})"
+            )
+
+            search_input.clear()
+            search_input.send_keys(search_query)
+            time.sleep(1)
+            search_input.send_keys(Keys.ENTER)
+            time.sleep(4)
+
+            # 2. Si NO teníamos el ID desde el principio, lo extraemos de los resultados filtrados
             if not real_legacy_id:
-                clean_name = (
-                    store_name.replace("C.A.", "")
-                    .replace("S.A.", "")
-                    .replace(",", "")
-                    .replace(".", "")
-                    .strip()
-                )
-                logger.info(f"🔍 Buscando nombre completo: '{clean_name}'")
-
-                search_input.clear()
-                search_input.send_keys(clean_name)
-                time.sleep(1)
-                search_input.send_keys(Keys.ENTER)
-                time.sleep(4)
-
                 tbody = self.driver.find_element(By.ID, "set-rows")
                 rows = tbody.find_elements(By.TAG_NAME, "tr")
 
@@ -178,10 +198,15 @@ class StoreControllerScraper:
                                 .replace("...", "")
                             )
 
-                        # VALIDACIÓN BLINDADA: Ahora comparamos contra el nombre puro del sistema
+                        # VALIDACIÓN BLINDADA SRE: Coincidencia Bidireccional Flexible
+                        store_upper = store_name.upper()
+                        clean_upper = search_query.upper()
+
                         if (
-                            store_name_in_table == store_name.upper()
-                            or store_name_in_table == clean_name.upper()
+                            store_name_in_table in store_upper
+                            or store_upper in store_name_in_table
+                            or store_name_in_table in clean_upper
+                            or clean_upper in store_name_in_table
                         ):
                             id_regex = re.search(r"ID\s*:\s*(\d+)", cell_text)
                             if id_regex:
