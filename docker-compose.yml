@@ -44,6 +44,7 @@ services:
     depends_on:
       - db
       - redis
+    shm_size: '2gb' # <--- AÑADIDO: Tanque de oxígeno para botones manuales
     restart: unless-stopped
 
   # 4. Worker (Celery + Selenium) - RENOMBRADO PARA CORREGIR ERROR
@@ -59,7 +60,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     env_file:
       - .env
-    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=3
+    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=2 # <--- REDUCIDO A 2
     volumes:
       - .:/app
     depends_on:
