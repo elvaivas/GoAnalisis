@@ -14,6 +14,7 @@ from tasks.scraper.order_scraper import OrderScraper
 from tasks.scraper.drone_scraper import DroneScraper
 from tasks.scraper.customer_scraper import CustomerScraper
 from tasks.scraper.store_scraper import StoreScraper
+from tasks.celery_app import celery_app
 
 redis_client = redis.Redis.from_url(settings.REDIS_URL)
 logger = logging.getLogger(__name__)
