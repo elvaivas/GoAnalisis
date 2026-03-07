@@ -189,6 +189,7 @@ def get_top_stores(
     query = (
         db.query(
             Store.name,
+            Store.company_name,
             func.count(Order.id).label("total_orders"),
             start_date_subquery.c.first_order_date,
         )
