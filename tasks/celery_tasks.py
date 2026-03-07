@@ -293,7 +293,9 @@ def process_drone_data(db, data: dict):
                 db_status = "created"
             elif "camino" in status_text or "ruta" in status_text:
                 db_status = "on_the_way"
-            elif "asignado" in status_text:
+            elif (
+                "asignado" in status_text or "repartidor" in status_text
+            ):  # <--- CRÍTICO: La palabra que faltaba
                 db_status = "driver_assigned"
             elif "proceso" in status_text:
                 db_status = "processing"
