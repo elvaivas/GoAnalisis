@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import date  # <--- Importante para date.today()
-from app.db.base import OrderStatusLog, User
+from datetime import date, datetime  # <--- Importante para date.today()
+from app.db.base import OrderStatusLog, User, Order, Store, OrderAudit
+from sqlalchemy import func, extract, or_, desc, case
 
 # Importamos deps y nuestros servicios
 from app.api import deps
@@ -164,3 +165,131 @@ def get_order_timeline(
     # A menos que queramos mostrar cuándo terminó
 
     return {"labels": labels, "data": durations, "colors": colors}
+
+
+@router.get("/ops-executive-summary")
+def get_ops_executive_summary(
+    start_date: str, end_date: str, db: Session = Depends(deps.get_db)
+):
+    """
+    Motor de Inteligencia Operativa SRE.
+    Extrae los KPIs exactos para el Dashboard de Operaciones en una sola llamada.
+    """
+    try:
+        # 1. Parseo de fechas
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59
+        )
+
+        # Filtro base para las órdenes
+        base_filter = Order.created_at.between(start_dt, end_dt)
+
+        # --- BLOQUE 1: SALUD GLOBAL Y VOLUMEN ---
+        total_orders = db.query(func.count(Order.id)).filter(base_filter).scalar() or 0
+
+        status_counts = (
+            db.query(Order.current_status, func.count(Order.id))
+            .filter(base_filter)
+            .group_by(Order.current_status)
+            .all()
+        )
+
+        status_dict = {status: count for status, count in status_counts}
+        delivered = status_dict.get("delivered", 0)
+        canceled = status_dict.get("canceled", 0)
+
+        # El famoso requerimiento de Punto de Venta (Created)
+        pos_orders = status_dict.get("created", 0)
+
+        # Efectividad
+        fulfillment_rate = (
+            round((delivered / total_orders * 100), 2) if total_orders > 0 else 0
+        )
+
+        # --- BLOQUE 2: RENDIMIENTO COMERCIAL (TOP 5 FARMACIAS) ---
+        # Ideal para un gráfico de Barras Horizontales
+        top_stores = (
+            db.query(Store.name, func.count(Order.id).label("total_orders"))
+            .join(Order, Store.id == Order.store_id)
+            .filter(base_filter)
+            .group_by(Store.name)
+            .order_by(desc("total_orders"))
+            .limit(5)
+            .all()
+        )
+
+        top_stores_data = [
+            {"store": s.name, "orders": s.total_orders} for s in top_stores
+        ]
+
+        # --- BLOQUE 3: FRICCIÓN (TOP 5 INCIDENCIAS) ---
+        # Ideal para un gráfico de Anillo / Donut Chart (Gracias al Diccionario SRE)
+
+        top_incidences = (
+            db.query(OrderAudit.root_cause, func.count(OrderAudit.id).label("count"))
+            .join(Order, Order.id == OrderAudit.order_id)
+            .filter(
+                Order.created_at.between(start_dt, end_dt),
+                OrderAudit.root_cause != None,
+            )
+            .group_by(OrderAudit.root_cause)
+            .order_by(desc("count"))
+            .limit(5)
+            .all()
+        )
+
+        incidences_data = [
+            {"cause": i.root_cause, "count": i.count} for i in top_incidences
+        ]
+
+        # --- BLOQUE 4: OPERACIONES ESPECIALES (TURNO NOCTURNO 22:00 a 08:00) ---
+        # Usamos extract('hour') de Postgres para saber la hora de creación
+        night_orders = (
+            db.query(func.count(Order.id))
+            .filter(
+                base_filter,
+                or_(
+                    extract("hour", Order.created_at) >= 22,
+                    extract("hour", Order.created_at) < 8,
+                ),
+            )
+            .scalar()
+            or 0
+        )
+
+        # --- BLOQUE 5: CANCELACIONES POR FARMACIA ---
+        # Ideal para una tabla de "Focos Rojos"
+        top_canceled_stores = (
+            db.query(Store.name, func.count(Order.id).label("canceled_count"))
+            .join(Order, Store.id == Order.store_id)
+            .filter(base_filter, Order.current_status == "canceled")
+            .group_by(Store.name)
+            .order_by(desc("canceled_count"))
+            .limit(5)
+            .all()
+        )
+
+        canceled_stores_data = [
+            {"store": s.name, "canceled": s.canceled_count} for s in top_canceled_stores
+        ]
+
+        # --- EMPAQUETADO FINAL PARA EL FRONTEND ---
+        return {
+            "global_health": {
+                "total_orders": total_orders,
+                "delivered": delivered,
+                "canceled": canceled,
+                "fulfillment_rate": fulfillment_rate,
+                "pos_orders": pos_orders,  # Punto de venta (created)
+                "night_orders": night_orders,
+            },
+            "charts": {
+                "top_stores": top_stores_data,
+                "top_incidences": incidences_data,
+                "canceled_stores": canceled_stores_data,
+            },
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
