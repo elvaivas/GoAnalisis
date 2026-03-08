@@ -61,3 +61,9 @@ async def report_page(request: Request):
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/ops", response_class=HTMLResponse)
+async def ops_dashboard_view(request: Request):
+    """Vista del Centro de Mando de Operaciones (Misión 3)"""
+    return templates.TemplateResponse("ops_dashboard.html", {"request": request})

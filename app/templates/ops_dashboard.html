@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Centro de Mando - Operaciones</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+
+        .kpi-card {
+            border-left: 4px solid #0d6efd;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .kpi-danger {
+            border-left-color: #dc3545;
+        }
+
+        .kpi-success {
+            border-left-color: #198754;
+        }
+
+        .kpi-warning {
+            border-left-color: #ffc107;
+        }
+
+        .kpi-dark {
+            border-left-color: #212529;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container-fluid py-4 px-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="fw-bold text-dark"><i class="fa-solid fa-satellite-dish text-primary me-2"></i>Radar Gerencial de
+                Operaciones</h2>
+
+            <div class="d-flex gap-2">
+                <input type="date" id="startDate" class="form-control form-control-sm">
+                <input type="date" id="endDate" class="form-control form-control-sm">
+                <button class="btn btn-primary btn-sm" onclick="fetchOpsData()"><i
+                        class="fa-solid fa-filter me-1"></i>Filtrar</button>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card kpi-card border-0 h-100 p-3">
+                    <div class="text-muted small fw-bold text-uppercase mb-1">Volumen Total</div>
+                    <h3 class="fw-bold mb-0" id="kpiTotalOrders">--</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card kpi-card kpi-success border-0 h-100 p-3">
+                    <div class="text-muted small fw-bold text-uppercase mb-1">Efectividad (Fulfillment)</div>
+                    <h3 class="fw-bold text-success mb-0" id="kpiFulfillment">--%</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card kpi-card kpi-dark border-0 h-100 p-3">
+                    <div class="text-muted small fw-bold text-uppercase mb-1">Punto de Venta (POS)</div>
+                    <h3 class="fw-bold text-dark mb-0" id="kpiPosOrders">-- <small
+                            class="fs-6 text-muted">pedidos</small></h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card kpi-card kpi-warning border-0 h-100 p-3">
+                    <div class="text-muted small fw-bold text-uppercase mb-1"><i class="fa-solid fa-moon me-1"></i>Turno
+                        Nocturno</div>
+                    <h3 class="fw-bold text-warning mb-0" id="kpiNightOrders">-- <small
+                            class="fs-6 text-muted">pedidos</small></h3>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-trophy text-warning me-2"></i>Top
+                            5 Farmacias (Volumen)</h6>
+                        <div style="height: 300px;"><canvas id="chartStores"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <h6 class="fw-bold text-secondary mb-3"><i
+                                class="fa-solid fa-triangle-exclamation text-danger me-2"></i>Top 5 Incidencias</h6>
+                        <div style="height: 300px;"><canvas id="chartIncidences"></canvas></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <h6 class="fw-bold text-danger mb-3"><i class="fa-solid fa-ban me-2"></i>Focos Rojos:
+                            Cancelaciones por Farmacia</h6>
+                        <table class="table table-hover table-sm">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Farmacia</th>
+                                    <th class="text-end">Pedidos Cancelados</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableCanceledStores">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuración Inicial de Fechas (Últimos 7 días por defecto)
+        const today = new Date();
+        const lastWeek = new Date(today);
+        lastWeek.setDate(lastWeek.getDate() - 7);
+
+        document.getElementById('endDate').value = today.toISOString().split('T')[0];
+        document.getElementById('startDate').value = lastWeek.toISOString().split('T')[0];
+
+        // Variables globales para destruir gráficas viejas al recargar
+        let storeChartInstance = null;
+        let incidenceChartInstance = null;
+
+        async function fetchOpsData() {
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+
+            try {
+                const response = await fetch(`/api/analysis/ops-executive-summary?start_date=${start}&end_date=${end}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    alert("Error de backend: " + data.error);
+                    return;
+                }
+
+                // 1. Llenar KPIs
+                document.getElementById('kpiTotalOrders').innerText = data.global_health.total_orders;
+                document.getElementById('kpiFulfillment').innerText = data.global_health.fulfillment_rate + "%";
+                document.getElementById('kpiPosOrders').innerHTML = `${data.global_health.pos_orders} <small class="fs-6 text-muted">pedidos</small>`;
+                document.getElementById('kpiNightOrders').innerHTML = `${data.global_health.night_orders} <small class="fs-6 text-muted">pedidos</small>`;
+
+                // 2. Renderizar Gráfico de Barras (Top Farmacias)
+                const ctxStores = document.getElementById('chartStores').getContext('2d');
+                if (storeChartInstance) storeChartInstance.destroy();
+                storeChartInstance = new Chart(ctxStores, {
+                    type: 'bar',
+                    data: {
+                        labels: data.charts.top_stores.map(s => s.store.substring(0, 20) + (s.store.length > 20 ? '...' : '')),
+                        datasets: [{
+                            label: 'Pedidos',
+                            data: data.charts.top_stores.map(s => s.orders),
+                            backgroundColor: '#0d6efd',
+                            borderRadius: 4
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+
+                // 3. Renderizar Gráfico de Anillo (Top Incidencias)
+                const ctxIncidences = document.getElementById('chartIncidences').getContext('2d');
+                if (incidenceChartInstance) incidenceChartInstance.destroy();
+                incidenceChartInstance = new Chart(ctxIncidences, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.charts.top_incidences.map(i => i.cause),
+                        datasets: [{
+                            data: data.charts.top_incidences.map(i => i.count),
+                            backgroundColor: ['#dc3545', '#ffc107', '#fd7e14', '#6c757d', '#20c997'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'right' } }
+                    }
+                });
+
+                // 4. Llenar Tabla de Cancelaciones
+                const tbody = document.getElementById('tableCanceledStores');
+                tbody.innerHTML = data.charts.canceled_stores.length === 0
+                    ? '<tr><td colspan="2" class="text-center text-muted">Sin cancelaciones registradas</td></tr>'
+                    : data.charts.canceled_stores.map(s => `
+                    <tr>
+                        <td class="fw-bold text-dark">${s.store}</td>
+                        <td class="text-end text-danger fw-bold">${s.canceled}</td>
+                    </tr>
+                `).join('');
+
+            } catch (error) {
+                console.error("Error consultando API:", error);
+                alert("Error al conectar con el servidor.");
+            }
+        }
+
+        // Carga inicial automática
+        window.onload = fetchOpsData;
+    </script>
+</body>
+
+</html>
