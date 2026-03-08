@@ -1804,13 +1804,14 @@ document.addEventListener('DOMContentLoaded', function () {
             color: 'dark',
             title: 'Pedido Recién Creado',
             checklist: [
-                "Verificar si el pedido cayó en el sistema Legacy",
+                "Verificar si el pedido cayó en el Super Admin",
                 "Verificar si el pago se procesó correctamente"
             ],
             causes: [
-                "Retraso en integración",
-                "Cliente abandonó pasarela",
-                "Error de sistema"
+                "Incidencia Técnica: Plataforma GoPharma",
+                "Abandono: Usuario no continuó el proceso",
+                "Incidencia Técnica: Sistema Farmacia",
+                "Discrepancia de Precio (App vs Farmacia)"
             ]
         },
         'pending': {
@@ -1822,11 +1823,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 "Verificar si el cliente duplicó el pedido por error"
             ],
             causes: [
-                "Cliente no completó el pago",
-                "Tarjeta rechazada / Saldo insuficiente",
-                "Falla Técnica Pasarela",
-                "Cliente duplicó pedido (Anular)",
-                "Cliente arrepentido"
+                "Abandono: Usuario no continuó el proceso",
+                "Falla Financiera: Tarjeta Rechazada / Saldo",
+                "Incidencia Técnica: Plataforma GoPharma",
+                "Duplicidad: Cliente duplicó pedido",
+                "Discrepancia de Precio (App vs Farmacia)"
             ]
         },
         'processing': { // Facturando
@@ -1835,15 +1836,17 @@ document.addEventListener('DOMContentLoaded', function () {
             checklist: [
                 "Llamar a Farmacia: ¿Por qué no facturan?",
                 "Verificar inventario: ¿Falta algún producto?",
-                "Si falta stock: Ofrecer reemplazo o devolución parcial",
-                "Si no contestan: Escalar a Supervisor de Tienda"
+                "Si falta stock: Ofrecer reemplazo o devolución",
+                "Si no contestan: Escalar a Supervisor"
             ],
             causes: [
-                "Tienda Full / Personal Ocupado",
-                "Falla de Luz / Internet en Tienda",
-                "Quiebre de Stock (Producto Faltante)",
-                "Tienda no contesta teléfono",
-                "Problema con impresora fiscal"
+                "Inventario Agotado",
+                "Producto Defectuoso o Vencido",
+                "Catálogo: Mala descripción de producto",
+                "Discrepancia de Precio (App vs Farmacia)",
+                "Incidencia Técnica: Sistema Farmacia",
+                "Retraso Administrativo: Tienda Full",
+                "Intervención Manual: Soporte Tecnológico"
             ]
         },
         'confirmed': { // Solicitando
@@ -1855,10 +1858,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 "Llamar cliente para avisar posible demora"
             ],
             causes: [
-                "Alta Demanda / Pocos Motorizados",
-                "Lluvia / Mal Clima",
-                "Zona Roja / Nadie acepta",
-                "Tarifa de envío muy baja"
+                "Alta Demanda / Escasez de Motorizados",
+                "Logística: Distancia excede límite (30+ km)",
+                "Fuerza Mayor (Lluvia / Clima / Zona)",
+                "Discrepancia de Precio (Tarifa de Envío)"
             ]
         },
         'driver_assigned': { // Asignado
@@ -1866,14 +1869,14 @@ document.addEventListener('DOMContentLoaded', function () {
             title: 'Motorizado Asignado',
             checklist: [
                 "Llamar Motorizado: ¿Por qué no llega a tienda?",
-                "Verificar si se mueve en el mapa (si aplica)",
+                "Verificar si se mueve en el mapa",
                 "Si no responde > 15min: Liberar y Reasignar"
             ],
             causes: [
-                "Motorizado con caucho espichado / Avería",
-                "Motorizado rechazó después de aceptar",
-                "Tráfico pesado hacia tienda",
-                "Motorizado no contesta"
+                "Retraso Logístico: Avería en ruta",
+                "Retraso Logístico: Tráfico Pesado",
+                "Logística: Motorizado rechazó la orden",
+                "Intervención Manual: Soporte Tecnológico"
             ]
         },
         'on_the_way': { // En Camino
@@ -1885,11 +1888,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 "Pedir paciencia al cliente"
             ],
             causes: [
-                "Dirección difícil / Ubicación errónea",
-                "Cliente no contesta al llegar",
-                "Motorizado perdido",
-                "Retención policial / Alcabala",
-                "Accidente leve / Avería en ruta"
+                "Logística: Ubicación del cliente errónea",
+                "Cliente ilocalizable en entrega",
+                "Retraso Logístico: Retención policial/Alcabala",
+                "Fuerza Mayor (Lluvia / Clima / Zona)"
             ]
         },
         'delivered': { // Post-Mortem Entregado
@@ -1901,11 +1903,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 "Contactar al responsable del retraso para feedback"
             ],
             causes: [
-                "Retraso Administrativo (Farmacia)",
-                "Retraso Logístico (Motorizado)",
-                "Incidente Técnico",
-                "Cliente demoró en recibir",
-                "Fuerza Mayor (Lluvia/Tranca)"
+                "Retraso Administrativo: Sistema Farmacia",
+                "Retraso Logístico: Motorizado",
+                "Incidencia Técnica: Plataforma GoPharma",
+                "Incidencia Técnica: Sistema Farmacia",
+                "Error de Preparación: Incompleto o Equivocado",
+                "Fuerza Mayor (Lluvia / Clima / Zona)"
             ]
         },
         'canceled': { // Post-Mortem Cancelado
@@ -1917,11 +1920,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 "Validar si se requiere nota de crédito"
             ],
             causes: [
-                "Cliente solicitó cancelar",
-                "Quiebre de Stock (Tienda)",
-                "Pago no verificado / Fraude",
-                "Zona fuera de cobertura",
-                "Duplicidad de pedido"
+                "Abandono: Usuario no continuó el proceso",
+                "Error de Preparación: Incompleto o Equivocado",
+                "Inventario Agotado",
+                "Incidencia Técnica: Plataforma GoPharma",
+                "Pedido de Prueba (Auditoría Tecnológica)",
+                "Pedido de Prueba (Cliente)",
+                "Duplicidad: Cliente duplicó pedido"
             ]
         }
     };
