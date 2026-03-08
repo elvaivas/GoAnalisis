@@ -337,6 +337,40 @@ class DroneScraper:
 
         return items
 
+    def _extract_payment_info(self) -> str:
+        """
+        🎯 [Misión 4 SRE] Extrae el método de pago de forma blindada.
+        """
+        payment_method = "Desconocido"
+
+        try:
+            # Estrategia A: Búsqueda SRE por hermano del nodo (Recomendada)
+            try:
+                # Busca el título "Método de pago" y agarra el valor que está justo al lado
+                element = self.driver.find_element(
+                    By.XPATH,
+                    "//*[contains(text(), 'Método de pago')]/following-sibling::*",
+                )
+                payment_method = element.text.strip()
+                if payment_method:
+                    return payment_method
+            except:
+                pass
+
+            # Estrategia B: Búsqueda por Bloque de Texto (Fallback si el HTML cambia)
+            # Busca "Método de pago : Pmovil bnc" en todo el texto visible
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            import re
+
+            match = re.search(r"Método de pago\s*:\s*(.+)", body_text, re.IGNORECASE)
+            if match:
+                payment_method = match.group(1).strip()
+
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo extraer el método de pago: {e}")
+
+        return payment_method
+
     def scrape_detail(self, external_id: str, mode: str = "full") -> Dict[str, Any]:
         if not self.driver:
             self.setup_driver()
@@ -364,6 +398,9 @@ class DroneScraper:
                 reason = self._extract_reason_smart()
                 if reason:
                     result["cancellation_reason"] = reason
+
+            # 🎯 INYECCIÓN SRE (MISIÓN 4): Capturamos el método de pago
+            result["payment_method"] = self._extract_payment_info()
 
         except Exception as e:
             logger.error(f"❌ Error scraping {external_id}: {e}")
