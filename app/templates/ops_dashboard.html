@@ -39,15 +39,31 @@
 <body>
 
     <div class="container-fluid py-4 px-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2 class="fw-bold text-dark"><i class="fa-solid fa-satellite-dish text-primary me-2"></i>Radar Gerencial de
-                Operaciones</h2>
+        <div
+            class="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded shadow-sm border-start border-4 border-primary">
 
-            <div class="d-flex gap-2">
-                <input type="date" id="startDate" class="form-control form-control-sm">
-                <input type="date" id="endDate" class="form-control form-control-sm">
-                <button class="btn btn-primary btn-sm" onclick="fetchOpsData()"><i
-                        class="fa-solid fa-filter me-1"></i>Filtrar</button>
+            <div class="d-flex align-items-center">
+                <img src="/static/img/logo.png" alt="GoPharma Logo" height="45" class="me-3"
+                    onerror="this.src='https://via.placeholder.com/150x45?text=GoPharma'">
+                <div>
+                    <h3 class="fw-bold text-dark mb-0">Radar Operativo</h3>
+                    <span class="text-muted small">Panel Gerencial de Rendimiento</span>
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center bg-light p-2 rounded border">
+                <label class="text-muted small fw-bold me-2 mb-0 d-none d-md-block"><i
+                        class="fa-regular fa-calendar-days me-1"></i>Período:</label>
+                <div class="input-group input-group-sm shadow-sm">
+                    <input type="date" id="startDate"
+                        class="form-control border-secondary text-secondary fw-bold shadow-none">
+                    <span class="input-group-text bg-secondary text-white border-secondary">hasta</span>
+                    <input type="date" id="endDate"
+                        class="form-control border-secondary text-secondary fw-bold shadow-none">
+                    <button class="btn btn-primary px-3" onclick="fetchOpsData()">
+                        <i class="fa-solid fa-search me-1"></i> Analizar
+                    </button>
+                </div>
             </div>
         </div>
 

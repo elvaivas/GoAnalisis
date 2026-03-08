@@ -199,8 +199,14 @@ def get_ops_executive_summary(
         delivered = status_dict.get("delivered", 0)
         canceled = status_dict.get("canceled", 0)
 
-        # El famoso requerimiento de Punto de Venta (Created)
-        pos_orders = status_dict.get("created", 0)
+        # El requerimiento de Punto de Venta (POS) Real - Leyendo la DB
+        # Buscamos coincidencias con "punto", "pos", "tarjeta", etc. (Ajustable a como lo guarde el Drone)
+        pos_orders = (
+            db.query(func.count(Order.id))
+            .filter(base_filter, func.lower(Order.payment_method).like("%punto%"))
+            .scalar()
+            or 0
+        )
 
         # Efectividad
         fulfillment_rate = (
