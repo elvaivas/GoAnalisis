@@ -429,6 +429,7 @@ def process_drone_data(db, data: dict):
                 store_id=store.id if store else None,
                 customer_id=customer.id if customer else None,
                 driver_id=driver.id if driver else None,
+                payment_method=data.get("payment_method"),
             )
             db.add(order)
             db.commit()
@@ -467,6 +468,10 @@ def process_drone_data(db, data: dict):
 
             # 2. Updates Financieros
             order.total_amount = data.get("total_amount", order.total_amount)
+            # 🎯 INYECCIÓN SRE AQUÍ: Guardar método de pago extraído
+            if data.get("payment_method") and data.get("payment_method") != "Desconocido":
+                order.payment_method = data.get("payment_method")
+
             if data.get("real_delivery_fee"):
                 order.gross_delivery_fee = data["real_delivery_fee"]
             if data.get("service_fee"):
