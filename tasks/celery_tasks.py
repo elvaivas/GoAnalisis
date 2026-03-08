@@ -550,6 +550,7 @@ def backfill_historical_data(self):
                     and existing.delivery_time_minutes
                     and existing.latitude
                     and existing.product_price
+                    and existing.payment_method
                 ):
                     continue
                 data = drone.scrape_detail(eid, mode="full")
