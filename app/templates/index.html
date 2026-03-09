@@ -128,14 +128,13 @@
                     style="font-size: 0.6rem;">V5.1</span>
             </a>
             <div class="d-flex align-items-center">
-                <!-- BOTÓN CONFIGURAR HORARIOS -->
-                <button class="btn btn-sm btn-outline-dark rounded-circle me-3 admin-atc-only" data-bs-toggle="modal"
+                <button class="btn btn-sm btn-outline-primary rounded-circle me-3 admin-atc-only" data-bs-toggle="modal"
                     data-bs-target="#modalSchedules" title="Configurar Horarios Farmacias">
                     <i class="fa-solid fa-clock"></i>
                 </button>
-                <!-- BOTÓN NUEVO: NOTIFICACIONES -->
+
                 <button id="btn-notifications"
-                    class="btn btn-sm btn-outline-secondary rounded-circle me-3 position-relative"
+                    class="btn btn-sm btn-outline-primary rounded-circle me-3 position-relative"
                     title="Activar Alertas Operativas">
                     <i class="fa-regular fa-bell"></i>
                     <span
@@ -144,10 +143,20 @@
                         <span class="visually-hidden">Alertas activas</span>
                     </span>
                 </button>
-                <a href="#" id="btn-open-report" class="btn btn-sm btn-light text-muted border-0 me-3 admin-only">
+
+                <a href="/ops" target="_blank"
+                    class="btn btn-sm btn-outline-primary rounded-pill px-3 me-3 admin-atc-only"
+                    title="Panel SRE y Finanzas">
+                    <i class="fa-solid fa-chart-line me-2"></i>Operaciones
+                </a>
+
+                <a href="#" id="btn-open-report"
+                    class="btn btn-sm btn-outline-primary rounded-pill px-3 me-3 admin-only"
+                    title="Generar Reporte General">
                     <i class="fa-solid fa-file-invoice me-2"></i>Reporte
                 </a>
-                <button id="btn-logout" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+
+                <button id="btn-logout" class="btn btn-sm btn-outline-primary rounded-pill px-3">
                     <i class="fa-solid fa-power-off me-2"></i>Salir
                 </button>
             </div>

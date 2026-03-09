@@ -22,12 +22,12 @@ document.addEventListener('DOMContentLoaded', function () {
         document.head.appendChild(style);
     }
 
-    // 2. CANDADO ESPECÍFICO: Ocultar botón de horarios SOLO a los que NO son admin ni ATC
-    if (role !== 'admin' && role !== 'atc') {
+    // 2. CANDADO ESPECÍFICO: Permitir acceso a Admin y a Viewers (ATC)
+    if (role !== 'admin' && role !== 'viewer') {
         const styleAtc = document.createElement('style');
         styleAtc.innerHTML = `
-            .admin-atc-only { display: none !important; }
-        `;
+            .admin-atc-only { display: none !important; }
+        `;
         document.head.appendChild(styleAtc);
     }
 
