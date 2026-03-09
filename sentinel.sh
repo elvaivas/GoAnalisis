@@ -95,7 +95,7 @@ if [ "$CHROME_COUNT" -gt "$MAX_CHROME_PROCESSES" ]; then
 fi
 
 # --- 7. HEARTBEAT (SIGNOS VITALES) ---
-RECENT_LOGS=$(docker logs --since 15m $C_WORKER 2>&1 | grep "Monitor V4")
+RECENT_LOGS=$(cd /root/GoAnalisis && docker compose logs --since 15m celery_node 2>&1 | grep "Monitor V4")
 if [ -z "$RECENT_LOGS" ]; then
     log_msg "💀 SIGNOS VITALES PERDIDOS: Monitor inactivo por 15 min."
     log_msg "🚑 Reiniciando..."

@@ -28,6 +28,17 @@ celery_app.conf.update(
     worker_cancel_long_running_tasks_on_connection_loss=True,
     # 👇 ESTA ES LA VACUNA (La Purga Automática de Memoria) 👇
     worker_max_tasks_per_child=3,
+    # 👇👇 NUEVA AUTOPISTA DE DOS CARRILES (RUTAS) 👇👇
+    task_default_queue="default",
+    task_routes={
+        # 🏎️ CARRIL RÁPIDO (Prioridad Máxima - Segundos)
+        "tasks.celery_tasks.monitor_active_orders": {"queue": "default"},
+        "tasks.ops_tasks.enforce_schedules": {"queue": "default"},
+        # 🚛 CARRIL LENTO (Fuerza Bruta - Minutos/Horas)
+        "tasks.celery_tasks.enrich_missing_data": {"queue": "heavy"},
+        "tasks.celery_tasks.sync_customer_database": {"queue": "heavy"},
+        "tasks.maintenance.nightly_deep_clean": {"queue": "heavy"},
+    },
 )
 
 # --- PROGRAMACIÓN AUTOMÁTICA (CRONOGRAMA) ---

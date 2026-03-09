@@ -47,11 +47,12 @@ services:
     shm_size: '2gb' # <--- AÑADIDO: Tanque de oxígeno para botones manuales
     restart: unless-stopped
 
-  # 4. Worker (Celery + Selenium) - RENOMBRADO PARA CORREGIR ERROR
+  # 4. Worker VIP (Carril Rápido - Solo tareas de 1 segundo)
+  # Mantenemos el nombre celery_node para que el Sentinel lo siga vigilando
   celery_node:
     build: .
     container_name: goanalisis_celery_node
-    init: true # <--- 💀 EL ENTERRADOR DE ZOMBIES (EL MÁS IMPORTANTE)
+    init: true # <--- 💀 EL ENTERRADOR DE ZOMBIES
     environment:
       - REDIS_URL=redis://redis:6379/0
       - POSTGRES_SERVER=db
@@ -60,14 +61,37 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     env_file:
       - .env
-    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=2 # <--- REDUCIDO A 2
+    # 👇 AQUÍ ESTÁ LA MAGIA: -Q default 👇
+    command: celery -A tasks.celery_app worker -Q default --loglevel=info --concurrency=1
     volumes:
       - .:/app
     depends_on:
       - redis
       - db
-    # AUMENTO DE MEMORIA PARA EVITAR CRASH DE CHROME
     shm_size: '2gb'
+    restart: unless-stopped
+
+  # 4.1 Worker PESADO (Carril Lento - Rescates y Tareas de horas)
+  celery_heavy:
+    build: .
+    container_name: goanalisis_celery_heavy
+    init: true # <--- 💀 EL ENTERRADOR DE ZOMBIES
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - POSTGRES_SERVER=db
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    env_file:
+      - .env
+    # 👇 AQUÍ ESTÁ LA MAGIA: -Q heavy y concurrency=1 para no ahogar la RAM 👇
+    command: celery -A tasks.celery_app worker -Q heavy --loglevel=info --concurrency=1
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - db
+    shm_size: '2gb' # Vital para que Chrome/Selenium no exploten
     restart: unless-stopped
 
   # 5. Beat (Scheduler)
