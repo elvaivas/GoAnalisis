@@ -340,31 +340,60 @@ class DroneScraper:
     def _extract_payment_info(self) -> str:
         """
         🎯 [Misión 4 SRE] Extrae el método de pago de forma blindada.
+        Actualizado para el nuevo DOM (ignora los ':' y extrae el último span).
         """
         payment_method = "Desconocido"
 
         try:
-            # Estrategia A: Búsqueda SRE por hermano del nodo (Recomendada)
+            # Estrategia A: Búsqueda SRE por el último span del título (Recomendada)
             try:
-                # Busca el título "Método de pago" y agarra el valor que está justo al lado
+                # Apunta directamente al <h6> que contiene 'Método de pago' y extrae su último <span>
                 element = self.driver.find_element(
-                    By.XPATH,
-                    "//*[contains(text(), 'Método de pago')]/following-sibling::*",
+                    By.XPATH, "//h6[contains(., 'Método de pago')]/span[last()]"
                 )
-                payment_method = element.text.strip()
-                if payment_method:
-                    return payment_method
+                raw_payment = element.text.strip()
+
+                # Filtro de Normalización para Base de Datos
+                if raw_payment and raw_payment != ":":
+                    texto_seguro = (
+                        raw_payment.upper()
+                    )  # Pasamos todo a mayúsculas para buscar mejor
+
+                    if "PUNTO DE VENTA" in texto_seguro:
+                        return "Punto de Venta"
+                    elif "EFECTIVO" in texto_seguro:
+                        return "Efectivo"
+                    elif (
+                        "PAGO MOVIL" in texto_seguro
+                        or "PAGO MÓVIL" in texto_seguro
+                        or "PMOVIL" in texto_seguro
+                    ):
+                        return "Pago Movil"
+                    elif "ZELLE" in texto_seguro:
+                        return "Zelle"
+                    else:
+                        return raw_payment
             except:
                 pass
 
-            # Estrategia B: Búsqueda por Bloque de Texto (Fallback si el HTML cambia)
-            # Busca "Método de pago : Pmovil bnc" en todo el texto visible
+            # Estrategia B: Búsqueda por Bloque de Texto (Fallback si el HTML cambia de nuevo)
             body_text = self.driver.find_element(By.TAG_NAME, "body").text
             import re
 
             match = re.search(r"Método de pago\s*:\s*(.+)", body_text, re.IGNORECASE)
             if match:
-                payment_method = match.group(1).strip()
+                raw_payment = match.group(1).strip()
+                if raw_payment and raw_payment != ":":
+                    if "Punto de Venta" in raw_payment:
+                        return "Punto de Venta"
+                    elif "Efectivo" in raw_payment:
+                        return "Efectivo"
+                    elif "Pago Movil" in raw_payment or "Pago Móvil" in raw_payment:
+                        return "Pago Movil"
+                    elif "Zelle" in raw_payment:
+                        return "Zelle"
+                    else:
+                        return raw_payment
 
         except Exception as e:
             logger.warning(f"⚠️ No se pudo extraer el método de pago: {e}")
