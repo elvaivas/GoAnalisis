@@ -86,7 +86,7 @@ class DroneScraper:
         (Actualizado con los selectores del nuevo rediseño)
         """
         try:
-            self.logger.info("🔐 Iniciando secuencia de Login...")
+            logger.info("🔐 Iniciando secuencia de Login...")
             self.setup_driver()
 
             # 1. Nueva ruta confirmada
@@ -117,14 +117,14 @@ class DroneScraper:
 
             # 5. Validación
             if "login" not in self.driver.current_url:
-                self.logger.info("✅ Login exitoso. ¡Estamos dentro del nuevo panel!")
+                logger.info("✅ Login exitoso. ¡Estamos dentro del nuevo panel!")
                 return True
             else:
-                self.logger.error("❌ Falló el login, las credenciales no pasaron.")
+                logger.error("❌ Falló el login, las credenciales no pasaron.")
                 return False
 
         except Exception as e:
-            self.logger.error(f"❌ Error crítico en login: {e}")
+            logger.error(f"❌ Error crítico en login: {e}")
             return False
 
     def close_driver(self):
