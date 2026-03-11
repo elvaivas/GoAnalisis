@@ -81,24 +81,50 @@ class DroneScraper:
             pass
 
     def login(self) -> bool:
-        if not self.driver:
-            self.setup_driver()
+        """
+        Inicia sesión en el panel de GoPharma.
+        (Actualizado con los selectores del nuevo rediseño)
+        """
         try:
-            self.driver.get(f"{settings.LEGACY_BASE_URL}/login/admin")
-            wait = WebDriverWait(self.driver, self.wait_timeout)
-            wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(
-                settings.GOPHARMA_EMAIL
-            )
-            self.driver.find_element(By.NAME, "password").send_keys(
-                settings.GOPHARMA_PASSWORD
-            )
-            try:
-                self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
-            except:
-                self.driver.find_element(By.NAME, "password").submit()
-            time.sleep(3)
-            return "login" not in self.driver.current_url
-        except:
+            self.logger.info("🔐 Iniciando secuencia de Login...")
+            self.setup_driver()
+
+            # 1. Nueva ruta confirmada
+            self.driver.get("https://app.gopharma.dev/login/admin")
+            import time
+
+            time.sleep(3)  # Esperamos que el DOM cargue completo
+
+            # 2. Selectores actualizados con los nuevos IDs
+            from selenium.webdriver.common.by import By
+
+            email_input = self.driver.find_element(By.ID, "signinSrEmail")
+            pass_input = self.driver.find_element(By.ID, "signupSrPassword")
+            submit_btn = self.driver.find_element(By.XPATH, "//button[@type='submit']")
+
+            # 3. Limpiar e inyectar credenciales (asegúrate de que estas variables coincidan con las tuyas)
+            email_input.clear()
+            email_input.send_keys(
+                self.email
+            )  # o self.username, según como lo tengas definido
+
+            pass_input.clear()
+            pass_input.send_keys(self.password)
+
+            # 4. Entrar
+            submit_btn.click()
+            time.sleep(5)
+
+            # 5. Validación
+            if "login" not in self.driver.current_url:
+                self.logger.info("✅ Login exitoso. ¡Estamos dentro del nuevo panel!")
+                return True
+            else:
+                self.logger.error("❌ Falló el login, las credenciales no pasaron.")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"❌ Error crítico en login: {e}")
             return False
 
     def close_driver(self):
