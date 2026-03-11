@@ -83,48 +83,57 @@ class DroneScraper:
     def login(self) -> bool:
         """
         Inicia sesión en el panel de GoPharma.
-        (Actualizado con los selectores del nuevo rediseño)
+        (Actualizado con los selectores del nuevo rediseño y variables del .env)
         """
-        try:
-            logger.info("🔐 Iniciando secuencia de Login...")
+        # 1. Verificación de driver (evita fugas de memoria)
+        if not self.driver:
             self.setup_driver()
 
-            # 1. Nueva ruta confirmada
-            self.driver.get("https://app.gopharma.dev/login/admin")
-            import time
+        try:
+            logger.info("🔐 Iniciando secuencia de Login...")
 
-            time.sleep(3)  # Esperamos que el DOM cargue completo
+            # 2. Navegar a la ruta confirmada (usando el base_url del .env)
+            self.driver.get(f"{settings.LEGACY_BASE_URL}/login/admin")
 
-            # 2. Selectores actualizados con los nuevos IDs
-            from selenium.webdriver.common.by import By
+            # 3. Espera inteligente (SRE) en lugar de un sleep fijo
+            wait = WebDriverWait(self.driver, 15)
 
-            email_input = self.driver.find_element(By.ID, "signinSrEmail")
-            pass_input = self.driver.find_element(By.ID, "signupSrPassword")
-            submit_btn = self.driver.find_element(By.XPATH, "//button[@type='submit']")
-
-            # 3. Limpiar e inyectar credenciales (asegúrate de que estas variables coincidan con las tuyas)
+            # 4. Capturar inyector de Email usando el nuevo ID
+            email_input = wait.until(
+                EC.presence_of_element_located((By.ID, "signinSrEmail"))
+            )
             email_input.clear()
-            email_input.send_keys(
-                self.email
-            )  # o self.username, según como lo tengas definido
+            email_input.send_keys(settings.GOPHARMA_EMAIL)  # <-- Tomado del .env
 
+            # 5. Capturar inyector de Password usando el nuevo ID
+            pass_input = self.driver.find_element(By.ID, "signupSrPassword")
             pass_input.clear()
-            pass_input.send_keys(self.password)
+            pass_input.send_keys(settings.GOPHARMA_PASSWORD)  # <-- Tomado del .env
 
-            # 4. Entrar
-            submit_btn.click()
-            time.sleep(5)
+            # 6. Acción de Entrar
+            try:
+                submit_btn = self.driver.find_element(
+                    By.XPATH, "//button[@type='submit']"
+                )
+                submit_btn.click()
+            except:
+                # Fallback por si el botón está oculto por algún banner
+                pass_input.submit()
 
-            # 5. Validación
-            if "login" not in self.driver.current_url:
-                logger.info("✅ Login exitoso. ¡Estamos dentro del nuevo panel!")
-                return True
-            else:
-                logger.error("❌ Falló el login, las credenciales no pasaron.")
-                return False
+            # 7. Validación: Esperamos hasta que la palabra 'login' desaparezca de la URL
+            wait.until(lambda d: "login" not in d.current_url)
+
+            logger.info("✅ Login exitoso. ¡Estamos dentro del nuevo panel!")
+            return True
 
         except Exception as e:
             logger.error(f"❌ Error crítico en login: {e}")
+            # Foto satelital automática en caso de falla para depuración futura
+            if self.driver:
+                try:
+                    self.driver.save_screenshot("/app/static/error_login_final.png")
+                except:
+                    pass
             return False
 
     def close_driver(self):
