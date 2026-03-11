@@ -111,31 +111,44 @@ class DroneScraper:
 
     # --- EXTRACTORES ---
     def _parse_money(self, text: str) -> float:
+        """Extrae el monto manejando el nuevo formato: USD 0,72 (VED 314,09)"""
         try:
-            match = re.search(r"(\d+(?:,\d{3})*(?:\.\d+)?)", text)
-            return float(match.group(1).replace(",", "")) if match else 0.0
+            # Buscamos el patrón USD seguido del número
+            match = re.search(r"USD\s*([\d\.,]+)", text, re.IGNORECASE)
+            if match:
+                num_str = match.group(1).strip()
+                # Si tiene punto de miles y coma decimal (Ej: 1.000,50)
+                if "." in num_str and "," in num_str:
+                    num_str = num_str.replace(".", "").replace(",", ".")
+                # Si solo tiene coma decimal (Ej: 0,72)
+                elif "," in num_str:
+                    num_str = num_str.replace(",", ".")
+                return float(num_str)
+            return 0.0
         except:
             return 0.0
 
-    def _extract_financials(self, body_text: str) -> Dict[str, float]:
+    def _extract_financials(self) -> Dict[str, float]:
+        """Extrae los costos usando la nueva lista de definición <dl>"""
         data = {}
+        # Mapeo exacto: Clave Base de Datos -> Texto visible en la etiqueta <dt>
+        mapping = {
+            "service_fee": "Tarifa de servicio",
+            "coupon_discount": "Cupón de descuento",
+            "tips": "Consejos para el repartidor",
+            "real_delivery_fee": "Tarifa de envío",
+            "total_amount": "Total",
+            "product_price": "Precio de los artículos",
+        }
 
-        def get_val(keyword):
+        for db_key, label in mapping.items():
             try:
-                pattern = re.escape(keyword) + r".*?USD\s*([\d\.]+)"
-                match = re.search(pattern, body_text, re.IGNORECASE | re.DOTALL)
-                return float(match.group(1)) if match else 0.0
+                # XPath quirúrgico: Busca el dt con la etiqueta y salta a su hermano dd
+                xpath = f"//dl[contains(@class, 'row')]//dt[contains(., '{label}')]/following-sibling::dd[1]"
+                element = self.driver.find_element(By.XPATH, xpath)
+                data[db_key] = self._parse_money(element.text)
             except:
-                return 0.0
-
-        data["service_fee"] = get_val("Tarifa de servicio")
-        data["coupon_discount"] = get_val("Descuento del cupón")
-        data["tips"] = get_val("Propinas al repartidor")
-        data["real_delivery_fee"] = get_val("Tarifa de entrega")
-        data["total_amount"] = get_val("Total:")
-
-        # Intentar extraer precio de producto
-        data["product_price"] = get_val("Precio de productos")
+                data[db_key] = 0.0
 
         return data
 
@@ -153,96 +166,95 @@ class DroneScraper:
 
     def _extract_maps(self) -> Dict[str, float]:
         result = {}
+        # 1. CLIENTE
         try:
-            # 1. CLIENTE
-            try:
-                client_link = self.driver.find_element(
-                    By.CSS_SELECTOR,
-                    ".delivery--information-single a[href*='maps.google.com']",
-                )
-                c = self._parse_href_coords(client_link.get_attribute("href"))
-                if c:
-                    result["customer_lat"], result["customer_lng"] = c
-            except:
-                try:
-                    client_link = self.driver.find_element(
-                        By.XPATH,
-                        "//h5[contains(., 'Información de entrega')]/ancestor::div[contains(@class, 'card-body')]//a[contains(@href, 'maps.google.com')]",
-                    )
-                    c = self._parse_href_coords(client_link.get_attribute("href"))
-                    if c:
-                        result["customer_lat"], result["customer_lng"] = c
-                except:
-                    pass
-
-            # 2. TIENDA
-            try:
-                store_link = self.driver.find_element(
-                    By.CSS_SELECTOR, "a.__gap-5px[href*='maps.google.com']"
-                )
-                c = self._parse_href_coords(store_link.get_attribute("href"))
-                if c:
-                    result["store_lat"], result["store_lng"] = c
-            except:
-                pass
+            client_link = self.driver.find_element(
+                By.XPATH,
+                "//*[contains(@class, 'delivery--information-single')]//a[contains(@href, 'google.com/maps')]",
+            )
+            c = self._parse_href_coords(client_link.get_attribute("href"))
+            if c:
+                result["customer_lat"], result["customer_lng"] = c
         except:
             pass
+
+        # 2. TIENDA
+        try:
+            store_link = self.driver.find_element(
+                By.XPATH,
+                "//h5[contains(., 'Información de la tienda')]/ancestor::div[contains(@class, 'card')]//a[contains(@href, 'google.com/maps')]",
+            )
+            c = self._parse_href_coords(store_link.get_attribute("href"))
+            if c:
+                result["store_lat"], result["store_lng"] = c
+        except:
+            pass
+
         return result
 
     def _extract_basic_info(self) -> Dict[str, str]:
         info = {}
+        # 1. Estatus (Lo intentamos sacar de los badges)
         try:
             status_el = self.driver.find_element(
-                By.XPATH,
-                "//div[contains(@class, 'order-invoice-right')]//span[contains(@class, 'badge')]",
+                By.XPATH, "//span[contains(@class, 'badge-soft-')]"
             )
             info["status_text"] = status_el.text.strip()
         except:
-            info["status_text"] = (
-                ""  # Dejamos vacío en lugar de "pending" para no forzar errores
-            )
+            info["status_text"] = ""
 
+        # 2. Cliente (Busca la tarjeta por el título, luego navega al nombre)
         try:
             client_el = self.driver.find_element(
-                By.CSS_SELECTOR, "a[href*='/customer/view/'] .media-body"
+                By.XPATH,
+                "//h5[contains(., 'Información del cliente')]/ancestor::div[contains(@class, 'card')]//*[contains(@class, 'text--title')]",
             )
-            info["customer_name"] = client_el.text.split("\n")[0].strip()
+            info["customer_name"] = client_el.text.strip()
         except:
             info["customer_name"] = "Desconocido"
 
+        # 3. Repartidor
         try:
             driver_el = self.driver.find_element(
-                By.CSS_SELECTOR, "a[href*='/delivery-man/'] .media-body span"
+                By.XPATH,
+                "//h5[contains(., 'repartidor') or contains(., 'Repartidor')]/ancestor::div[contains(@class, 'card')]//*[contains(@class, 'text-body') and contains(@class, 'd-block')]",
             )
             info["driver_name"] = driver_el.text.strip()
         except:
             info["driver_name"] = "N/A"
 
+        # 4. Tienda
         try:
             store_el = self.driver.find_element(
-                By.CSS_SELECTOR, "a[href*='/store/view/'] .media-body span"
+                By.XPATH,
+                "//h5[contains(., 'Información de la tienda')]/ancestor::div[contains(@class, 'card')]//*[contains(@class, 'text--title')]",
             )
             info["store_name"] = store_el.text.strip()
         except:
             info["store_name"] = "Desconocida"
 
+        # 5. Teléfono
         try:
-            el = self.driver.find_element(
-                By.CSS_SELECTOR, ".delivery--information-single a[href^='tel:']"
+            phone_el = self.driver.find_element(
+                By.XPATH,
+                "//*[contains(@class, 'delivery--information-single')]//a[starts-with(@href, 'tel:')]",
             )
-            info["customer_phone"] = el.text.strip()
+            info["customer_phone"] = phone_el.text.strip()
         except:
             pass
 
+        # 6. Fecha de creación
         try:
-            header_text = self.driver.find_element(
-                By.CLASS_NAME, "order-invoice-left"
-            ).text
-            date_match = re.search(
-                r"(\d{1,2}\s+[A-Za-z\.]+\s+\d{4}\s+\d{1,2}:\d{2})", header_text
+            date_el = self.driver.find_element(
+                By.CSS_SELECTOR, ".mt-2.d-block.d-flex, .tio-date-range"
             )
-            if date_match:
-                info["created_at_text"] = date_match.group(1)
+            date_text = (
+                date_el.text.replace("Created at:", "")
+                .replace("Fecha de creación:", "")
+                .strip()
+            )
+            if date_text:
+                info["created_at_text"] = date_text
         except:
             pass
 
@@ -278,47 +290,40 @@ class DroneScraper:
 
     # --- NUEVO: EXTRACTOR DE PRODUCTOS ---
     def _extract_products(self) -> List[Dict]:
-        """Extrae la lista de productos del detalle."""
         items = []
         try:
-            # Buscar filas de la tabla de productos
-            rows = self.driver.find_elements(By.XPATH, "//table/tbody/tr")
-
+            # Apunta a la tabla principal
+            rows = self.driver.find_elements(By.CSS_SELECTOR, "table.table tbody tr")
             for row in rows:
                 try:
                     cols = row.find_elements(By.TAG_NAME, "td")
-                    if len(cols) < 3:
+                    if len(cols) < 4:
                         continue
 
                     # 1. Nombre
-                    try:
-                        name_el = cols[1].find_element(By.TAG_NAME, "strong")
-                        name = name_el.text.strip()
-                    except:
-                        continue
+                    name = cols[1].find_element(By.TAG_NAME, "strong").text.strip()
 
-                    # 2. Cantidad y Precio Unitario
+                    # 2. Cantidad y Precio (Ej: 4 x USD 0,18)
                     qty = 1
                     price = 0.0
-                    try:
-                        info_text = cols[1].find_element(By.TAG_NAME, "h6").text
-                        match = re.search(r"(\d+)\s*x\s*USD\s*([\d\.,]+)", info_text)
-                        if match:
-                            qty = int(match.group(1))
-                            price = float(match.group(2).replace(",", ""))
-                    except:
-                        pass
+                    info_text = cols[1].find_element(By.TAG_NAME, "h6").text
+                    match = re.search(
+                        r"(\d+)\s*x\s*USD\s*([\d\.,]+)", info_text, re.IGNORECASE
+                    )
+                    if match:
+                        qty = int(match.group(1))
+                        price_str = match.group(2)
+                        if "," in price_str and "." not in price_str:
+                            price_str = price_str.replace(",", ".")
+                        elif "." in price_str and "," in price_str:
+                            price_str = price_str.replace(".", "").replace(",", ".")
+                        price = float(price_str)
 
-                    # 3. Código de Barras
+                    # 3. Código de barras
                     barcode = cols[2].get_attribute("title") or cols[2].text.strip()
 
-                    # 4. Total Línea
-                    total = 0.0
-                    try:
-                        total_text = cols[3].text
-                        total = self._parse_money(total_text)
-                    except:
-                        total = price * qty
+                    # 4. Total
+                    total = self._parse_money(cols[3].text)
 
                     if name:
                         items.append(
@@ -332,9 +337,8 @@ class DroneScraper:
                         )
                 except:
                     continue
-        except Exception as e:
-            logger.error(f"Error extracting products: {e}")
-
+        except:
+            pass
         return items
 
     def _extract_payment_info(self) -> str:
@@ -377,7 +381,7 @@ class DroneScraper:
                 pass
 
             # Estrategia B: Búsqueda por Bloque de Texto (Fallback si el HTML cambia de nuevo)
-            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            # body_text = self.driver.find_element(By.TAG_NAME, "body").text
             import re
 
             match = re.search(r"Método de pago\s*:\s*(.+)", body_text, re.IGNORECASE)
@@ -412,10 +416,10 @@ class DroneScraper:
             WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            # body_text = self.driver.find_element(By.TAG_NAME, "body").text
 
             result.update(self._extract_basic_info())
-            result.update(self._extract_financials(body_text))
+            result.update(self._extract_financials())
             result.update(self._extract_maps())
 
             # Productos (Siempre)

@@ -162,18 +162,11 @@ class CustomerScraper:
         return date_obj
 
     def scrape_customers(self, max_pages: int = None, days_back: int = 3) -> List[Dict]:
-        """
-        days_back: Cuántos días hacia atrás buscar antes de detenerse.
-        Por defecto 3 para asegurar cubrir 'ayer' incluso con diferencias horarias.
-        """
         if not self.driver:
             self.setup_driver()
             self.login()
         customers = []
 
-        # Calculamos la fecha límite (Corte)
-        # Usamos UTC-4 (VET) aproximado restando 4 horas a UTC si el server no tiene zona configurada,
-        # o simplemente usanda la fecha local del servidor si está en VET.
         today = datetime.now()
         limit_date = today - timedelta(days=days_back)
         limit_date = limit_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -183,58 +176,76 @@ class CustomerScraper:
         )
 
         try:
-            self.driver.get(self.users_url)
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, "datatable"))
-            )
-
             current_page = 1
             stop_scraping = False
-            old_records_count = 0  # <--- AGREGAR ESTO
+            old_records_count = 0
             MAX_OLD_RECORDS = 15
 
             while not stop_scraping:
                 if max_pages and current_page > max_pages:
                     break
 
+                # Paginación directa en la URL asegurando el filtro order_wise
+                url = f"{settings.LEGACY_BASE_URL}/admin/users/customer/list?order_wise=latest&page={current_page}"
+                self.driver.get(url)
+
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "set-rows"))
+                )
+
                 logger.info(f"   📄 Procesando página {current_page}...")
 
-                rows = self.driver.find_elements(
-                    By.XPATH, "//table[@id='datatable']/tbody/tr"
-                )
+                # 👇 CAMBIO QUIRÚRGICO: Selector CSS directo a las filas de la tabla
+                rows = self.driver.find_elements(By.CSS_SELECTOR, "tbody#set-rows tr")
                 if not rows:
                     break
 
                 for row in rows:
                     try:
-                        cols = row.find_elements(By.TAG_NAME, "td")
-                        if len(cols) < 7:
-                            continue
-
-                        id_text = cols[0].text.strip()
+                        # 1. ID del Cliente
+                        id_text = row.find_element(
+                            By.CSS_SELECTOR, "td:first-child"
+                        ).text.strip()
                         if not id_text.isdigit():
                             continue
                         gopharma_id = int(id_text)
 
-                        name = cols[1].text.split("\n")[0].strip()
+                        # 2. Nombre
+                        try:
+                            name_el = row.find_element(
+                                By.CSS_SELECTOR, "td:nth-child(2) a:first-child"
+                            )
+                            name = name_el.text.strip()
+                        except:
+                            name = "Desconocido"
 
+                        # 3. Teléfono
                         phone = None
                         try:
-                            phone_el = cols[3].find_element(
-                                By.XPATH, ".//a[contains(@href, 'tel:')]"
+                            phone_el = row.find_element(
+                                By.CSS_SELECTOR, "td:nth-child(4) a[href^='tel:']"
                             )
-                            phone = phone_el.text.strip()
+                            phone = (
+                                phone_el.get_attribute("href")
+                                .replace("tel:", "")
+                                .strip()
+                            )
                         except:
                             pass
 
-                        date_text = cols[6].text.strip()
-                        raw_date = self._parse_spanish_date(date_text)
-                        final_date = self._correct_year_based_on_id(
-                            raw_date, gopharma_id
-                        )
+                        # 4. Fecha de Ingreso
+                        try:
+                            date_el = row.find_element(
+                                By.CSS_SELECTOR, "td:nth-child(7) label.badge"
+                            )
+                            raw_date = self._parse_spanish_date(date_el.text.strip())
+                            final_date = self._correct_year_based_on_id(
+                                raw_date, gopharma_id
+                            )
+                        except:
+                            final_date = None
 
                         if final_date:
-                            # --- NUEVA LÓGICA DE FRENO CON TOLERANCIA ---
                             if final_date < limit_date:
                                 old_records_count += 1
                                 logger.info(
@@ -246,9 +257,8 @@ class CustomerScraper:
                                         f"🛑 Límite de {MAX_OLD_RECORDS} registros antiguos consecutivos alcanzado. Deteniendo scraper."
                                     )
                                     stop_scraping = True
-                                    break  # Rompe el for de filas
+                                    break
                             else:
-                                # Reseteamos racha si encontramos un usuario nuevo
                                 old_records_count = 0
 
                             customers.append(
@@ -263,19 +273,15 @@ class CustomerScraper:
                         continue
 
                 if stop_scraping:
-                    break  # Rompe el while de paginas
+                    break
 
-                # Paginación
+                # Intentamos avanzar a la siguiente página validando si el botón no está deshabilitado
                 try:
-                    next_btn = self.driver.find_element(
-                        By.XPATH, "//a[@aria-label='Next »']"
+                    next_btn_parent = self.driver.find_element(
+                        By.XPATH, "//a[@rel='next']/parent::li"
                     )
-                    parent = next_btn.find_element(By.XPATH, "./..")
-                    if "disabled" in parent.get_attribute("class"):
+                    if "disabled" in next_btn_parent.get_attribute("class"):
                         break
-
-                    self.driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(1.5)
                     current_page += 1
                 except:
                     break

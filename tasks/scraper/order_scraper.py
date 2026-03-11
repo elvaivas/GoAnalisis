@@ -302,16 +302,21 @@ class OrderScraper:
             self.close_driver()
 
     def _parse_duration(self, row_element) -> str:
-        """Extrae el texto de duración de la fila."""
+        """Extrae el texto de duración de la fila (Actualizado al nuevo DOM)."""
         try:
-            # Buscamos en la segunda columna (td[2]) que suele tener la fecha y duración
-            # Ojo: XPath relativo a la fila
-            div = row_element.find_element(
-                By.XPATH, ".//div[contains(., 'Duración de tiempo')]"
+            # Ahora la duración está en la segunda columna (td:nth-child(2))
+            cell = row_element.find_element(By.CSS_SELECTOR, "td:nth-child(2)")
+            text = cell.text
+
+            # Buscamos la línea de duración (soporta "Time duration" o "Duración")
+            match = re.search(
+                r"(?:Time duration|Duración.*?):\s*(.+)", text, re.IGNORECASE
             )
-            return " ".join(div.text.replace("Duración de tiempo:", "").strip().split())
-        except:
-            return ""
+            if match:
+                return match.group(1).strip()
+        except Exception:
+            pass
+        return ""
 
     def get_recent_order_ids(self, limit: int = 25) -> List[Dict[str, str]]:
         """
@@ -328,31 +333,31 @@ class OrderScraper:
                 EC.presence_of_element_located((By.ID, "datatable"))
             )
 
+            # 👇 CAMBIO QUIRÚRGICO: Selector CSS exacto ignorando filas de grupo (Carritos)
             rows = self.driver.find_elements(
-                By.XPATH,
-                "//table[@id='datatable']/tbody/tr[td[contains(@class, 'table-column-pl-0')]]",
+                By.CSS_SELECTOR,
+                "table#datatable tbody tr[class*='status-']:not(.group)",
             )
 
             for row in rows:
                 if len(orders_found) >= limit:
                     break
                 try:
-                    # --- NUEVO: Extraer la clase de la fila para sacar el estado ---
+                    # El estado sigue estando en la clase del tr (ej. status-pending)
                     row_class = row.get_attribute("class")
                     status_match = re.search(r"status-([a-zA-Z0-9_-]+)", row_class)
                     row_status = status_match.group(1) if status_match else ""
 
-                    # ID directo sin leer todo el texto de la fila
-                    link = row.find_element(
-                        By.XPATH, ".//td[contains(@class, 'table-column-pl-0')]/a"
-                    )
-                    order_id = link.get_attribute("href").split("/")[-1]
+                    # 👇 CAMBIO QUIRÚRGICO: Extracción directa de ID por clase css
+                    link = row.find_element(By.CSS_SELECTOR, "td.table-column-pl-0 a")
+                    order_id = (
+                        link.text.strip()
+                    )  # Es más seguro extraer el texto directamente
 
-                    # Duración
+                    # La duración ahora usa el nuevo parseo de la columna 2
                     duration = self._parse_duration(row)
 
                     if order_id.isdigit():
-                        # NUEVO: Agregamos "list_status" al diccionario
                         orders_found.append(
                             {
                                 "id": order_id,
@@ -366,15 +371,13 @@ class OrderScraper:
         except Exception as e:
             logger.error(f"Error get_recent: {e}")
         finally:
-            # 🧟 EXTERMINADOR DE ZOMBIES: Garantiza que Chrome muera siempre
             self.close_driver()
 
         return orders_found
 
     def get_historical_ids(self, max_pages: int = None) -> List[Dict[str, str]]:
         """
-        Navega por la paginación hasta el final.
-        Si max_pages es None, sigue hasta que no haya botón 'Siguiente'.
+        Navega por la paginación hasta el final con los nuevos selectores.
         """
         if not self.driver:
             self.setup_driver()
@@ -389,27 +392,25 @@ class OrderScraper:
 
             current_page = 1
             while True:
-                # Freno de emergencia opcional (si se pasa un número explícito)
                 if max_pages and current_page > max_pages:
-                    logger.info(
-                        f"🛑 Límite de seguridad alcanzado ({max_pages} págs). Deteniendo."
-                    )
+                    logger.info(f"🛑 Límite de seguridad alcanzado ({max_pages} págs).")
                     break
 
                 logger.info(f"📄 Escaneando pág {current_page}...")
 
+                # 👇 CAMBIO QUIRÚRGICO: Mismo selector protegido del radar
                 rows = self.driver.find_elements(
-                    By.XPATH,
-                    "//table[@id='datatable']/tbody/tr[td[contains(@class, 'table-column-pl-0')]]",
+                    By.CSS_SELECTOR,
+                    "table#datatable tbody tr[class*='status-']:not(.group)",
                 )
                 page_data = []
 
                 for row in rows:
                     try:
                         link = row.find_element(
-                            By.XPATH, ".//td[contains(@class, 'table-column-pl-0')]/a"
+                            By.CSS_SELECTOR, "td.table-column-pl-0 a"
                         )
-                        order_id = link.get_attribute("href").split("/")[-1]
+                        order_id = link.text.strip()
                         duration = self._parse_duration(row)
 
                         if order_id.isdigit():
@@ -419,28 +420,22 @@ class OrderScraper:
 
                 all_data.extend(page_data)
 
-                # --- LÓGICA DE PAGINACIÓN INFINITA ---
                 try:
+                    # Mantenemos el xpath del botón next, asumiendo que el componente de paginación de Laravel no cambió su aria-label
                     next_btn = self.driver.find_element(
                         By.XPATH, "//a[@aria-label='Next »']"
                     )
 
-                    # Verificamos si el botón está deshabilitado (clase 'disabled' en el padre <li>)
                     parent = next_btn.find_element(By.XPATH, "./..")
                     if "disabled" in parent.get_attribute("class"):
-                        logger.info("🚫 Fin de la paginación (Botón deshabilitado).")
+                        logger.info("🚫 Fin de la paginación.")
                         break
 
-                    # Click para avanzar
                     self.driver.execute_script("arguments[0].click();", next_btn)
-
-                    # Esperamos que cargue la siguiente página
-                    # (Pequeña pausa técnica para no saturar y dar tiempo al DOM)
                     time.sleep(2)
-
                     current_page += 1
                 except NoSuchElementException:
-                    logger.info("🚫 No se encontró botón siguiente. Fin de la lista.")
+                    logger.info("🚫 No se encontró botón siguiente.")
                     break
                 except Exception as e:
                     logger.error(f"⚠️ Error al cambiar de página: {e}")
@@ -449,9 +444,7 @@ class OrderScraper:
         except Exception as e:
             logger.error(f"Error backfill: {e}")
         finally:
-            # 🧟 EXTERMINADOR DE ZOMBIES: Garantiza que Chrome muera siempre
             self.close_driver()
 
-        # Deduplicar
         unique = {d["id"]: d for d in all_data}
         return list(unique.values())

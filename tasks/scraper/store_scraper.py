@@ -37,63 +37,164 @@ class StoreScraper:
         self.driver.set_page_load_timeout(30)
         self.driver.set_script_timeout(30)
 
-    def scrape_store_list(self) -> list:
+    def scrape_store_list(self, max_pages: int = None) -> list:
         """
-        Escanea la lista principal de tiendas para extraer Empresa, Sucursal e ID real.
+        Escanea la lista principal de tiendas para extraer Empresa, Sucursal, ID real
+        y los URLs de los interruptores de apagado.
         """
         if not self.driver:
             self.setup_driver()
             self.login()
 
-        # Usamos la URL base de los settings para mayor seguridad
-        url = f"{settings.LEGACY_BASE_URL}/admin/store/list"
         stores_data = []
+        current_page = 1
 
         try:
-            self.driver.get(url)
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, "columnSearchDatatable"))
-            )
+            while True:
+                if max_pages and current_page > max_pages:
+                    break
 
-            rows = self.driver.find_elements(
-                By.XPATH, "//table[@id='columnSearchDatatable']/tbody/tr"
-            )
-            for row in rows:
+                url = f"{settings.LEGACY_BASE_URL}/admin/store/list?page={current_page}"
+                self.driver.get(url)
+
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "columnSearchDatatable"))
+                )
+
+                # Usamos el selector robusto para las filas
+                rows = self.driver.find_elements(
+                    By.CSS_SELECTOR, "table#columnSearchDatatable tbody tr"
+                )
+                if not rows:
+                    break
+
+                for row in rows:
+                    try:
+                        cols = row.find_elements(By.TAG_NAME, "td")
+                        if len(cols) < 8:
+                            continue
+
+                        # --- TU LÓGICA ORIGINAL ADAPTADA AL NUEVO DOM ---
+                        # 1. Empresa (Badge)
+                        try:
+                            company_el = cols[1].find_element(
+                                By.CSS_SELECTOR, "div.info .badge"
+                            )
+                            company_name = company_el.text.replace("...", "").strip()
+                        except:
+                            company_name = "Desconocida"
+
+                        # 2. Sucursal (Texto con title completo)
+                        try:
+                            title_el = cols[1].find_element(
+                                By.CSS_SELECTOR, "div.text--title"
+                            )
+                            store_name = title_el.get_attribute("title")
+                            if (
+                                not store_name
+                            ):  # Fallback por si quitaron el atributo title
+                                store_name = title_el.text.strip()
+                        except:
+                            store_name = "Desconocida"
+
+                        # 3. ID (Texto debajo del nombre)
+                        try:
+                            id_el = cols[1].find_element(
+                                By.XPATH,
+                                ".//*[contains(@class, 'font-light') and contains(text(), 'Id:')]",
+                            )
+                            store_id = (
+                                id_el.text.replace("Id:", "").replace("ID:", "").strip()
+                            )
+                        except:
+                            continue  # Si no hay ID, la fila no nos sirve
+
+                        # --- NUEVA LÓGICA: Módulo de Apagado ---
+                        is_active_app = False
+                        toggle_url_app = None
+                        try:
+                            app_toggle = cols[5].find_element(
+                                By.CSS_SELECTOR, "input[type='checkbox']"
+                            )
+                            is_active_app = (
+                                app_toggle.get_attribute("checked") is not None
+                            )
+                            toggle_url_app = app_toggle.get_attribute("data-url")
+                        except:
+                            pass
+
+                        is_status_active = False
+                        toggle_url_status = None
+                        try:
+                            status_toggle = cols[6].find_element(
+                                By.CSS_SELECTOR, "input[type='checkbox']"
+                            )
+                            is_status_active = (
+                                status_toggle.get_attribute("checked") is not None
+                            )
+                            toggle_url_status = status_toggle.get_attribute("data-url")
+                        except:
+                            pass
+
+                        if store_id.isdigit():
+                            stores_data.append(
+                                {
+                                    "id": store_id,
+                                    "company_name": company_name,
+                                    "name": store_name,
+                                    "is_active_app": is_active_app,
+                                    "app_toggle_url": toggle_url_app,
+                                    "is_status_active": is_status_active,
+                                    "status_toggle_url": toggle_url_status,
+                                }
+                            )
+                    except Exception as e:
+                        continue
+
+                # Paginación
                 try:
-                    # 1. Empresa (Badge azul)
-                    company_el = row.find_element(
-                        By.XPATH, ".//span[contains(@class, 'badge-soft-info')]"
-                    )
-                    company_name = company_el.text.replace("...", "").strip()
-
-                    # 2. Sucursal (Texto con title completo)
-                    title_el = row.find_element(
-                        By.XPATH, ".//div[contains(@class, 'text--title')]"
-                    )
-                    store_name = title_el.get_attribute("title").strip()
-
-                    # 3. ID (Texto debajo del nombre)
-                    id_el = row.find_element(
+                    next_btn = self.driver.find_element(
                         By.XPATH,
-                        ".//div[contains(@class, 'font-light') and contains(text(), 'ID:')]",
+                        "//a[@aria-label='Next »' or contains(text(), 'Next')]",
                     )
-                    store_id = id_el.text.replace("ID:", "").strip()
+                    parent = next_btn.find_element(By.XPATH, "./..")
+                    if "disabled" in parent.get_attribute("class"):
+                        break
 
-                    if store_id.isdigit():
-                        stores_data.append(
-                            {
-                                "id": store_id,
-                                "company_name": company_name,
-                                "name": store_name,
-                            }
-                        )
+                    self.driver.execute_script("arguments[0].click();", next_btn)
+                    time.sleep(2)
+                    current_page += 1
                 except:
-                    continue
+                    break
 
         except Exception as e:
             logger.error(f"Error scraping store list: {e}")
+        finally:
+            self.close_driver()
 
         return stores_data
+
+    def toggle_store_status(self, toggle_url: str) -> bool:
+        """
+        Ejecuta la URL de cambio de estado (apagado/encendido) de forma directa.
+        Requiere que la sesión esté iniciada.
+        """
+        if not toggle_url:
+            return False
+
+        if not self.driver:
+            self.setup_driver()
+            self.login()
+
+        try:
+            # Al visitar directamente el endpoint del data-url, el backend cambia el estado
+            # sin necesidad de lidiar con el modal de confirmación de JavaScript.
+            self.driver.get(toggle_url)
+            time.sleep(1)  # Pequeña pausa para asegurar que el servidor procese
+            return True
+        except Exception as e:
+            logger.error(f"Error al intentar cambiar estado de la tienda: {e}")
+            return False
 
     def login(self) -> bool:
         if not self.driver:
