@@ -27,11 +27,6 @@ class DroneScraper:
         self.wait_timeout = 10
 
     def setup_driver(self):
-        # Importaciones locales para no ensuciar el resto del archivo
-        from selenium.webdriver.chrome.service import Service
-        from selenium.webdriver.chrome.options import Options
-        import logging
-
         chrome_options = Options()
         chrome_options.add_argument("--headless=new")
         chrome_options.add_argument("--no-sandbox")
@@ -200,30 +195,35 @@ class DroneScraper:
         return None
 
     def _extract_maps(self) -> Dict[str, float]:
+        """Extracción SRE actualizada: Coordenadas desde DOM inputs y regex de scripts"""
         result = {}
-        # 1. CLIENTE
-        try:
-            client_link = self.driver.find_element(
-                By.XPATH,
-                "//*[contains(@class, 'delivery--information-single')]//a[contains(@href, 'google.com/maps')]",
-            )
-            c = self._parse_href_coords(client_link.get_attribute("href"))
-            if c:
-                result["customer_lat"], result["customer_lng"] = c
-        except:
-            pass
 
-        # 2. TIENDA
+        # 1. COORDENADAS DEL CLIENTE (Extraídas de los inputs del modal de envío)
         try:
-            store_link = self.driver.find_element(
-                By.XPATH,
-                "//h5[contains(., 'Información de la tienda')]/ancestor::div[contains(@class, 'card')]//a[contains(@href, 'google.com/maps')]",
+            lat_el = self.driver.find_element(By.ID, "latitude")
+            lng_el = self.driver.find_element(By.ID, "longitude")
+
+            lat_val = lat_el.get_attribute("value")
+            lng_val = lng_el.get_attribute("value")
+
+            if lat_val and lng_val:
+                result["customer_lat"] = float(lat_val)
+                result["customer_lng"] = float(lng_val)
+        except Exception as e:
+            logger.debug(f"Mapas Cliente falló: {e}")
+
+        # 2. COORDENADAS DE LA TIENDA (Extraídas del script de inicialización del mapa)
+        try:
+            page_source = self.driver.page_source
+            # Expresión regular que busca la inicialización: new google.maps.LatLng(10.505..., -66.906...)
+            match = re.search(
+                r"new\s+google\.maps\.LatLng\(\s*([-.\d]+),\s*([-.\d]+)\)", page_source
             )
-            c = self._parse_href_coords(store_link.get_attribute("href"))
-            if c:
-                result["store_lat"], result["store_lng"] = c
-        except:
-            pass
+            if match:
+                result["store_lat"] = float(match.group(1))
+                result["store_lng"] = float(match.group(2))
+        except Exception as e:
+            logger.debug(f"Mapas Tienda falló: {e}")
 
         return result
 
@@ -281,13 +281,9 @@ class DroneScraper:
         # 6. Fecha de creación
         try:
             date_el = self.driver.find_element(
-                By.CSS_SELECTOR, ".mt-2.d-block.d-flex, .tio-date-range"
+                By.XPATH, "//i[contains(@class, 'tio-date-range')]/parent::span"
             )
-            date_text = (
-                date_el.text.replace("Created at:", "")
-                .replace("Fecha de creación:", "")
-                .strip()
-            )
+            date_text = date_el.text.strip()
             if date_text:
                 info["created_at_text"] = date_text
         except:
@@ -416,7 +412,7 @@ class DroneScraper:
                 pass
 
             # Estrategia B: Búsqueda por Bloque de Texto (Fallback si el HTML cambia de nuevo)
-            # body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
             import re
 
             match = re.search(r"Método de pago\s*:\s*(.+)", body_text, re.IGNORECASE)
@@ -451,7 +447,7 @@ class DroneScraper:
             WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            # body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
 
             result.update(self._extract_basic_info())
             result.update(self._extract_financials())
