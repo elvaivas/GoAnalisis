@@ -241,11 +241,11 @@ class DroneScraper:
         # 2. Cliente (Busca la tarjeta por el título, luego navega al nombre)
         try:
             client_el = self.driver.find_element(
-                By.XPATH,
-                "//h5[contains(., 'Información del cliente')]/ancestor::div[contains(@class, 'card')]//*[contains(@class, 'text--title')]",
+                By.CSS_SELECTOR, "a.customer--information-single span.text--title"
             )
             info["customer_name"] = client_el.text.strip()
-        except:
+        except Exception as e:
+            logger.debug(f"Fallo extrayendo cliente: {e}")
             info["customer_name"] = "Desconocido"
 
         # 3. Repartidor
@@ -260,12 +260,21 @@ class DroneScraper:
 
         # 4. Tienda
         try:
-            store_el = self.driver.find_element(
-                By.XPATH,
-                "//h5[contains(., 'Información de la tienda')]/ancestor::div[contains(@class, 'card')]//*[contains(@class, 'text--title')]",
-            )
-            info["store_name"] = store_el.text.strip()
-        except:
+            # Alternativa A: Extraer del encabezado superior (badge)
+            try:
+                store_el = self.driver.find_element(
+                    By.XPATH,
+                    "//h6[i[contains(@class, 'tio-shop')]]/span[contains(@class, 'badge')]",
+                )
+                info["store_name"] = store_el.text.strip()
+            except:
+                # Alternativa B: Extraer de la tarjeta lateral
+                store_el = self.driver.find_element(
+                    By.CSS_SELECTOR, "a.resturant--information-single span.text--title"
+                )
+                info["store_name"] = store_el.text.strip()
+        except Exception as e:
+            logger.debug(f"Fallo extrayendo tienda: {e}")
             info["store_name"] = "Desconocida"
 
         # 5. Teléfono
