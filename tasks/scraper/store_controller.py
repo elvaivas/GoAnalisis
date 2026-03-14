@@ -165,8 +165,8 @@ class StoreControllerScraper:
 
             search_input.clear()
             search_input.send_keys(search_query)
-            time.sleep(1)
-            search_input.send_keys(Keys.ENTER)
+            time.sleep(3)
+            # search_input.send_keys(Keys.ENTER)
             time.sleep(4)
 
             # 2. Si NO teníamos el ID desde el principio, lo extraemos de los resultados filtrados
