@@ -222,7 +222,8 @@ class StoreControllerScraper:
             logger.info(f"✅ ID Confirmado para '{store_name}': {real_legacy_id}")
 
             # 3. INTERACTUAR CON EL SWITCH
-            checkbox_id = f"activeCheckbox{real_legacy_id}"
+            clean_id = int(real_legacy_id)
+            checkbox_id = f"activeCheckbox{clean_id}"
 
             is_on = self.driver.execute_script(
                 f"return document.getElementById('{checkbox_id}') != null && document.getElementById('{checkbox_id}').checked;"
