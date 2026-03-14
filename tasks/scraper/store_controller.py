@@ -129,7 +129,7 @@ class StoreControllerScraper:
             if store_external_id:
                 id_match = re.search(r"(\d+)", store_external_id)
                 if id_match:
-                    real_legacy_id = id_match.group(1)
+                    real_legacy_id = str(int(id_match.group(1)))
                     logger.info(
                         f"🎯 Usando ID Directo desde DB para {store_name}: {real_legacy_id}"
                     )
