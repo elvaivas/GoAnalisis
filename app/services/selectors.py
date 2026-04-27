@@ -30,7 +30,7 @@ ORDER_DETAIL_SELECTORS = {
     # Montos
     "delivery_fee": (
         By.XPATH,
-        "//dt[normalize-space()='Tarifa de entrega:']/following-sibling::dd",
+        "//dt[contains(normalize-space(), 'Tarifa de entrega') or contains(normalize-space(), 'Delivery fee')]/following-sibling::dd",
     ),
     "total_amount": (
         By.XPATH,
@@ -38,7 +38,10 @@ ORDER_DETAIL_SELECTORS = {
     ),
     # --- NUEVOS DATOS DE INTELIGENCIA ---
     # Método de pago: Buscamos el h6 que contiene el texto y tomamos el último span
-    "payment_method": (By.XPATH, "//h6[contains(., 'Método de pago')]/span[last()]"),
+    "payment_method": (
+        By.XPATH,
+        "//h6[contains(., 'Método de pago') or contains(., 'Payment method')]/span[last()]",
+    ),
     # Cancelación: Buscamos en la tarjeta lateral derecha (sidebar)
     "cancellation_reason": (
         By.XPATH,

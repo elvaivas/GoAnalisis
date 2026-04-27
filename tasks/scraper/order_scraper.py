@@ -210,7 +210,7 @@ class OrderScraper:
             # 3. CLICK CSV (Sin target blank)
             try:
                 export_btn = self.driver.find_element(
-                    By.CSS_SELECTOR, ".js-hs-unfold-invoker"
+                    By.CSS_SELECTOR, "a[data-hs-unfold-target='#usersExportDropdown']"
                 )
                 self.driver.execute_script("arguments[0].click();", export_btn)
                 time.sleep(1)
