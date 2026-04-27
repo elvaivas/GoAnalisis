@@ -159,26 +159,29 @@ class DroneScraper:
             return 0.0
 
     def _extract_financials(self) -> Dict[str, float]:
-        """Extrae los costos usando la nueva lista de definición <dl>"""
+        """Extrae los costos soportando Inglés y Español"""
         data = {}
-        # Mapeo exacto: Clave Base de Datos -> Texto visible en la etiqueta <dt>
         mapping = {
-            "service_fee": "Tarifa de servicio",
-            "coupon_discount": "Cupón de descuento",
-            "tips": "Consejos para el repartidor",
-            "real_delivery_fee": "Tarifa de envío",
-            "total_amount": "Total",
-            "product_price": "Precio de los artículos",
+            "service_fee": ["Tarifa de servicio", "Service fee"],
+            "coupon_discount": ["Cupón de descuento", "Coupon discount"],
+            "tips": ["Consejos para el repartidor", "Delivery man tips"],
+            "real_delivery_fee": ["Tarifa de envío", "Delivery fee"],
+            "total_amount": ["Total"],
+            "product_price": ["Precio de los artículos", "Items price"],
         }
 
-        for db_key, label in mapping.items():
-            try:
-                # XPath quirúrgico: Busca el dt con la etiqueta y salta a su hermano dd
-                xpath = f"//dl[contains(@class, 'row')]//dt[contains(., '{label}')]/following-sibling::dd[1]"
-                element = self.driver.find_element(By.XPATH, xpath)
-                data[db_key] = self._parse_money(element.text)
-            except:
-                data[db_key] = 0.0
+        for db_key, labels in mapping.items():
+            data[db_key] = 0.0
+            for label in labels:
+                try:
+                    xpath = f"//dl[contains(@class, 'row')]//dt[contains(., '{label}')]/following-sibling::dd[1]"
+                    element = self.driver.find_element(By.XPATH, xpath)
+                    val = self._parse_money(element.text)
+                    if val > 0:
+                        data[db_key] = val
+                        break  # Encontró el correcto, pasa al siguiente db_key
+                except:
+                    continue
 
         return data
 
@@ -228,55 +231,53 @@ class DroneScraper:
         return result
 
     def _extract_basic_info(self) -> Dict[str, str]:
+        """Extracción SRE anclada a URIs (Inmune a cambios de idioma)"""
         info = {}
-        # 1. Estatus (Lo intentamos sacar de los badges)
+
+        # 1. Estatus (Busca el bloque que diga Status)
         try:
             status_el = self.driver.find_element(
-                By.XPATH, "//span[contains(@class, 'badge-soft-')]"
+                By.XPATH,
+                "//h6[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'status')]/span[contains(@class, 'badge')]",
             )
             info["status_text"] = status_el.text.strip()
         except:
             info["status_text"] = ""
 
-        # 2. Cliente
+        # 2. Cliente (Anclado al href)
         try:
-            # XPath Quirúrgico: Busca la clase específica de fuente del título
             client_el = self.driver.find_element(
                 By.XPATH,
-                "//a[contains(@class, 'customer--information-single')]//span[contains(@class, 'fz--14px')]",
+                "//a[contains(@href, 'customer/view')]//span[contains(@class, 'text-hover-primary') or contains(@class, 'fz--14px')]",
             )
             info["customer_name"] = client_el.text.strip()
-        except Exception as e:
-            logger.debug(f"Fallo extrayendo cliente: {e}")
+        except:
             info["customer_name"] = "Desconocido"
 
-        # 3. Repartidor
+        # 3. Repartidor (Anclado al href)
         try:
             driver_el = self.driver.find_element(
                 By.XPATH,
-                "//h5[contains(., 'repartidor') or contains(., 'Repartidor') or contains(., 'Deliveryman')]/ancestor::div[contains(@class, 'card')]//*[contains(@class, 'text-body') and contains(@class, 'd-block')]",
+                "//a[contains(@href, 'delivery-man/preview')]//span[contains(@class, 'text-hover-primary') or contains(@class, 'text-body')]",
             )
             info["driver_name"] = driver_el.text.strip()
         except:
             info["driver_name"] = "N/A"
 
-        # 4. Tienda
+        # 4. Tienda (Anclado al href)
         try:
-            # XPath Quirúrgico: Tolerancia a la sintaxis y anclaje al tamaño de fuente del título
             store_el = self.driver.find_element(
                 By.XPATH,
-                "//a[contains(@class, 'resturant--information-single') or contains(@class, 'restaurant--information-single')]//span[contains(@class, 'fz--14px')]",
+                "//a[contains(@href, 'store/view')]//span[contains(@class, 'text-hover-primary') or contains(@class, 'fz--14px')]",
             )
             info["store_name"] = store_el.text.strip()
-        except Exception as e:
-            logger.debug(f"Fallo extrayendo tienda: {e}")
+        except:
             info["store_name"] = "Desconocida"
 
         # 5. Teléfono
         try:
             phone_el = self.driver.find_element(
-                By.XPATH,
-                "//*[contains(@class, 'delivery--information-single')]//a[starts-with(@href, 'tel:')]",
+                By.XPATH, "//a[starts-with(@href, 'tel:')]"
             )
             info["customer_phone"] = phone_el.text.strip()
         except:
@@ -287,9 +288,7 @@ class DroneScraper:
             date_el = self.driver.find_element(
                 By.XPATH, "//i[contains(@class, 'tio-date-range')]/parent::span"
             )
-            date_text = date_el.text.strip()
-            if date_text:
-                info["created_at_text"] = date_text
+            info["created_at_text"] = date_el.text.strip()
         except:
             pass
 
@@ -377,67 +376,29 @@ class DroneScraper:
         return items
 
     def _extract_payment_info(self) -> str:
-        """
-        🎯 [Misión 4 SRE] Extrae el método de pago de forma blindada.
-        Actualizado para el nuevo DOM (ignora los ':' y extrae el último span).
-        """
-        payment_method = "Desconocido"
-
+        """Extrae el método de pago (Bilingüe)"""
         try:
-            # Estrategia A: Búsqueda SRE por el último span del título (Recomendada)
-            try:
-                # Apunta directamente al <h6> que contiene 'Método de pago' y extrae su último <span>
-                element = self.driver.find_element(
-                    By.XPATH, "//h6[contains(., 'Método de pago')]/span[last()]"
-                )
-                raw_payment = element.text.strip()
+            # Estrategia A: Bilingüe
+            element = self.driver.find_element(
+                By.XPATH,
+                "//h6[contains(., 'Método de pago') or contains(., 'Payment method')]/span[last()]",
+            )
+            raw_payment = element.text.strip().upper()
 
-                # Filtro de Normalización para Base de Datos
-                if raw_payment and raw_payment != ":":
-                    texto_seguro = (
-                        raw_payment.upper()
-                    )  # Pasamos todo a mayúsculas para buscar mejor
+            if "PUNTO DE VENTA" in raw_payment:
+                return "Punto de Venta"
+            if "EFECTIVO" in raw_payment:
+                return "Efectivo"
+            if "PAGO" in raw_payment or "PMOVIL" in raw_payment:
+                return "Pago Movil"
+            if "ZELLE" in raw_payment:
+                return "Zelle"
 
-                    if "PUNTO DE VENTA" in texto_seguro:
-                        return "Punto de Venta"
-                    elif "EFECTIVO" in texto_seguro:
-                        return "Efectivo"
-                    elif (
-                        "PAGO MOVIL" in texto_seguro
-                        or "PAGO MÓVIL" in texto_seguro
-                        or "PMOVIL" in texto_seguro
-                    ):
-                        return "Pago Movil"
-                    elif "ZELLE" in texto_seguro:
-                        return "Zelle"
-                    else:
-                        return raw_payment
-            except:
-                pass
-
-            # Estrategia B: Búsqueda por Bloque de Texto (Fallback si el HTML cambia de nuevo)
-            body_text = self.driver.find_element(By.TAG_NAME, "body").text
-            import re
-
-            match = re.search(r"Método de pago\s*:\s*(.+)", body_text, re.IGNORECASE)
-            if match:
-                raw_payment = match.group(1).strip()
-                if raw_payment and raw_payment != ":":
-                    if "Punto de Venta" in raw_payment:
-                        return "Punto de Venta"
-                    elif "Efectivo" in raw_payment:
-                        return "Efectivo"
-                    elif "Pago Movil" in raw_payment or "Pago Móvil" in raw_payment:
-                        return "Pago Movil"
-                    elif "Zelle" in raw_payment:
-                        return "Zelle"
-                    else:
-                        return raw_payment
-
-        except Exception as e:
-            logger.warning(f"⚠️ No se pudo extraer el método de pago: {e}")
-
-        return payment_method
+            return (
+                element.text.strip() if element.text.strip() != ":" else "Desconocido"
+            )
+        except:
+            return "Desconocido"
 
     def scrape_detail(self, external_id: str, mode: str = "full") -> Dict[str, Any]:
         if not self.driver:
