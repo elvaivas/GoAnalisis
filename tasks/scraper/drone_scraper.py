@@ -238,10 +238,12 @@ class DroneScraper:
         except:
             info["status_text"] = ""
 
-        # 2. Cliente (Busca la tarjeta por el título, luego navega al nombre)
+        # 2. Cliente
         try:
+            # XPath Quirúrgico: Busca la clase específica de fuente del título
             client_el = self.driver.find_element(
-                By.CSS_SELECTOR, "a.customer--information-single span.text--title"
+                By.XPATH,
+                "//a[contains(@class, 'customer--information-single')]//span[contains(@class, 'fz--14px')]",
             )
             info["customer_name"] = client_el.text.strip()
         except Exception as e:
@@ -252,7 +254,7 @@ class DroneScraper:
         try:
             driver_el = self.driver.find_element(
                 By.XPATH,
-                "//h5[contains(., 'repartidor') or contains(., 'Repartidor')]/ancestor::div[contains(@class, 'card')]//*[contains(@class, 'text-body') and contains(@class, 'd-block')]",
+                "//h5[contains(., 'repartidor') or contains(., 'Repartidor') or contains(., 'Deliveryman')]/ancestor::div[contains(@class, 'card')]//*[contains(@class, 'text-body') and contains(@class, 'd-block')]",
             )
             info["driver_name"] = driver_el.text.strip()
         except:
@@ -260,19 +262,12 @@ class DroneScraper:
 
         # 4. Tienda
         try:
-            # Alternativa A: Extraer del encabezado superior (badge)
-            try:
-                store_el = self.driver.find_element(
-                    By.XPATH,
-                    "//h6[i[contains(@class, 'tio-shop')]]/span[contains(@class, 'badge')]",
-                )
-                info["store_name"] = store_el.text.strip()
-            except:
-                # Alternativa B: Extraer de la tarjeta lateral
-                store_el = self.driver.find_element(
-                    By.CSS_SELECTOR, "a.resturant--information-single span.text--title"
-                )
-                info["store_name"] = store_el.text.strip()
+            # XPath Quirúrgico: Tolerancia a la sintaxis y anclaje al tamaño de fuente del título
+            store_el = self.driver.find_element(
+                By.XPATH,
+                "//a[contains(@class, 'resturant--information-single') or contains(@class, 'restaurant--information-single')]//span[contains(@class, 'fz--14px')]",
+            )
+            info["store_name"] = store_el.text.strip()
         except Exception as e:
             logger.debug(f"Fallo extrayendo tienda: {e}")
             info["store_name"] = "Desconocida"
