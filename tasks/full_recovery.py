@@ -15,65 +15,68 @@ def recovery_massive_zombies(days_back=45):
 
     limit_date = datetime.now() - timedelta(days=days_back)
 
-    # 1. Traemos TODOS los pedidos de los últimos 45 días
-    logger.info("📡 Descargando historial de 45 días para auditar...")
+    logger.info("📡 Descargando historial para auditar...")
     all_orders = db.query(Order).filter(Order.created_at >= limit_date).all()
     zombies = []
 
-    ## 2. Filtramos con Python de forma agresiva
+    # FILTRO ESTRICTO: Solo tomamos los que REALMENTE tienen nombres desconocidos
     for order in all_orders:
-        otype = getattr(order, "order_type", "") or ""
-        status = getattr(order, "current_status", "") or ""
         c_name = getattr(order, "customer_name", "") or ""
         s_name = getattr(order, "store_name", "") or ""
 
+        # Ignoramos si ya tiene un nombre real
         if (
-            otype.lower() == "desconocido"
-            or otype == ""
-            or status.isdigit()
-            or c_name.lower() == "desconocido"
+            c_name.lower() == "desconocido"
             or s_name.lower() == "desconocida"
-            or s_name == ""
+            or c_name == ""
         ):
             zombies.append(order)
 
     logger.info(
-        f"🕵️‍♂️ Se han detectado {len(zombies)} pedidos infectados en los últimos {days_back} días."
+        f"🕵️‍♂️ Quedan {len(zombies)} pedidos infectados por curar en los últimos {days_back} días."
     )
 
     if not zombies:
         logger.info("✨ No hay nada que curar. La base de datos está limpia.")
         return
 
-    # 3. Iniciamos la curación (CON REINICIO DE MOTOR)
     try:
         if drone.login():
+            # Bajamos el límite a 50 para reiniciar el driver antes de que se asfixie
             for i, order in enumerate(zombies, 1):
                 logger.info(
                     f"🚑 [{i}/{len(zombies)}] Curando pedido #{order.external_id}..."
                 )
 
-                # --- SISTEMA ANTI-CRASH: Reiniciar navegador cada 100 pedidos ---
-                if i % 100 == 0:
+                if i % 50 == 0:
                     logger.info(
-                        "🔄 Refrescando memoria del Dron (Reinicio de Driver)..."
+                        "🔄 Refrescando memoria del Dron (Reinicio Seguro a los 50)..."
                     )
                     drone.close_driver()
                     drone = DroneScraper()
                     drone.login()
-                # -----------------------------------------------------------------
 
-                try:
-                    data = drone.scrape_detail(order.external_id, mode="full")
-                    if data:
-                        process_drone_data(db, data)
-                        if i % 5 == 0:
+                # Control de reintentos individuales
+                success = False
+                for attempt in range(2):
+                    try:
+                        data = drone.scrape_detail(order.external_id, mode="full")
+                        if data and data.get("customer_name") != "Desconocido":
+                            process_drone_data(db, data)
                             db.commit()
-                except Exception as e:
-                    logger.error(f"❌ Error al curar #{order.external_id}: {e}")
-                    db.rollback()
+                            success = True
+                            break  # Éxito, salimos del reintento
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ Intento {attempt+1} falló para #{order.external_id}: {e}"
+                        )
+                        db.rollback()
 
-            db.commit()
+                if not success:
+                    logger.error(
+                        f"❌ Abandono: El pedido #{order.external_id} falló persistentemente. Se salta al siguiente."
+                    )
+
             logger.info("🏆 Proceso de recuperación masiva completado.")
         else:
             logger.error("❌ El dron no pudo loguearse.")
