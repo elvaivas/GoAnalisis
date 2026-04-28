@@ -20,13 +20,19 @@ def recovery_massive_zombies(days_back=45):
     all_orders = db.query(Order).filter(Order.created_at >= limit_date).all()
     zombies = []
 
-    # 2. Filtramos con Python de forma segura (sin romper SQLAlchemy)
+    ## 2. Filtramos con Python de forma agresiva
     for order in all_orders:
-        otype = getattr(order, "order_type", None)
-        status = getattr(order, "current_status", "")
+        otype = getattr(order, 'order_type', '') or ""
+        status = getattr(order, 'current_status', '') or ""
+        c_name = getattr(order, 'customer_name', '') or ""
+        s_name = getattr(order, 'store_name', '') or ""
 
-        # Si no tiene order_type (fuga del scraper ciego) o si el estatus es un número basura (ej. '8697')
-        if not otype or otype == "desconocido" or status.isdigit():
+        if (
+            otype.lower() == "desconocido" or otype == "" or 
+            status.isdigit() or 
+            c_name.lower() == "desconocido" or 
+            s_name.lower() == "desconocida" or s_name == ""
+        ):
             zombies.append(order)
 
     logger.info(
