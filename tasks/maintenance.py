@@ -122,6 +122,11 @@ def nightly_deep_clean(self):
                         needs_repair = True
                     elif local_order.total_amount == 0:
                         needs_repair = True
+                    # 👇 DETECTOR DE INFECCIÓN CORREGIDO (Seguro para SQLAlchemy) 👇
+                    elif not getattr(local_order, 'order_type', None) or getattr(local_order, 'order_type', '') == "desconocido":
+                        needs_repair = True
+                        logger.info(f"🦠 Orden ciega detectada en #{eid}. Marcando para re-escaneo...")
+                    # 👆 FIN DETECTOR CORREGIDO 👆
                     elif (
                         local_order.current_status == "delivered"
                         and local_order.order_type == "Delivery"
