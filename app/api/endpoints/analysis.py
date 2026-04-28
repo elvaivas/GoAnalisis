@@ -197,7 +197,21 @@ def get_ops_executive_summary(
 
         status_dict = {status: count for status, count in status_counts}
         delivered = status_dict.get("delivered", 0)
-        canceled = status_dict.get("canceled", 0)
+
+        # 💉 INYECCIÓN SRE: Filtramos para que solo cuente los cancelados que fueron PAGADOS
+        canceled = (
+            db.query(func.count(Order.id))
+            .filter(
+                base_filter,
+                Order.current_status == "canceled",
+                or_(
+                    func.lower(Order.payment_status).like("%paid%"),
+                    func.lower(Order.payment_status).like("%pagad%"),
+                ),
+            )
+            .scalar()
+            or 0
+        )
 
         # El requerimiento de Punto de Venta (POS) Real - Leyendo la DB
         # Buscamos coincidencias con "punto", "pos", "tarjeta", etc. (Ajustable a como lo guarde el Drone)
@@ -264,12 +278,19 @@ def get_ops_executive_summary(
             or 0
         )
 
-        # --- BLOQUE 5: CANCELACIONES POR FARMACIA ---
-        # Ideal para una tabla de "Focos Rojos"
+        # --- BLOQUE 5: CANCELACIONES POR FARMACIA (SOLO REEMBOLSOS/PAGADAS) ---
+        # Ideal para una tabla de "Focos Rojos" que requieren acción de Operaciones
         top_canceled_stores = (
             db.query(Store.name, func.count(Order.id).label("canceled_count"))
             .join(Order, Store.id == Order.store_id)
-            .filter(base_filter, Order.current_status == "canceled")
+            .filter(
+                base_filter,
+                Order.current_status == "canceled",
+                or_(
+                    func.lower(Order.payment_status).like("%paid%"),
+                    func.lower(Order.payment_status).like("%pagad%"),
+                ),
+            )
             .group_by(Store.name)
             .order_by(desc("canceled_count"))
             .limit(5)
