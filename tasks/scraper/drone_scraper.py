@@ -274,10 +274,11 @@ class DroneScraper:
         except:
             info["store_name"] = "Desconocida"
 
-        # 5. Teléfono
+        # 5. Teléfono (Infalible)
         try:
             phone_el = self.driver.find_element(
-                By.XPATH, "//a[starts-with(@href, 'tel:')]"
+                By.XPATH,
+                "//a[contains(@href, 'customer/view')]/ancestor::div[contains(@class, 'card')]//a[starts-with(@href, 'tel:')]",
             )
             info["customer_phone"] = phone_el.text.strip()
         except:
@@ -291,6 +292,17 @@ class DroneScraper:
             info["created_at_text"] = date_el.text.strip()
         except:
             pass
+
+        # 7. Tipo de Orden (Delivery / Take away / Pickup)
+        try:
+            order_type_el = self.driver.find_element(
+                By.XPATH,
+                "//h6[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'order type') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'tipo de')]/label",
+            )
+            info["order_type"] = order_type_el.text.strip().lower()
+        except Exception as e:
+            logger.debug(f"Fallo extrayendo Tipo de Orden: {e}")
+            info["order_type"] = "desconocido"
 
         return info
 

@@ -202,28 +202,32 @@ class CustomerScraper:
 
                 for row in rows:
                     try:
-                        # 1. ID del Cliente
-                        id_text = row.find_element(
-                            By.CSS_SELECTOR, "td:first-child"
-                        ).text.strip()
-                        if not id_text.isdigit():
+                        # 1. ID del Cliente (Normalmente la primera o segunda celda con número)
+                        try:
+                            id_el = row.find_element(
+                                By.XPATH,
+                                ".//td[contains(text(), '#') or normalize-space(text()) > 0]",
+                            )
+                            id_text = id_el.text.strip().replace("#", "")
+                            gopharma_id = int(id_text)
+                        except:
                             continue
-                        gopharma_id = int(id_text)
 
-                        # 2. Nombre
+                        # 2. Nombre (Busca el enlace de vista de cliente)
                         try:
                             name_el = row.find_element(
-                                By.CSS_SELECTOR, "td:nth-child(2) a:first-child"
+                                By.XPATH,
+                                ".//a[contains(@href, 'customer/view')]//span[contains(@class, 'text-hover-primary') or contains(@class, 'text-body')]",
                             )
                             name = name_el.text.strip()
                         except:
                             name = "Desconocido"
 
-                        # 3. Teléfono
+                        # 3. Teléfono (Infalible: busca el href que empiece con tel:)
                         phone = None
                         try:
                             phone_el = row.find_element(
-                                By.CSS_SELECTOR, "td:nth-child(4) a[href^='tel:']"
+                                By.XPATH, ".//a[starts-with(@href, 'tel:')]"
                             )
                             phone = (
                                 phone_el.get_attribute("href")
@@ -233,15 +237,21 @@ class CustomerScraper:
                         except:
                             pass
 
-                        # 4. Fecha de Ingreso
+                        # 4. Fecha de Ingreso (Busca el badge de fecha, independiente de la columna)
                         try:
                             date_el = row.find_element(
-                                By.CSS_SELECTOR, "td:nth-child(7) label.badge"
+                                By.XPATH,
+                                ".//span[contains(@class, 'badge-soft-')] | .//label[contains(@class, 'badge')]",
                             )
                             raw_date = self._parse_spanish_date(date_el.text.strip())
-                            final_date = self._correct_year_based_on_id(
-                                raw_date, gopharma_id
-                            )
+
+                            # DESACTIVAMOS EL BUG DE AÑO NUEVO SI EL ID ES MAYOR A 24000 (Aprox, para proteger clientes nuevos)
+                            if gopharma_id > 24000:
+                                final_date = raw_date
+                            else:
+                                final_date = self._correct_year_based_on_id(
+                                    raw_date, gopharma_id
+                                )
                         except:
                             final_date = None
 
