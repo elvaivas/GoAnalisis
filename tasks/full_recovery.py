@@ -62,8 +62,22 @@ def recovery_massive_zombies(days_back=45):
                     try:
                         data = drone.scrape_detail(order.external_id, mode="full")
                         if data and data.get("customer_name") != "Desconocido":
-                            process_drone_data(db, data)
+                            # 💉 BYPASS SRE: Inyección Directa a la BD ignorando estados
+                            order.customer_name = data.get(
+                                "customer_name", order.customer_name
+                            )
+                            order.store_name = data.get("store_name", order.store_name)
+
+                            if data.get("customer_phone"):
+                                order.customer_phone = data.get("customer_phone")
+                            if data.get("order_type"):
+                                order.order_type = data.get("order_type")
+
                             db.commit()
+                            logger.info(
+                                f"✅ INYECCIÓN EXITOSA #{order.external_id}: {order.customer_name} | {order.store_name}"
+                            )
+
                             success = True
                             break  # Éxito, salimos del reintento
                     except Exception as e:
