@@ -198,16 +198,14 @@ def get_ops_executive_summary(
         status_dict = {status: count for status, count in status_counts}
         delivered = status_dict.get("delivered", 0)
 
-        # 💉 INYECCIÓN SRE: Filtramos para que solo cuente los cancelados que fueron PAGADOS
+        # 💉 INYECCIÓN SRE: Filtramos cancelados que NO sean en Efectivo (asumiendo que los demás son digitales/pagados)
         canceled = (
             db.query(func.count(Order.id))
             .filter(
                 base_filter,
                 Order.current_status == "canceled",
-                or_(
-                    func.lower(Order.payment_status).like("%paid%"),
-                    func.lower(Order.payment_status).like("%pagad%"),
-                ),
+                func.lower(Order.payment_method).not_like("%efectivo%"),
+                func.lower(Order.payment_method).not_like("%cash%"),
             )
             .scalar()
             or 0
@@ -278,18 +276,15 @@ def get_ops_executive_summary(
             or 0
         )
 
-        # --- BLOQUE 5: CANCELACIONES POR FARMACIA (SOLO REEMBOLSOS/PAGADAS) ---
-        # Ideal para una tabla de "Focos Rojos" que requieren acción de Operaciones
+        # --- BLOQUE 5: CANCELACIONES POR FARMACIA (SOLO REEMBOLSOS / MÉTODOS DIGITALES) ---
         top_canceled_stores = (
             db.query(Store.name, func.count(Order.id).label("canceled_count"))
             .join(Order, Store.id == Order.store_id)
             .filter(
                 base_filter,
                 Order.current_status == "canceled",
-                or_(
-                    func.lower(Order.payment_status).like("%paid%"),
-                    func.lower(Order.payment_status).like("%pagad%"),
-                ),
+                func.lower(Order.payment_method).not_like("%efectivo%"),
+                func.lower(Order.payment_method).not_like("%cash%"),
             )
             .group_by(Store.name)
             .order_by(desc("canceled_count"))
