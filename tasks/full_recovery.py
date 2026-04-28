@@ -22,16 +22,18 @@ def recovery_massive_zombies(days_back=45):
 
     ## 2. Filtramos con Python de forma agresiva
     for order in all_orders:
-        otype = getattr(order, 'order_type', '') or ""
-        status = getattr(order, 'current_status', '') or ""
-        c_name = getattr(order, 'customer_name', '') or ""
-        s_name = getattr(order, 'store_name', '') or ""
+        otype = getattr(order, "order_type", "") or ""
+        status = getattr(order, "current_status", "") or ""
+        c_name = getattr(order, "customer_name", "") or ""
+        s_name = getattr(order, "store_name", "") or ""
 
         if (
-            otype.lower() == "desconocido" or otype == "" or 
-            status.isdigit() or 
-            c_name.lower() == "desconocido" or 
-            s_name.lower() == "desconocida" or s_name == ""
+            otype.lower() == "desconocido"
+            or otype == ""
+            or status.isdigit()
+            or c_name.lower() == "desconocido"
+            or s_name.lower() == "desconocida"
+            or s_name == ""
         ):
             zombies.append(order)
 
@@ -43,13 +45,24 @@ def recovery_massive_zombies(days_back=45):
         logger.info("✨ No hay nada que curar. La base de datos está limpia.")
         return
 
-    # 3. Iniciamos la curación
+    # 3. Iniciamos la curación (CON REINICIO DE MOTOR)
     try:
         if drone.login():
             for i, order in enumerate(zombies, 1):
                 logger.info(
                     f"🚑 [{i}/{len(zombies)}] Curando pedido #{order.external_id}..."
                 )
+
+                # --- SISTEMA ANTI-CRASH: Reiniciar navegador cada 100 pedidos ---
+                if i % 100 == 0:
+                    logger.info(
+                        "🔄 Refrescando memoria del Dron (Reinicio de Driver)..."
+                    )
+                    drone.close_driver()
+                    drone = DroneScraper()
+                    drone.login()
+                # -----------------------------------------------------------------
+
                 try:
                     data = drone.scrape_detail(order.external_id, mode="full")
                     if data:
