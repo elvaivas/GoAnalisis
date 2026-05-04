@@ -40,12 +40,8 @@ def get_main_kpis(
         joinedload(Order.status_logs), joinedload(Order.store)
     )
 
-    # --- CORRECCIÓN DE ZONA HORARIA (PEDIDOS) ---
-    # Los pedidos SÍ tienen hora exacta, así que mantenemos la lógica VET
-    local_created_at = func.timezone(
-        "America/Caracas", func.timezone("UTC", Order.created_at)
-    )
-    local_date = func.date(local_created_at)
+    # --- FECHA EXACTA SIN ALTERAR (Los pedidos ya están en hora local) ---
+    local_date = cast(Order.created_at, Date)
 
     # --- FILTROS ---
     if start_date:
