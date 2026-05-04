@@ -112,23 +112,13 @@ def get_main_kpis(
                 duration_val = 0.0
                 if o.duration:
                     duration_val = _parse_duration_to_minutes(o.duration)
-                if (
-                    duration_val == 0
-                    and o.delivery_time_minutes
-                    and o.delivery_time_minutes > 0
-                ):
-                    duration_val = float(o.delivery_time_minutes)
-                if duration_val == 0:
-                    done_log = next(
-                        (l for l in o.status_logs if l.status == "delivered"), None
-                    )
-                    if done_log and o.created_at:
-                        created_utc = o.created_at + timedelta(hours=4)
-                        total_seconds = (
-                            done_log.timestamp - created_utc
-                        ).total_seconds()
-                        if total_seconds > 0:
-                            duration_val = int(total_seconds / 60)
+                # 🚨 SRE FIX: Ignoramos el Scraper y calculamos con precisión matemática usando los Logs
+                done_log = next((l for l in o.status_logs if l.status == 'delivered'), None)
+                start_log = next((l for l in o.status_logs if l.status == 'pending'), None)
+                if done_log and start_log:
+                    duration_val = int((done_log.timestamp - start_log.timestamp).total_seconds() / 60)
+                elif done_log and o.created_at:
+                    duration_val = int((done_log.timestamp - o.created_at).total_seconds() / 60)
                 if 0 < duration_val < 600:
                     durations_minutes.append(duration_val)
 
