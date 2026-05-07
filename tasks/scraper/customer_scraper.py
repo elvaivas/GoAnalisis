@@ -202,28 +202,24 @@ class CustomerScraper:
 
                 for row in rows:
                     try:
-                        # 1. ID del Cliente (Normalmente la primera o segunda celda con número)
+                        # 1. ID del Cliente (Columna 1 estricta)
                         try:
-                            id_el = row.find_element(
-                                By.XPATH,
-                                ".//td[contains(text(), '#') or normalize-space(text()) > 0]",
-                            )
+                            id_el = row.find_element(By.XPATH, ".//td[1]")
                             id_text = id_el.text.strip().replace("#", "")
                             gopharma_id = int(id_text)
                         except:
                             continue
 
-                        # 2. Nombre (Busca el enlace de vista de cliente)
+                        # 2. Nombre (Columna 2 estricta, sin depender de spans internos)
                         try:
                             name_el = row.find_element(
-                                By.XPATH,
-                                ".//a[contains(@href, 'customer/view')]//span[contains(@class, 'text-hover-primary') or contains(@class, 'text-body')]",
+                                By.XPATH, ".//td[2]//a[contains(@class, 'text--hover')]"
                             )
                             name = name_el.text.strip()
                         except:
                             name = "Desconocido"
 
-                        # 3. Teléfono (Infalible: busca el href que empiece con tel:)
+                        # 3. Teléfono (Búsqueda por href tel: sigue siendo segura y universal)
                         phone = None
                         try:
                             phone_el = row.find_element(
@@ -237,15 +233,14 @@ class CustomerScraper:
                         except:
                             pass
 
-                        # 4. Fecha de Ingreso (Busca el badge de fecha, independiente de la columna)
+                        # 4. Fecha de Ingreso (Columna 7 estricta, evita atrapar badges de otras columnas)
                         try:
                             date_el = row.find_element(
-                                By.XPATH,
-                                ".//span[contains(@class, 'badge-soft-')] | .//label[contains(@class, 'badge')]",
+                                By.XPATH, ".//td[7]//label[contains(@class, 'badge')]"
                             )
                             raw_date = self._parse_spanish_date(date_el.text.strip())
 
-                            # DESACTIVAMOS EL BUG DE AÑO NUEVO SI EL ID ES MAYOR A 24000 (Aprox, para proteger clientes nuevos)
+                            # DESACTIVAMOS EL BUG DE AÑO NUEVO SI EL ID ES MAYOR A 24000
                             if gopharma_id > 24000:
                                 final_date = raw_date
                             else:
