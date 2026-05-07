@@ -210,20 +210,18 @@ class CustomerScraper:
                         except:
                             continue
 
-                        # 2. Nombre (Columna 2 estricta, sin depender de spans internos)
+                        # 2. Nombre (Columna 2 estricta, tomando solo la primera línea antes de la cédula)
                         try:
-                            name_el = row.find_element(
-                                By.XPATH, ".//td[2]//a[contains(@class, 'text--hover')]"
-                            )
-                            name = name_el.text.strip()
+                            name_el = row.find_element(By.XPATH, ".//td[2]")
+                            name = name_el.text.split("\n")[0].strip()
                         except:
                             name = "Desconocido"
 
-                        # 3. Teléfono (Búsqueda por href tel: sigue siendo segura y universal)
+                        # 3. Teléfono (Columna 4 estricta, buscando el link tel:)
                         phone = None
                         try:
                             phone_el = row.find_element(
-                                By.XPATH, ".//a[starts-with(@href, 'tel:')]"
+                                By.XPATH, ".//td[4]//a[starts-with(@href, 'tel:')]"
                             )
                             phone = (
                                 phone_el.get_attribute("href")
@@ -233,11 +231,9 @@ class CustomerScraper:
                         except:
                             pass
 
-                        # 4. Fecha de Ingreso (Columna 7 estricta, evita atrapar badges de otras columnas)
+                        # 4. Fecha de Ingreso (Columna 7 estricta, capturando el texto directo)
                         try:
-                            date_el = row.find_element(
-                                By.XPATH, ".//td[7]//label[contains(@class, 'badge')]"
-                            )
+                            date_el = row.find_element(By.XPATH, ".//td[7]")
                             raw_date = self._parse_spanish_date(date_el.text.strip())
 
                             # DESACTIVAMOS EL BUG DE AÑO NUEVO SI EL ID ES MAYOR A 24000
