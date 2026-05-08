@@ -296,6 +296,51 @@ def get_ops_executive_summary(
             {"store": s.name, "canceled": s.canceled_count} for s in top_canceled_stores
         ]
 
+        # --- BLOQUE 6: INTELIGENCIA DE MULTICARRITOS (SRE FIX) ---
+        # 1. Subconsulta para encontrar clientes que hicieron más de 1 pedido en el mismo segundo exacto
+        multi_cart_subq = (
+            db.query(Order.customer_id, Order.created_at)
+            .filter(base_filter, Order.customer_id.isnot(None))
+            .group_by(Order.customer_id, Order.created_at)
+            .having(func.count(Order.id) > 1)
+            .subquery()
+        )
+
+        # 2. Rescatamos esos pedidos específicos (solo los entregados para medir tiempo real)
+        multi_cart_orders = (
+            db.query(Order)
+            .join(
+                multi_cart_subq,
+                (Order.customer_id == multi_cart_subq.c.customer_id)
+                & (Order.created_at == multi_cart_subq.c.created_at),
+            )
+            .filter(base_filter, Order.current_status == "delivered")
+            .all()
+        )
+
+        # --- NUEVO: CONTEO REAL DE MULTICARRITOS ---
+        # Para evitar errores de SQLAlchemy al hacer count() sobre una subquery agrupada,
+        # simplemente contamos cuántas tuplas únicas (cliente + fecha) nos devolvió la base de datos.
+        multi_cart_count = db.query(multi_cart_subq).count()
+
+        # 3. Calculamos el tiempo de espera real usando los Logs (inmune a errores del frontend)
+        mc_durations = []
+        for o in multi_cart_orders:
+            start_log = next((l for l in o.status_logs if l.status == "pending"), None)
+            done_log = next((l for l in o.status_logs if l.status == "delivered"), None)
+
+            if start_log and done_log:
+                mins = (done_log.timestamp - start_log.timestamp).total_seconds() / 60
+                mc_durations.append(mins)
+            elif done_log and o.created_at:
+                mins = (done_log.timestamp - o.created_at).total_seconds() / 60
+                mc_durations.append(mins)
+
+        # Promedio final
+        avg_multi_cart_time = (
+            round(sum(mc_durations) / len(mc_durations), 1) if mc_durations else 0.0
+        )
+
         # --- EMPAQUETADO FINAL PARA EL FRONTEND ---
         return {
             "global_health": {
@@ -305,6 +350,8 @@ def get_ops_executive_summary(
                 "fulfillment_rate": fulfillment_rate,
                 "pos_orders": pos_orders,  # Punto de venta (created)
                 "night_orders": night_orders,
+                "avg_multi_cart_time": avg_multi_cart_time,
+                "multi_cart_count": multi_cart_count,  # <--- DATO NUEVO INYECTADO
             },
             "charts": {
                 "top_stores": top_stores_data,
