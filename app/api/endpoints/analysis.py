@@ -211,11 +211,18 @@ def get_ops_executive_summary(
             or 0
         )
 
-        # El requerimiento de Punto de Venta (POS) Real - Leyendo la DB
-        # Buscamos coincidencias con "punto", "pos", "tarjeta", etc. (Ajustable a como lo guarde el Drone)
+        # El requerimiento de Punto de Venta (POS) Real - Actualizado SRE
+        # Detectamos tanto 'punto' como las pasarelas específicas (btcbox, vpos)
         pos_orders = (
             db.query(func.count(Order.id))
-            .filter(base_filter, func.lower(Order.payment_method).like("%punto%"))
+            .filter(
+                base_filter,
+                or_(
+                    func.lower(Order.payment_method).like("%punto%"),
+                    func.lower(Order.payment_method).like("%pos%"),
+                    func.lower(Order.payment_method).like("%btcbox%"),
+                ),
+            )
             .scalar()
             or 0
         )

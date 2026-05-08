@@ -388,28 +388,45 @@ class DroneScraper:
         return items
 
     def _extract_payment_info(self) -> str:
-        """Extrae el método de pago (Bilingüe)"""
+        """Extrae el método de pago (Bilingüe SRE Todoterreno)"""
         try:
-            # Estrategia A: Bilingüe
+            # Busca cualquier etiqueta (h6, div, p) que contenga la palabra clave
+            # y extrae el texto del elemento padre (para atrapar el texto esté donde esté)
             element = self.driver.find_element(
                 By.XPATH,
-                "//h6[contains(., 'Método de pago') or contains(., 'Payment method')]/span[last()]",
+                "//*[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'método de pago') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'payment method')]/parent::*",
             )
             raw_payment = element.text.strip().upper()
 
-            if "PUNTO DE VENTA" in raw_payment:
+            if (
+                "PUNTO DE VENTA" in raw_payment
+                or "VPOS" in raw_payment
+                or "BTCBOX" in raw_payment
+            ):
                 return "Punto de Venta"
-            if "EFECTIVO" in raw_payment:
+            if "EFECTIVO" in raw_payment or "CASH" in raw_payment:
                 return "Efectivo"
-            if "PAGO" in raw_payment or "PMOVIL" in raw_payment:
+            if (
+                "PMOVIL" in raw_payment
+                or "PAGO MOVIL" in raw_payment
+                or "PAGO MÓVIL" in raw_payment
+            ):
                 return "Pago Movil"
             if "ZELLE" in raw_payment:
                 return "Zelle"
+            if "DIGITAL" in raw_payment:
+                return "Pago Digital"
 
-            return (
-                element.text.strip() if element.text.strip() != ":" else "Desconocido"
+            # Si encuentra el bloque pero es algo nuevo, lo limpiamos de etiquetas
+            clean_val = (
+                raw_payment.replace("MÉTODO DE PAGO", "")
+                .replace("PAYMENT METHOD", "")
+                .replace(":", "")
+                .strip()
             )
-        except:
+            return clean_val.title() if clean_val else "Desconocido"
+        except Exception as e:
+            logger.debug(f"Fallo extrayendo método de pago: {e}")
             return "Desconocido"
 
     def scrape_detail(self, external_id: str, mode: str = "full") -> Dict[str, Any]:
