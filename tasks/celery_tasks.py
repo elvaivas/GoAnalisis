@@ -443,11 +443,23 @@ def process_drone_data(db, data: dict):
         else:
             # ACTUALIZAR EXISTENTE
 
-            # 1. Cambio de Estatus
-            if order.current_status != db_status and order.current_status not in [
-                "delivered",
-                "canceled",
-            ]:
+            # 1. Cambio de Estatus (Con Protección SRE Anti-Rebotes)
+            STATUS_WEIGHT = {
+                "created": 0,
+                "pending": 1,
+                "processing": 2,
+                "confirmed": 3,
+                "driver_assigned": 4,
+                "on_the_way": 5,
+                "delivered": 6,
+                "canceled": 6,
+            }
+
+            old_weight = STATUS_WEIGHT.get(order.current_status, -1)
+            new_weight = STATUS_WEIGHT.get(db_status, -1)
+
+            # Solo permitimos que el estado avance o sea un salto a cancelado
+            if new_weight > old_weight:
                 logger.info(
                     f"🔄 Cambio #{external_id}: {order.current_status} -> {db_status}"
                 )
@@ -457,19 +469,21 @@ def process_drone_data(db, data: dict):
                     )
                 )
                 order.current_status = db_status
-            elif (
-                order.current_status in ["delivered", "canceled"]
-                and db_status != order.current_status
-            ):
-                # Si ya estaba finalizado, ignoramos cualquier "retroceso" a pendiente que intente el robot
+            elif new_weight < old_weight and order.current_status not in [
+                "delivered",
+                "canceled",
+            ]:
                 logger.warning(
-                    f"🚫 Intento de cambio de estado inválido en #{external_id}: {order.current_status} -> {db_status} (Ignorado)"
+                    f"🚫 Intento de retroceso inválido en #{external_id}: {order.current_status} -> {db_status} (Bloqueado por DOM inestable)"
                 )
 
             # 2. Updates Financieros
             order.total_amount = data.get("total_amount", order.total_amount)
             # 🎯 INYECCIÓN SRE AQUÍ: Guardar método de pago extraído
-            if data.get("payment_method") and data.get("payment_method") != "Desconocido":
+            if (
+                data.get("payment_method")
+                and data.get("payment_method") != "Desconocido"
+            ):
                 order.payment_method = data.get("payment_method")
 
             if data.get("real_delivery_fee"):
