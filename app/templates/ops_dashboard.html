@@ -42,7 +42,6 @@
             @page {
                 size: A4 landscape;
                 margin: 5mm;
-                /* Márgenes mínimos */
             }
 
             body {
@@ -50,7 +49,6 @@
                 -webkit-print-color-adjust: exact;
                 padding: 0 !important;
                 font-size: 12px !important;
-                /* Achicar fuente general */
             }
 
             .no-print,
@@ -65,10 +63,10 @@
                 break-inside: avoid;
             }
 
-            /* Forzar a Bootstrap a no apilar las columnas en impresión */
+            /* ✅ FIX: Columnas apilables si no caben, evita solapamiento */
             .row {
                 display: flex !important;
-                flex-wrap: nowrap !important;
+                flex-wrap: wrap !important;
                 margin-bottom: 10px !important;
             }
 
@@ -85,6 +83,21 @@
             .col-12 {
                 width: 100% !important;
                 padding: 0 5px !important;
+            }
+
+            /* ✅ FIX: Contenedores de gráficos con tamaño fijo para evitar desbordamiento */
+            .chart-container {
+                height: 220px !important;
+                max-width: 100% !important;
+                overflow: hidden !important;
+            }
+
+            /* ✅ FIX: Forzar que los canvas respeten el contenedor */
+            .chart-container canvas {
+                max-width: 100% !important;
+                max-height: 100% !important;
+                width: 100% !important;
+                height: 100% !important;
             }
 
             /* Reducir tamaño de títulos y paddings para ahorrar espacio vertical */
@@ -112,11 +125,6 @@
 
             h6 {
                 font-size: 0.9rem !important;
-            }
-
-            /* Achicar contenedores de gráficos estrictamente */
-            .chart-container {
-                height: 220px !important;
             }
         }
     </style>
@@ -235,7 +243,7 @@
                     <div class="card-body">
                         <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-trophy text-warning me-2"></i>Top
                             5 Farmacias (Volumen)</h6>
-                        <div class="chart-container" style="height: 300px;"><canvas id="chartStores"></canvas></div>
+                        <div class="chart-container" style="height: 300px; max-width: 100%; overflow: hidden;"><canvas id="chartStores"></canvas></div>
                     </div>
                 </div>
             </div>
@@ -245,7 +253,7 @@
                     <div class="card-body">
                         <h6 class="fw-bold text-secondary mb-3"><i
                                 class="fa-solid fa-triangle-exclamation text-danger me-2"></i>Top 5 Incidencias</h6>
-                        <div class="chart-container" style="height: 300px;"><canvas id="chartIncidences"></canvas></div>
+                        <div class="chart-container" style="height: 300px; max-width: 100%; overflow: hidden;"><canvas id="chartIncidences"></canvas></div>
                     </div>
                 </div>
             </div>
@@ -325,8 +333,23 @@
                     },
                     options: {
                         responsive: true,
-                        maintainAspectRatio: false,
-                        animation: false // Desactiva animación para que no congele la impresión
+                        maintainAspectRatio: true,
+                        animation: false,
+                        indexAxis: 'y',
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                ticks: { precision: 0 }
+                            },
+                            y: {
+                                ticks: {
+                                    font: { size: 11 }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false }
+                        }
                     }
                 });
 
