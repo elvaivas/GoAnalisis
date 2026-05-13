@@ -299,6 +299,21 @@ def get_ops_executive_summary(
             or 0
         )
 
+        # 🆕 Pedidos NOCTURNOS entregados exitosamente
+        night_delivered = (
+            db.query(func.count(Order.id))
+            .filter(
+                base_filter,
+                Order.current_status == "delivered",
+                or_(
+                    extract("hour", Order.created_at) >= 22,
+                    extract("hour", Order.created_at) < 8,
+                ),
+            )
+            .scalar()
+            or 0
+        )
+
         # --- BLOQUE 5: CANCELACIONES POR FARMACIA (SOLO REEMBOLSOS / MÉTODOS DIGITALES) ---
         top_canceled_stores = (
             db.query(Store.name, func.count(Order.id).label("canceled_count"))
@@ -374,6 +389,7 @@ def get_ops_executive_summary(
                 "pos_orders": pos_orders,  # Punto de venta (total)
                 "pos_delivered": pos_delivered,  # 🆕 Solo entregados por POS
                 "night_orders": night_orders,
+                "night_delivered": night_delivered,
                 "avg_multi_cart_time": avg_multi_cart_time,
                 "multi_cart_count": multi_cart_count,  # <--- DATO NUEVO INYECTADO
             },

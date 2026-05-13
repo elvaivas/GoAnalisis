@@ -215,6 +215,15 @@
             </div>
 
             <div class="col">
+                <div class="card kpi-card border-0 h-100 p-3" style="border-left-color: #0dcaf0;">
+                    <div class="text-muted small fw-bold text-uppercase mb-1"><i class="fa-solid fa-moon me-1"></i><i class="fa-solid fa-check-circle text-info ms-1"></i>
+                        Nocturno Exitoso</div>
+                    <h3 class="fw-bold mb-0" id="kpiNightDelivered" style="color: #0dcaf0;">-- <small
+                            class="fs-6 text-muted">entregados</small></h3>
+                </div>
+            </div>
+
+            <div class="col">
                 <div class="card kpi-card border-0 h-100 p-3" style="border-left-color: #6f42c1;">
                     <div class="text-muted small fw-bold text-uppercase mb-1">
                         <i class="fa-solid fa-stopwatch me-1"></i>T. Prom. Multicarrito
@@ -313,6 +322,7 @@
                 document.getElementById('kpiPosOrders').innerHTML = `${data.global_health.pos_orders} <small class="fs-6 text-muted">pedidos</small>`;
                 document.getElementById('kpiPosDelivered').innerHTML = `${data.global_health.pos_delivered} <small class="fs-6 text-muted">pedidos</small>`;
                 document.getElementById('kpiNightOrders').innerHTML = `${data.global_health.night_orders} <small class="fs-6 text-muted">pedidos</small>`;
+                document.getElementById('kpiNightDelivered').innerHTML = `${data.global_health.night_delivered} <small class="fs-6 text-muted">entregados</small>`;
                 // Inteligencia de Multicarritos
                 document.getElementById('kpiMultiCart').innerHTML = `${data.global_health.avg_multi_cart_time} <small class="fs-6 text-muted">min</small>`;
                 document.getElementById('kpiMultiCartCount').innerHTML = `${data.global_health.multi_cart_count} <small class="fs-6 text-muted">grupos</small>`;
