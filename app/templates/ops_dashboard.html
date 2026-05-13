@@ -191,6 +191,13 @@
                 </div>
             </div>
             <div class="col">
+                <div class="card kpi-card kpi-success border-0 h-100 p-3">
+                    <div class="text-muted small fw-bold text-uppercase mb-1">✅ POS Entregados</div>
+                    <h3 class="fw-bold text-success mb-0" id="kpiPosDelivered">-- <small
+                            class="fs-6 text-muted">pedidos</small></h3>
+                </div>
+            </div>
+            <div class="col">
                 <div class="card kpi-card kpi-warning border-0 h-100 p-3">
                     <div class="text-muted small fw-bold text-uppercase mb-1"><i class="fa-solid fa-moon me-1"></i>Turno
                         Nocturno</div>
@@ -296,6 +303,7 @@
                 document.getElementById('kpiTotalOrders').innerText = data.global_health.total_orders;
                 document.getElementById('kpiFulfillment').innerText = data.global_health.fulfillment_rate + "%";
                 document.getElementById('kpiPosOrders').innerHTML = `${data.global_health.pos_orders} <small class="fs-6 text-muted">pedidos</small>`;
+                document.getElementById('kpiPosDelivered').innerHTML = `${data.global_health.pos_delivered} <small class="fs-6 text-muted">pedidos</small>`;
                 document.getElementById('kpiNightOrders').innerHTML = `${data.global_health.night_orders} <small class="fs-6 text-muted">pedidos</small>`;
                 // Inteligencia de Multicarritos
                 document.getElementById('kpiMultiCart').innerHTML = `${data.global_health.avg_multi_cart_time} <small class="fs-6 text-muted">min</small>`;

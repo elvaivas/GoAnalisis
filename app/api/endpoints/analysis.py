@@ -227,6 +227,22 @@ def get_ops_executive_summary(
             or 0
         )
 
+        # 🆕 NUEVO: Solo entregados por Punto de Venta (POS)
+        pos_delivered = (
+            db.query(func.count(Order.id))
+            .filter(
+                base_filter,
+                Order.current_status == "delivered",
+                or_(
+                    func.lower(Order.payment_method).like("%punto%"),
+                    func.lower(Order.payment_method).like("%pos%"),
+                    func.lower(Order.payment_method).like("%btcbox%"),
+                ),
+            )
+            .scalar()
+            or 0
+        )
+
         # Efectividad
         fulfillment_rate = (
             round((delivered / total_orders * 100), 2) if total_orders > 0 else 0
@@ -355,7 +371,8 @@ def get_ops_executive_summary(
                 "delivered": delivered,
                 "canceled": canceled,
                 "fulfillment_rate": fulfillment_rate,
-                "pos_orders": pos_orders,  # Punto de venta (created)
+                "pos_orders": pos_orders,  # Punto de venta (total)
+                "pos_delivered": pos_delivered,  # 🆕 Solo entregados por POS
                 "night_orders": night_orders,
                 "avg_multi_cart_time": avg_multi_cart_time,
                 "multi_cart_count": multi_cart_count,  # <--- DATO NUEVO INYECTADO
