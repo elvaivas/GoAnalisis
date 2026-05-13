@@ -92,14 +92,52 @@
 
             body {
                 padding: 0;
+                margin: 0;
+            }
+
+            .container {
+                max-width: 100% !important;
+                width: 100% !important;
+                padding: 0 10px !important;
             }
 
             .report-card {
                 border: 1px solid #ddd;
+                page-break-inside: avoid;
+                break-inside: avoid;
             }
 
             .section-header {
                 margin-top: 20px;
+            }
+
+            /* 🖨️ SALTOS DE PÁGINA ESTRATÉGICOS */
+            .page-break {
+                page-break-before: always;
+                break-before: page;
+            }
+
+            /* 🖨️ EVITAR QUE GRÁFICOS SE SALGAN */
+            canvas, svg, img, #reportMap {
+                max-width: 100% !important;
+                height: auto !important;
+                max-height: 280px !important;
+            }
+
+            /* 🖨️ FORZAR ALTURAS MÍNIMAS PARA QUE NO SE MONTEN */
+            .row.g-4 {
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+
+            /* 🖨️ TABLAS OCUPAN SOLO LO QUE DEBEN */
+            .table {
+                font-size: 0.7rem !important;
+            }
+
+            /* 🖨️ MAPA NO SE DESBORDE */
+            #reportMap {
+                height: 220px !important;
             }
         }
     </style>
@@ -237,7 +275,7 @@
             <div class="col-md-8">
                 <div class="report-card">
                     <h6 class="fw-bold mb-3 small text-muted">TENDENCIA DE PEDIDOS</h6>
-                    <div style="height: 280px;"><canvas id="rTrendsChart"></canvas></div>
+                    <div style="height: 240px;"><canvas id="rTrendsChart"></canvas></div>
                 </div>
             </div>
 
@@ -253,6 +291,9 @@
                 </div>
             </div>
         </div>
+        <!-- 🖨️ SALTO DE PÁGINA ANTES DE PRODUCTOS -->
+        <div class="page-break"></div>
+
         <!-- SECCIÓN 5: PRODUCTOS (NUEVO) -->
         <div class="section-header text-dark"><i class="fa-solid fa-box-open me-2"></i>Desempeño de Productos</div>
         <div class="row mb-5">
@@ -272,6 +313,9 @@
             </div>
         </div>
 
+        <!-- 🖨️ SALTO DE PÁGINA ANTES DE CANCELACIONES Y MAPA -->
+        <div class="page-break"></div>
+
         <!-- Fila de Cancelaciones y Mapa -->
         <div class="row g-4 mt-1">
             <!-- Áreas de Mejora (Cancelaciones) -->
@@ -283,7 +327,7 @@
                             Cancelados</span>
                     </div>
                     <!-- Gráfico SOLO PORCENTAJES -->
-                    <div style="height: 250px;"><canvas id="rCancelChart"></canvas></div>
+                    <div style="height: 220px;"><canvas id="rCancelChart"></canvas></div>
                 </div>
             </div>
 
