@@ -86,58 +86,72 @@
         }
 
         @media print {
+            /* 1. FORZAR HOJA HORIZONTAL Y MÁRGENES */
+            @page {
+                size: A4 landscape;
+                margin: 10mm;
+            }
+
+            /* 2. REDUCIR ESCALA PARA QUE ENTRE EN 1 PÁGINA */
+            body {
+                padding: 0;
+                margin: 0;
+                zoom: 0.65; /* Reduce todo al 65%. Ajusta este valor si sobra o falta espacio */
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
             .no-print {
                 display: none !important;
             }
 
-            body {
-                padding: 0;
-                margin: 0;
+            /* 3. ANULAR LOS SALTOS DE PÁGINA */
+            .page-break {
+                display: none !important;
+                page-break-before: auto !important;
             }
+
+            /* 4. FORZAR LA GRILLA PARA QUE NO SE DESCUADREN LAS TARJETAS */
+            .row {
+                display: flex !important;
+                flex-wrap: wrap !important;
+                flex-direction: row !important;
+            }
+            .col-md-3 { width: 25% !important; max-width: 25% !important; flex: 0 0 25% !important; }
+            .col-md-4 { width: 33.333333% !important; max-width: 33.333333% !important; flex: 0 0 33.333333% !important; }
+            .col-md-8 { width: 66.666667% !important; max-width: 66.666667% !important; flex: 0 0 66.666667% !important; }
+            .col-12 { width: 100% !important; max-width: 100% !important; flex: 0 0 100% !important; }
 
             .container {
                 max-width: 100% !important;
                 width: 100% !important;
-                padding: 0 10px !important;
+                padding: 0 15px !important;
             }
 
             .report-card {
-                border: 1px solid #ddd;
+                border: 1px solid #ddd !important;
                 page-break-inside: avoid;
                 break-inside: avoid;
+                box-shadow: none !important;
             }
 
             .section-header {
-                margin-top: 20px;
+                margin-top: 15px;
             }
 
-            /* 🖨️ SALTOS DE PÁGINA ESTRATÉGICOS */
-            .page-break {
-                page-break-before: always;
-                break-before: page;
-            }
-
-            /* 🖨️ EVITAR QUE GRÁFICOS SE SALGAN */
-            canvas, svg, img, #reportMap {
+            /* 5. CONTROLAR TAMAÑO DE GRÁFICOS Y MAPA */
+            canvas, svg, img {
                 max-width: 100% !important;
                 height: auto !important;
-                max-height: 280px !important;
+                max-height: 240px !important;
             }
 
-            /* 🖨️ FORZAR ALTURAS MÍNIMAS PARA QUE NO SE MONTEN */
-            .row.g-4 {
-                page-break-inside: avoid;
-                break-inside: avoid;
-            }
-
-            /* 🖨️ TABLAS OCUPAN SOLO LO QUE DEBEN */
-            .table {
-                font-size: 0.7rem !important;
-            }
-
-            /* 🖨️ MAPA NO SE DESBORDE */
             #reportMap {
                 height: 220px !important;
+            }
+
+            .table {
+                font-size: 0.75rem !important;
             }
         }
     </style>
