@@ -92,6 +92,36 @@
                 margin: 10mm;
             }
 
+            /* 1. Controlar el contenedor principal del encabezado */
+            .border-bottom.pb-3.mb-4 {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important; /* Mejor alineación vertical */
+                margin-bottom: 15px !important;
+                padding-bottom: 10px !important;
+            }
+
+            /* 2. Forzar un tamaño máximo para el logo para que no empuje */
+            .border-bottom img {
+                height: 40px !important;
+                max-height: 40px !important;
+                width: auto !important;
+                margin-right: 15px !important;
+            }
+
+            /* 3. Evitar que el título tome demasiado ancho */
+            .border-bottom h2 {
+                font-size: 1.5rem !important;
+                line-height: 1.2 !important;
+                white-space: nowrap !important; /* Evita que el título se rompa en 2 líneas */
+            }
+
+            /* 4. Darle un espacio fijo al bloque de la fecha (derecha) */
+            .border-bottom .text-end {
+                min-width: 120px !important;
+                text-align: right !important;
+            }
+
             /* 2. REDUCIR ESCALA PARA QUE ENTRE EN 1 PÁGINA */
             body {
                 padding: 0;
