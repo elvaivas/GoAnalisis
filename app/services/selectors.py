@@ -13,6 +13,22 @@ LOGIN_SELECTORS = {
 ORDER_TABLE_SELECTORS = {
     "table_body": (By.ID, "set-rows"),
     "order_id_link": (By.CSS_SELECTOR, "td.table-column-pl-0 a"),
+    # --- NUEVOS SELECTORES DE LISTADO Y EXPORTACIÓN ---
+    "search_input": (By.ID, "datatableSearch_"),
+    "export_dropdown_btn": (
+        By.CSS_SELECTOR,
+        "a[data-hs-unfold-target='#usersExportDropdown']",
+    ),
+    "csv_export_btn": (
+        By.XPATH,
+        "//a[contains(@id, 'export-csv') or contains(text(), 'CSV')]",
+    ),
+    "order_rows": (
+        By.CSS_SELECTOR,
+        "table#datatable tbody tr[class*='status-']:not(.group)",
+    ),
+    "duration_cell": (By.CSS_SELECTOR, "td:nth-child(2)"),
+    "next_page_btn": (By.CSS_SELECTOR, "a.page-link[rel='next']"),
 }
 
 ORDER_DETAIL_SELECTORS = {

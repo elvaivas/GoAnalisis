@@ -15,7 +15,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
 from app.core.config import settings
-
+from app.services.selectors import ORDER_TABLE_SELECTORS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -200,7 +200,7 @@ class OrderScraper:
 
             # 2. FILTRADO
             search_input = WebDriverWait(self.driver, 10).until(
-                EC.visibility_of_element_located((By.ID, "datatableSearch_"))
+                EC.visibility_of_element_located(ORDER_TABLE_SELECTORS["search_input"])
             )
             search_input.clear()
             search_input.send_keys(order_id)
@@ -210,13 +210,12 @@ class OrderScraper:
             # 3. CLICK CSV (Sin target blank)
             try:
                 export_btn = self.driver.find_element(
-                    By.CSS_SELECTOR, "a[data-hs-unfold-target='#usersExportDropdown']"
+                    *ORDER_TABLE_SELECTORS["export_dropdown_btn"]
                 )
                 self.driver.execute_script("arguments[0].click();", export_btn)
                 time.sleep(1)
                 csv_btn = self.driver.find_element(
-                    By.XPATH,
-                    "//a[contains(@id, 'export-csv') or contains(text(), 'CSV')]",
+                    *ORDER_TABLE_SELECTORS["csv_export_btn"]
                 )
                 self.driver.execute_script(
                     "arguments[0].removeAttribute('target');", csv_btn
@@ -304,8 +303,7 @@ class OrderScraper:
     def _parse_duration(self, row_element) -> str:
         """Extrae el texto de duración de la fila (Actualizado al nuevo DOM)."""
         try:
-            # Ahora la duración está en la segunda columna (td:nth-child(2))
-            cell = row_element.find_element(By.CSS_SELECTOR, "td:nth-child(2)")
+            cell = row_element.find_element(*ORDER_TABLE_SELECTORS["duration_cell"])
             text = cell.text
 
             # Buscamos la línea de duración (soporta "Time duration" o "Duración")
@@ -333,11 +331,7 @@ class OrderScraper:
                 EC.presence_of_element_located((By.ID, "datatable"))
             )
 
-            # 👇 CAMBIO QUIRÚRGICO: Selector CSS exacto ignorando filas de grupo (Carritos)
-            rows = self.driver.find_elements(
-                By.CSS_SELECTOR,
-                "table#datatable tbody tr[class*='status-']:not(.group)",
-            )
+            rows = self.driver.find_elements(*ORDER_TABLE_SELECTORS["order_rows"])
 
             for row in rows:
                 if len(orders_found) >= limit:
@@ -348,8 +342,7 @@ class OrderScraper:
                     status_match = re.search(r"status-([a-zA-Z0-9_-]+)", row_class)
                     row_status = status_match.group(1) if status_match else ""
 
-                    # 👇 CAMBIO QUIRÚRGICO: Extracción directa de ID por clase css
-                    link = row.find_element(By.CSS_SELECTOR, "td.table-column-pl-0 a")
+                    link = row.find_element(*ORDER_TABLE_SELECTORS["order_id_link"])
                     order_id = (
                         link.text.strip()
                     )  # Es más seguro extraer el texto directamente
@@ -398,18 +391,12 @@ class OrderScraper:
 
                 logger.info(f"📄 Escaneando pág {current_page}...")
 
-                # 👇 CAMBIO QUIRÚRGICO: Mismo selector protegido del radar
-                rows = self.driver.find_elements(
-                    By.CSS_SELECTOR,
-                    "table#datatable tbody tr[class*='status-']:not(.group)",
-                )
+                rows = self.driver.find_elements(*ORDER_TABLE_SELECTORS["order_rows"])
                 page_data = []
 
                 for row in rows:
                     try:
-                        link = row.find_element(
-                            By.CSS_SELECTOR, "td.table-column-pl-0 a"
-                        )
+                        link = row.find_element(*ORDER_TABLE_SELECTORS["order_id_link"])
                         order_id = link.text.strip()
                         duration = self._parse_duration(row)
 
@@ -421,9 +408,8 @@ class OrderScraper:
                 all_data.extend(page_data)
 
                 try:
-                    # Mantenemos el xpath del botón next, asumiendo que el componente de paginación de Laravel no cambió su aria-label
                     next_btn = self.driver.find_element(
-                        By.XPATH, "//a[@aria-label='Next »']"
+                        *ORDER_TABLE_SELECTORS["next_page_btn"]
                     )
 
                     parent = next_btn.find_element(By.XPATH, "./..")
