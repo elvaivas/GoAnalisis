@@ -52,9 +52,10 @@ ORDER_DETAIL_SELECTORS = {
         "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')]//a[starts-with(@href, 'tel:')]",
     ),
     # --- NOMBRES PRINCIPALES (Extraídos de los Cards de Ant Design) ---
+    # Ajustado a la estructura Ant Design del nuevo detalle de pedido
     "store_name": (
         By.XPATH,
-        "//span[contains(text(), 'Store:')]/parent::div/following-sibling::div[1]//span[contains(@class, 'ant-tag')]",
+        "//span[contains(text(), 'Store:')]/ancestor::div[contains(@class, 'ant-space-item')]//span[contains(@class, 'ant-tag')]",
     ),
     "customer_name": (
         By.XPATH,
