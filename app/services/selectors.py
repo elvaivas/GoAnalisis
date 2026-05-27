@@ -33,54 +33,36 @@ ORDER_TABLE_SELECTORS = {
 }
 
 ORDER_DETAIL_SELECTORS = {
-    # --- INFO BÁSICA Y STATUS (Sacados de la vista de detalles /admin/order/details/...) ---
+    # --- INFO BÁSICA Y STATUS (Actualizado a Ant Design / React) ---
     "status_badge": (
         By.XPATH,
-        "//h6[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'status')]/span[contains(@class, 'badge')]",
+        "//span[contains(text(), 'Status:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div//span[@class='ant-select-selection-item']",
     ),
-    # --- INTERNOS DE LA TABLA DE PRODUCTOS (Relativos a la fila <tr>) ---
-    "product_col_tag": (By.TAG_NAME, "td"),
-    "product_name_tag": (By.TAG_NAME, "strong"),
-    "product_qty_price_tag": (By.TAG_NAME, "h6"),
-    # --- PLANTILLAS DINÁMICAS ---
-    # Nota: Esto es un string, no una tupla (By.XPATH, "..."), porque necesita un .format(label=...)
-    "financial_row_template": "//dl[contains(@class, 'row')]//dt[contains(., '{label}')]/following-sibling::dd[1]",
     "order_placed_at": (
         By.XPATH,
-        "//i[contains(@class, 'tio-date-range')]/parent::span",
+        "//span[@aria-label='calendar']/ancestor::div[contains(@class, 'ant-space-horizontal')]//div[contains(@class, 'ant-space-item')][2]/span",
     ),
     "order_type_label": (
         By.XPATH,
-        "//h6[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'order type') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'tipo de')]/label",
+        "//span[contains(text(), 'Order type:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div//span",
     ),
-    # --- TELÉFONO CLIENTE (Card lateral derecha en detalles) ---
+    # --- TELÉFONO CLIENTE ---
     "customer_phone_link": (
         By.XPATH,
-        "//a[contains(@href, 'customer/view')]/ancestor::div[contains(@class, 'card')]//a[starts-with(@href, 'tel:')]",
+        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')]//a[starts-with(@href, 'tel:')]",
     ),
-    # --- MAPAS Y COORDENADAS (Inputs ocultos o visibles del modal de envío) ---
-    "latitude_input": (By.ID, "latitude"),
-    "longitude_input": (By.ID, "longitude"),
-    # --- TABLA DE PRODUCTOS (Tabla central de la orden) ---
-    "product_table_rows": (By.CSS_SELECTOR, "table.table tbody tr"),
-    # --- PAGOS Y CANCELACIÓN ---
-    "payment_method_universal": (
+    # --- NOMBRES PRINCIPALES (Extraídos de los Cards de Ant Design) ---
+    "store_name": (
         By.XPATH,
-        "//*[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'método de pago') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'payment method')]/parent::*",
+        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Store info')]/ancestor::div[contains(@class, 'ant-card')]//h5",
     ),
-    "cancellation_reason_labels": (
-        By.XPATH,
-        "//*[contains(text(), 'Motivo de cancelación') or contains(text(), 'Razón')]",
-    ),
-    # Enlaces principales (IDs y Nombres)
-    "store_name": (By.XPATH, "//a[contains(@href, 'store/view')]"),
     "customer_name": (
         By.XPATH,
-        "//a[contains(@href, 'customer/view')]/div/span[contains(@class, 'font-semibold')]",
+        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')]//h5",
     ),
     "driver_name": (
         By.XPATH,
-        "//a[contains(@href, 'delivery-man/preview')]/div/span[1]",
+        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Delivery man')]/ancestor::div[contains(@class, 'ant-card')]//h5",
     ),
     # Montos
     "delivery_fee": (
@@ -110,7 +92,6 @@ ORDER_DETAIL_SELECTORS = {
     "store_link": (By.XPATH, "//a[contains(@href, 'store/view')]"),
     "customer_link": (By.XPATH, "//a[contains(@href, 'customer/view')]"),
     "driver_link": (By.XPATH, "//a[contains(@href, 'delivery-man/preview')]"),
-    
     # --- CONFIGURACIÓN DE COMISIÓN (Business Plan) ---
     "commission_input": (By.ID, "comission"),
     "commission_text_pattern": r"(\d+(?:\.\d+)?)%\s*comisión",
