@@ -5,7 +5,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.db.session import SessionLocal
 from app.db.base import Order
 from tasks.scraper.drone_scraper import DroneScraper
@@ -24,8 +24,8 @@ def run_recovery_desconocidos():
     db = SessionLocal()
     drone = DroneScraper()
 
-    # Rango: Desde hace 7 días (jueves pasado) hasta ahora
-    start_date = datetime.utcnow() - timedelta(days=7)
+    # Rango: Desde hace 15 días hasta ahora
+    start_date = datetime.now(timezone.utc) - timedelta(days=15)
 
     # Buscamos pedidos de los últimos 7 días cuyo estado sea desconocido,
     # nulo, vacío, o cualquier texto de error que esté arrojando el scraper anterior.
