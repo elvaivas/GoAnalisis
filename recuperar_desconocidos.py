@@ -35,11 +35,11 @@ def run_recovery_desconocidos():
         .filter(
             Order.created_at >= start_date,
             or_(
-                Order.customer_name.ilike("%desconocid%"),
-                Order.store_name.ilike("%desconocid%"),
-                Order.customer_name == None,
-                Order.store_name == None,
-                Order.current_status.in_(["desconocido", "unknown", "", "error"]),
+                Order.customer_id == None,
+                Order.store_id == None,
+                Order.current_status.in_(
+                    ["desconocido", "unknown", "", "Desconocido", "error"]
+                ),
                 Order.current_status == None,
             ),
         )
