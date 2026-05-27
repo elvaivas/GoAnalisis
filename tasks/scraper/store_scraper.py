@@ -203,19 +203,27 @@ class StoreScraper:
         try:
             self.driver.get(self.base_url)
             wait = WebDriverWait(self.driver, 10)
-            wait.until(EC.presence_of_element_located((By.NAME, "email"))).send_keys(
-                settings.GOPHARMA_EMAIL
-            )
-            self.driver.find_element(By.NAME, "password").send_keys(
+
+            # --- CORRECCIÓN: Homologado con los selectores centralizados LOGIN_SELECTORS ---
+            # Se usan los selectores importados para mantener la consistencia con el nuevo panel
+            wait.until(
+                EC.presence_of_element_located(LOGIN_SELECTORS["email_input"])
+            ).send_keys(settings.GOPHARMA_EMAIL)
+
+            self.driver.find_element(*LOGIN_SELECTORS["password_input"]).send_keys(
                 settings.GOPHARMA_PASSWORD
             )
+
             try:
-                self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
+                self.driver.find_element(*LOGIN_SELECTORS["login_button"]).click()
             except:
-                self.driver.find_element(By.NAME, "password").submit()
+                self.driver.find_element(*LOGIN_SELECTORS["password_input"]).submit()
+
             time.sleep(3)
             return "login" not in self.driver.current_url
-        except:
+        except Exception as e:
+            # Añadido un log para no fallar silenciosamente en el futuro
+            logger.error(f"Fallo en login del StoreScraper: {e}")
             return False
 
     def close_driver(self):

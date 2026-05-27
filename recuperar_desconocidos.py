@@ -1,3 +1,9 @@
+import os
+import sys
+
+# Asegura que Python reconozca los módulos 'app' y 'tasks' al correr desde la terminal
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import logging
 from datetime import datetime, timedelta
 from app.db.session import SessionLocal
@@ -60,9 +66,15 @@ def run_recovery_desconocidos():
             # Forzamos el modo full para que pase por tus nuevos selectores
             data = drone.scrape_detail(order.external_id, mode="full")
 
-            # Guardamos la nueva data
-            process_drone_data(db, data)
-            logger.info(f"✅ Pedido #{order.external_id} actualizado con éxito.")
+            # Validamos que 'data' no venga vacío (None) antes de enviarlo a la BD
+            if data:
+                process_drone_data(db, data)
+                logger.info(f"✅ Pedido #{order.external_id} actualizado con éxito.")
+            else:
+                logger.warning(
+                    f"⚠️ El dron no encontró la información del pedido #{order.external_id}."
+                )
+                errors += 1
 
         except Exception as e:
             logger.error(f"⚠️ Error intentando raspar {order.external_id}: {e}")

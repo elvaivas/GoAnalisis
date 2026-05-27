@@ -15,7 +15,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
 from app.core.config import settings
-from app.services.selectors import ORDER_TABLE_SELECTORS
+from app.services.selectors import ORDER_TABLE_SELECTORS, LOGIN_SELECTORS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -125,14 +125,18 @@ class OrderScraper:
                     return True
 
                 wait = WebDriverWait(self.driver, 20)
+
+                # --- CORRECCIÓN: Homologado con los selectores centralizados LOGIN_SELECTORS ---
                 email_input = wait.until(
-                    EC.presence_of_element_located((By.NAME, "email"))
+                    EC.presence_of_element_located(LOGIN_SELECTORS["email_input"])
                 )
                 email_input.clear()
                 email_input.send_keys(settings.GOPHARMA_EMAIL)
                 time.sleep(0.5)
 
-                pass_input = self.driver.find_element(By.NAME, "password")
+                pass_input = self.driver.find_element(
+                    *LOGIN_SELECTORS["password_input"]
+                )
                 pass_input.clear()
                 pass_input.send_keys(settings.GOPHARMA_PASSWORD)
                 pass_input.send_keys(Keys.RETURN)
