@@ -15,6 +15,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 
 
 from app.core.config import settings
+from app.services.selectors import LOGIN_SELECTORS, ORDER_DETAIL_SELECTORS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -93,23 +94,21 @@ class DroneScraper:
             # 3. Espera inteligente (SRE) en lugar de un sleep fijo
             wait = WebDriverWait(self.driver, 15)
 
-            # 4. Capturar inyector de Email usando el nuevo ID
+            # 4. Capturar inyector de Email usando el selector centralizado
             email_input = wait.until(
-                EC.presence_of_element_located((By.ID, "signinSrEmail"))
+                EC.presence_of_element_located(LOGIN_SELECTORS["email_input"])
             )
             email_input.clear()
-            email_input.send_keys(settings.GOPHARMA_EMAIL)  # <-- Tomado del .env
+            email_input.send_keys(settings.GOPHARMA_EMAIL)
 
-            # 5. Capturar inyector de Password usando el nuevo ID
-            pass_input = self.driver.find_element(By.ID, "signupSrPassword")
+            # 5. Capturar inyector de Password usando el selector centralizado
+            pass_input = self.driver.find_element(*LOGIN_SELECTORS["password_input"])
             pass_input.clear()
-            pass_input.send_keys(settings.GOPHARMA_PASSWORD)  # <-- Tomado del .env
+            pass_input.send_keys(settings.GOPHARMA_PASSWORD)
 
             # 6. Acción de Entrar
             try:
-                submit_btn = self.driver.find_element(
-                    By.XPATH, "//button[@type='submit']"
-                )
+                submit_btn = self.driver.find_element(*LOGIN_SELECTORS["login_button"])
                 submit_btn.click()
             except:
                 # Fallback por si el botón está oculto por algún banner
@@ -174,7 +173,10 @@ class DroneScraper:
             data[db_key] = 0.0
             for label in labels:
                 try:
-                    xpath = f"//dl[contains(@class, 'row')]//dt[contains(., '{label}')]/following-sibling::dd[1]"
+                    # Usamos la plantilla centralizada y le inyectamos el label
+                    xpath = ORDER_DETAIL_SELECTORS["financial_row_template"].format(
+                        label=label
+                    )
                     element = self.driver.find_element(By.XPATH, xpath)
                     val = self._parse_money(element.text)
                     if val > 0:
@@ -203,8 +205,10 @@ class DroneScraper:
 
         # 1. COORDENADAS DEL CLIENTE (Extraídas de los inputs del modal de envío)
         try:
-            lat_el = self.driver.find_element(By.ID, "latitude")
-            lng_el = self.driver.find_element(By.ID, "longitude")
+            lat_el = self.driver.find_element(*ORDER_DETAIL_SELECTORS["latitude_input"])
+            lng_el = self.driver.find_element(
+                *ORDER_DETAIL_SELECTORS["longitude_input"]
+            )
 
             lat_val = lat_el.get_attribute("value")
             lng_val = lng_el.get_attribute("value")
@@ -237,8 +241,7 @@ class DroneScraper:
         # 1. Estatus (Busca el bloque que diga Status)
         try:
             status_el = self.driver.find_element(
-                By.XPATH,
-                "//h6[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'status')]/span[contains(@class, 'badge')]",
+                *ORDER_DETAIL_SELECTORS["status_badge"]
             )
             info["status_text"] = status_el.text.strip()
         except:
@@ -247,8 +250,7 @@ class DroneScraper:
         # 2. Cliente (Anclado al href)
         try:
             client_el = self.driver.find_element(
-                By.XPATH,
-                "//a[contains(@href, 'customer/view')]//span[contains(@class, 'text-hover-primary') or contains(@class, 'fz--14px')]",
+                *ORDER_DETAIL_SELECTORS["customer_name"]
             )
             info["customer_name"] = client_el.text.strip()
         except:
@@ -256,20 +258,14 @@ class DroneScraper:
 
         # 3. Repartidor (Anclado al href)
         try:
-            driver_el = self.driver.find_element(
-                By.XPATH,
-                "//a[contains(@href, 'delivery-man/preview')]//span[contains(@class, 'text-hover-primary') or contains(@class, 'text-body')]",
-            )
+            driver_el = self.driver.find_element(*ORDER_DETAIL_SELECTORS["driver_name"])
             info["driver_name"] = driver_el.text.strip()
         except:
             info["driver_name"] = "N/A"
 
         # 4. Tienda (Anclado al href)
         try:
-            store_el = self.driver.find_element(
-                By.XPATH,
-                "//a[contains(@href, 'store/view')]//span[contains(@class, 'text-hover-primary') or contains(@class, 'fz--14px')]",
-            )
+            store_el = self.driver.find_element(*ORDER_DETAIL_SELECTORS["store_name"])
             info["store_name"] = store_el.text.strip()
         except:
             info["store_name"] = "Desconocida"
@@ -277,8 +273,7 @@ class DroneScraper:
         # 5. Teléfono (Infalible)
         try:
             phone_el = self.driver.find_element(
-                By.XPATH,
-                "//a[contains(@href, 'customer/view')]/ancestor::div[contains(@class, 'card')]//a[starts-with(@href, 'tel:')]",
+                *ORDER_DETAIL_SELECTORS["customer_phone_link"]
             )
             info["customer_phone"] = phone_el.text.strip()
         except:
@@ -287,7 +282,7 @@ class DroneScraper:
         # 6. Fecha de creación
         try:
             date_el = self.driver.find_element(
-                By.XPATH, "//i[contains(@class, 'tio-date-range')]/parent::span"
+                *ORDER_DETAIL_SELECTORS["order_placed_at"]
             )
             info["created_at_text"] = date_el.text.strip()
         except:
@@ -296,8 +291,7 @@ class DroneScraper:
         # 7. Tipo de Orden (Delivery / Take away / Pickup)
         try:
             order_type_el = self.driver.find_element(
-                By.XPATH,
-                "//h6[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'order type') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'tipo de')]/label",
+                *ORDER_DETAIL_SELECTORS["order_type_label"]
             )
             info["order_type"] = order_type_el.text.strip().lower()
         except Exception as e:
@@ -309,8 +303,7 @@ class DroneScraper:
     def _extract_reason_smart(self) -> Optional[str]:
         try:
             labels = self.driver.find_elements(
-                By.XPATH,
-                "//*[contains(text(), 'Motivo de cancelación') or contains(text(), 'Razón')]",
+                *ORDER_DETAIL_SELECTORS["cancellation_reason_labels"]
             )
             for label in labels:
                 try:
@@ -339,20 +332,30 @@ class DroneScraper:
         items = []
         try:
             # Apunta a la tabla principal
-            rows = self.driver.find_elements(By.CSS_SELECTOR, "table.table tbody tr")
+            rows = self.driver.find_elements(
+                *ORDER_DETAIL_SELECTORS["product_table_rows"]
+            )
             for row in rows:
                 try:
-                    cols = row.find_elements(By.TAG_NAME, "td")
+                    cols = row.find_elements(*ORDER_DETAIL_SELECTORS["product_col_tag"])
                     if len(cols) < 4:
                         continue
 
                     # 1. Nombre
-                    name = cols[1].find_element(By.TAG_NAME, "strong").text.strip()
+                    name = (
+                        cols[1]
+                        .find_element(*ORDER_DETAIL_SELECTORS["product_name_tag"])
+                        .text.strip()
+                    )
 
                     # 2. Cantidad y Precio (Ej: 4 x USD 0,18)
                     qty = 1
                     price = 0.0
-                    info_text = cols[1].find_element(By.TAG_NAME, "h6").text
+                    info_text = (
+                        cols[1]
+                        .find_element(*ORDER_DETAIL_SELECTORS["product_qty_price_tag"])
+                        .text
+                    )
                     match = re.search(
                         r"(\d+)\s*x\s*USD\s*([\d\.,]+)", info_text, re.IGNORECASE
                     )
@@ -391,10 +394,9 @@ class DroneScraper:
         """Extrae el método de pago (Bilingüe SRE Todoterreno)"""
         try:
             # Busca cualquier etiqueta (h6, div, p) que contenga la palabra clave
-            # y extrae el texto del elemento padre (para atrapar el texto esté donde esté)
+            # y extrae el texto del elemento padre usando el selector centralizado
             element = self.driver.find_element(
-                By.XPATH,
-                "//*[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'método de pago') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'payment method')]/parent::*",
+                *ORDER_DETAIL_SELECTORS["payment_method_universal"]
             )
             raw_payment = element.text.strip().upper()
 

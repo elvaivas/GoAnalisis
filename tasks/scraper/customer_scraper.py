@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from app.core.config import settings
+from app.services.selectors import LOGIN_SELECTORS, CUSTOMER_LIST_SELECTORS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -64,20 +65,22 @@ class CustomerScraper:
                 self.driver, 15
             )  # Subimos a 15s por si el Legacy está lento
 
-            # Buscamos el campo email
-            email_field = wait.until(EC.presence_of_element_located((By.NAME, "email")))
+            # SRE: Selectores centralizados
+            email_field = wait.until(
+                EC.presence_of_element_located(LOGIN_SELECTORS["email_input"])
+            )
             email_field.clear()
             email_field.send_keys(settings.GOPHARMA_EMAIL)
 
-            password_field = self.driver.find_element(By.NAME, "password")
+            password_field = self.driver.find_element(
+                *LOGIN_SELECTORS["password_input"]
+            )
             password_field.clear()
             password_field.send_keys(settings.GOPHARMA_PASSWORD)
 
             # SRE: Intento de click inteligente
             try:
-                submit_btn = self.driver.find_element(
-                    By.XPATH, "//button[@type='submit']"
-                )
+                submit_btn = self.driver.find_element(*LOGIN_SELECTORS["login_button"])
                 submit_btn.click()
             except:
                 password_field.submit()
@@ -195,13 +198,15 @@ class CustomerScraper:
                 self.driver.get(url)
 
                 WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "set-rows"))
+                    EC.presence_of_element_located(
+                        CUSTOMER_LIST_SELECTORS["table_body"]
+                    )
                 )
 
                 logger.info(f"   📄 Procesando página {current_page}...")
 
-                # 👇 CAMBIO QUIRÚRGICO: Selector CSS directo a las filas de la tabla
-                rows = self.driver.find_elements(By.CSS_SELECTOR, "tbody#set-rows tr")
+                # 👇 CAMBIO QUIRÚRGICO: Usando selector centralizado
+                rows = self.driver.find_elements(*CUSTOMER_LIST_SELECTORS["table_rows"])
                 if not rows:
                     break
 

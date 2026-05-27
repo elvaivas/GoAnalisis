@@ -7,6 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from app.core.config import settings
+from app.services.selectors import LOGIN_SELECTORS, ORDER_DETAIL_SELECTORS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -244,7 +245,9 @@ class StoreScraper:
 
             # 1. Intentar sacar del input ID="comission"
             try:
-                input_el = self.driver.find_element(By.ID, "comission")
+                input_el = self.driver.find_element(
+                    *ORDER_DETAIL_SELECTORS["commission_input"]
+                )
                 val = input_el.get_attribute("value")
                 return float(val)
             except:
@@ -253,7 +256,11 @@ class StoreScraper:
             # 2. Intentar sacar del texto "10 % Comisión"
             try:
                 body = self.driver.find_element(By.TAG_NAME, "body").text
-                match = re.search(r"(\d+(?:\.\d+)?)%\s*comisión", body, re.IGNORECASE)
+                match = re.search(
+                    ORDER_DETAIL_SELECTORS["commission_text_pattern"],
+                    body,
+                    re.IGNORECASE,
+                )
                 if match:
                     return float(match.group(1))
             except:
