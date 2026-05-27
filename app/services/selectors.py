@@ -36,7 +36,7 @@ ORDER_DETAIL_SELECTORS = {
     # --- INFO BÁSICA Y STATUS (Actualizado a Ant Design / React) ---
     "status_badge": (
         By.XPATH,
-        "//span[contains(text(), 'Status:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div//span[@class='ant-select-selection-item']",
+        "//span[contains(text(), 'Status:')]/parent::div/following-sibling::div[1]//span[@class='ant-select-selection-item']",
     ),
     "order_placed_at": (
         By.XPATH,
@@ -54,7 +54,7 @@ ORDER_DETAIL_SELECTORS = {
     # --- NOMBRES PRINCIPALES (Extraídos de los Cards de Ant Design) ---
     "store_name": (
         By.XPATH,
-        "//span[contains(text(), 'Store:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div//span[contains(@class, 'ant-tag')]",
+        "//span[contains(text(), 'Store:')]/parent::div/following-sibling::div[1]//span[contains(@class, 'ant-tag')]",
     ),
     "customer_name": (
         By.XPATH,
@@ -95,6 +95,24 @@ ORDER_DETAIL_SELECTORS = {
     # --- CONFIGURACIÓN DE COMISIÓN (Business Plan) ---
     "commission_input": (By.ID, "comission"),
     "commission_text_pattern": r"(\d+(?:\.\d+)?)%\s*comisión",
+    # --- NUEVOS SELECTORES DE TABLA DE PRODUCTOS (Ant Design) ---
+    "product_table_rows": (By.CSS_SELECTOR, "tbody.ant-table-tbody tr.ant-table-row"),
+    "product_col_tag": (By.CSS_SELECTOR, "td.ant-table-cell"),
+    "product_name_tag": (By.CSS_SELECTOR, "span.ant-typography strong"),
+    "product_qty_price_tag": (
+        By.XPATH,
+        ".//span[contains(@class, 'ant-typography')]/following-sibling::div",
+    ),
+    "product_barcode_tag": (By.CSS_SELECTOR, "svg text"),
+    # --- FINANCIEROS Y PAGOS FALTANTES ---
+    "financial_row_template": "//th[contains(@class, 'ant-descriptions-item-label') and contains(., '{label}')]/following-sibling::td//span",
+    "payment_method_universal": (
+        By.XPATH,
+        "//span[contains(text(), 'Payment method') or contains(text(), 'Método de pago')]/parent::div/following-sibling::div//span",
+    ),
+    # --- FALLBACK DE MAPAS (Para evitar KeyError en el worker) ---
+    "latitude_input": (By.XPATH, "//input[@id='latitude_inexistente']"),
+    "longitude_input": (By.XPATH, "//input[@id='longitude_inexistente']"),
 }
 
 CUSTOMER_LIST_SELECTORS = {

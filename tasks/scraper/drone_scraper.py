@@ -140,10 +140,10 @@ class DroneScraper:
 
     # --- EXTRACTORES ---
     def _parse_money(self, text: str) -> float:
-        """Extrae el monto manejando el nuevo formato: USD 0,72 (VED 314,09)"""
+        """Extrae el monto manejando el nuevo formato de Ant Design: $4.37 (VED 2.301,74)"""
         try:
-            # Buscamos el patrón USD seguido del número
-            match = re.search(r"USD\s*([\d\.,]+)", text, re.IGNORECASE)
+            # CORRECCIÓN: Ahora busca el símbolo $ o la palabra USD por retrocompatibilidad
+            match = re.search(r"(?:\$|USD)\s*([\d\.,]+)", text, re.IGNORECASE)
             if match:
                 num_str = match.group(1).strip()
                 # Si tiene punto de miles y coma decimal (Ej: 1.000,50)
@@ -354,30 +354,48 @@ class DroneScraper:
                         .text.strip()
                     )
 
-                    # 2. Cantidad y Precio (Ej: 4 x USD 0,18)
+                    # 2. Cantidad y Precio (Nuevo formato Ant Design: 1 x $4.37)
                     qty = 1
                     price = 0.0
-                    info_text = (
-                        cols[1]
-                        .find_element(*ORDER_DETAIL_SELECTORS["product_qty_price_tag"])
-                        .text
-                    )
-                    match = re.search(
-                        r"(\d+)\s*x\s*USD\s*([\d\.,]+)", info_text, re.IGNORECASE
-                    )
-                    if match:
-                        qty = int(match.group(1))
-                        price_str = match.group(2)
-                        if "," in price_str and "." not in price_str:
-                            price_str = price_str.replace(",", ".")
-                        elif "." in price_str and "," in price_str:
-                            price_str = price_str.replace(".", "").replace(",", ".")
-                        price = float(price_str)
+                    try:
+                        info_text = (
+                            cols[1]
+                            .find_element(
+                                *ORDER_DETAIL_SELECTORS["product_qty_price_tag"]
+                            )
+                            .text
+                        )
+                        # CORRECCIÓN: Soporte para símbolo $ o USD
+                        match = re.search(
+                            r"(\d+)\s*x\s*(?:\$|USD)\s*([\d\.,]+)",
+                            info_text,
+                            re.IGNORECASE,
+                        )
+                        if match:
+                            qty = int(match.group(1))
+                            price_str = match.group(2)
+                            if "," in price_str and "." not in price_str:
+                                price_str = price_str.replace(",", ".")
+                            elif "." in price_str and "," in price_str:
+                                price_str = price_str.replace(".", "").replace(",", ".")
+                            price = float(price_str)
+                    except:
+                        pass
 
-                    # 3. Código de barras
-                    barcode = cols[2].get_attribute("title") or cols[2].text.strip()
+                    # 3. Código de barras (CORRECCIÓN: Extracción desde etiqueta SVG de Ant Design)
+                    barcode = ""
+                    try:
+                        barcode = (
+                            cols[2]
+                            .find_element(
+                                *ORDER_DETAIL_SELECTORS["product_barcode_tag"]
+                            )
+                            .text.strip()
+                        )
+                    except:
+                        barcode = cols[2].text.strip()
 
-                    # 4. Total
+                    # 4. Total (Utiliza la función actualizada que detecta $)
                     total = self._parse_money(cols[3].text)
 
                     if name:
@@ -390,9 +408,11 @@ class DroneScraper:
                                 "barcode": barcode,
                             }
                         )
-                except:
+                except Exception as e:
+                    logger.debug(f"Error en fila de producto (omitido): {e}")
                     continue
-        except:
+        except Exception as e:
+            logger.error(f"Fallo al localizar tabla de productos: {e}")
             pass
         return items
 
