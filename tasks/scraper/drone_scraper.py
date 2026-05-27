@@ -244,7 +244,8 @@ class DroneScraper:
                 *ORDER_DETAIL_SELECTORS["status_badge"]
             )
             info["status_text"] = status_el.text.strip()
-        except:
+        except Exception as e:
+            logger.warning(f"⚠️ No se encontró status_badge: {e}")
             info["status_text"] = ""
 
         # 2. Cliente (Anclado al href)
@@ -253,21 +254,24 @@ class DroneScraper:
                 *ORDER_DETAIL_SELECTORS["customer_name"]
             )
             info["customer_name"] = client_el.text.strip()
-        except:
+        except Exception as e:
+            logger.warning(f"⚠️ No se encontró customer_name: {e}")
             info["customer_name"] = "Desconocido"
 
         # 3. Repartidor (Anclado al href)
         try:
             driver_el = self.driver.find_element(*ORDER_DETAIL_SELECTORS["driver_name"])
             info["driver_name"] = driver_el.text.strip()
-        except:
+        except Exception as e:
+            logger.warning(f"⚠️ No se encontró driver_name: {e}")
             info["driver_name"] = "N/A"
 
         # 4. Tienda (Anclado al href)
         try:
             store_el = self.driver.find_element(*ORDER_DETAIL_SELECTORS["store_name"])
             info["store_name"] = store_el.text.strip()
-        except:
+        except Exception as e:
+            logger.warning(f"⚠️ No se encontró store_name: {e}")
             info["store_name"] = "Desconocida"
 
         # 5. Teléfono (Infalible)
@@ -276,7 +280,8 @@ class DroneScraper:
                 *ORDER_DETAIL_SELECTORS["customer_phone_link"]
             )
             info["customer_phone"] = phone_el.text.strip()
-        except:
+        except Exception as e:
+            logger.debug(f"No se encontró teléfono: {e}")
             pass
 
         # 6. Fecha de creación
@@ -285,7 +290,8 @@ class DroneScraper:
                 *ORDER_DETAIL_SELECTORS["order_placed_at"]
             )
             info["created_at_text"] = date_el.text.strip()
-        except:
+        except Exception as e:
+            logger.debug(f"No se encontró fecha: {e}")
             pass
 
         # 7. Tipo de Orden (Delivery / Take away / Pickup)
@@ -440,6 +446,14 @@ class DroneScraper:
 
         try:
             self.driver.get(target_url)
+
+            # --- ESCUDO SRE: Espera táctica de renderizado ---
+            # Le damos 4 segundos al panel nuevo para que termine de cargar
+            # los datos de la API antes de intentar extraerlos.
+            import time
+
+            time.sleep(4)
+
             WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
