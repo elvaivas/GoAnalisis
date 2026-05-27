@@ -54,7 +54,7 @@ ORDER_DETAIL_SELECTORS = {
     # --- NOMBRES PRINCIPALES (Extraídos de los Cards de Ant Design) ---
     "store_name": (
         By.XPATH,
-        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Store info')]/ancestor::div[contains(@class, 'ant-card')]//h5",
+        "//span[contains(text(), 'Store:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div//span[contains(@class, 'ant-tag')]",
     ),
     "customer_name": (
         By.XPATH,
