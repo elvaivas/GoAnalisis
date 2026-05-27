@@ -55,7 +55,7 @@ ORDER_DETAIL_SELECTORS = {
     # Ajustado a la estructura Ant Design del nuevo detalle de pedido
     "store_name": (
         By.XPATH,
-        "//span[contains(text(), 'Store:')]/ancestor::div[contains(@class, 'ant-space-item')]//span[contains(@class, 'ant-tag')]",
+        "//span[contains(text(), 'Store:')]/following-sibling::span[contains(@class, 'ant-tag') or parent::span[contains(@class, 'ant-tag')]] | //span[contains(text(), 'Store:')]/../following-sibling::div//span[contains(@class, 'ant-tag')]",
     ),
     "customer_name": (
         By.XPATH,
