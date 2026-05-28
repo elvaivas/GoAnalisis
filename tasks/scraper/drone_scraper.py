@@ -456,46 +456,64 @@ class DroneScraper:
         result = {"external_id": external_id}
         target_url = f"{self.base_detail_url}/{external_id}"
 
-        try:
-            self.driver.get(target_url)
+        import time
 
-            # --- ESCUDO SRE: Espera Dinámica (Smart Wait) ---
-            # Esperamos activamente hasta 15 segundos a que React pinte el selector de la tienda.
-            # En el milisegundo que aparezca, el código avanzará.
+        # --- ESCUDO SRE: Bucle de Reintento Anti 404-Flash ---
+        for attempt in range(1, 4):  # Máximo 3 intentos por pedido
             try:
-                WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located(ORDER_DETAIL_SELECTORS["store_name"])
+                self.driver.get(target_url)
+
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located(
+                            ORDER_DETAIL_SELECTORS["store_name"]
+                        )
+                    )
+                except:
+                    pass
+
+                time.sleep(2)  # Gracia para que React termine de renderizar el DOM
+
+                body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                basic_info = self._extract_basic_info()
+
+                # VALIDACIÓN DE INTEGRIDAD: ¿Chocamos con un 404 Flash?
+                if (
+                    not basic_info.get("status_text")
+                    or basic_info.get("store_name") in ["Desconocida", "", None]
+                ) and attempt < 3:
+                    logger.warning(
+                        f"⚠️ 404 Flash o carga incompleta en #{external_id}. Reintentando ({attempt}/3)..."
+                    )
+                    time.sleep(3)
+                    continue  # Aborta este intento y vuelve a cargar la URL desde cero
+
+                # Si pasó la validación, actualizamos el resultado y extraemos el resto
+                result.update(basic_info)
+                result.update(self._extract_financials())
+                result.update(self._extract_maps())
+
+                products = self._extract_products()
+                if products:
+                    result["items"] = products
+
+                if "cancelado" in result.get("status_text", "").lower():
+                    reason = self._extract_reason_smart()
+                    if reason:
+                        result["cancellation_reason"] = reason
+
+                result["payment_method"] = self._extract_payment_info()
+
+                # Si llegamos a esta línea sin errores y con data real, rompemos el bucle
+                logger.info(
+                    f"✅ Extracción perfecta para #{external_id} en el intento {attempt}"
                 )
+                break
+
             except Exception as e:
-                logger.warning(
-                    f"⏳ Tiempo de espera agotado esperando a React en {external_id}: {e}"
+                logger.error(
+                    f"❌ Error scraping {external_id} (Intento {attempt}): {e}"
                 )
-
-            # Damos 1 segundo extra de gracia para que se acomoden el resto de las tarjetas y SVGs
-            import time
-
-            time.sleep(1)
-
-            body_text = self.driver.find_element(By.TAG_NAME, "body").text
-
-            result.update(self._extract_basic_info())
-            result.update(self._extract_financials())
-            result.update(self._extract_maps())
-
-            # Productos (Siempre)
-            products = self._extract_products()
-            if products:
-                result["items"] = products
-
-            if "cancelado" in result.get("status_text", "").lower():
-                reason = self._extract_reason_smart()
-                if reason:
-                    result["cancellation_reason"] = reason
-
-            # 🎯 INYECCIÓN SRE (MISIÓN 4): Capturamos el método de pago
-            result["payment_method"] = self._extract_payment_info()
-
-        except Exception as e:
-            logger.error(f"❌ Error scraping {external_id}: {e}")
+                time.sleep(2)
 
         return result
