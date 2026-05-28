@@ -301,23 +301,39 @@ def process_drone_data(db, data: dict):
                 db_status = "pending"
             # -------------------------------------------------
 
-        # ESCUDO 2: Fallback (Para escaneos viejos o reparaciones profundas)
+        # ESCUDO 2: Fallback Bilingüe (React + Legacy)
         else:
-            if "entregado" in status_text:
+            if "entregado" in status_text or "delivered" in status_text:
                 db_status = "delivered"
-            elif "cancelado" in status_text:
+            elif (
+                "cancelado" in status_text
+                or "canceled" in status_text
+                or "failed" in status_text
+            ):
                 db_status = "canceled"
-            elif "creado" in status_text:
+            elif "creado" in status_text or "created" in status_text:
                 db_status = "created"
-            elif "camino" in status_text or "ruta" in status_text:
+            elif (
+                "camino" in status_text
+                or "ruta" in status_text
+                or "picked_up" in status_text
+                or "picked up" in status_text
+                or "on the way" in status_text
+            ):
                 db_status = "on_the_way"
             elif (
-                "asignado" in status_text or "repartidor" in status_text
-            ):  # <--- CRÍTICO: La palabra que faltaba
+                "asignado" in status_text
+                or "repartidor" in status_text
+                or "handover" in status_text
+            ):
                 db_status = "driver_assigned"
-            elif "proceso" in status_text:
+            elif "proceso" in status_text or "processing" in status_text:
                 db_status = "processing"
-            elif "confirmado" in status_text:
+            elif (
+                "confirmado" in status_text
+                or "confirmed" in status_text
+                or "accepted" in status_text
+            ):
                 db_status = "confirmed"
 
         # CASO ESPECIAL DEL CHÓFER: Si el HTML dice 'confirmed' pero ya hay chofer
@@ -493,6 +509,14 @@ def process_drone_data(db, data: dict):
                 logger.warning(
                     f"🚫 Intento de retroceso inválido en #{external_id}: {order.current_status} -> {db_status} (Bloqueado por DOM inestable)"
                 )
+
+            # --- CORRECCIÓN SRE: Actualización forzosa del reloj ---
+            # Aunque el escudo bloquee un cambio de estatus, SIEMPRE actualizamos
+            # la fecha si el dron trajo una válida, para matar el bug de las 10 horas.
+            if created_at_dt:
+                # Solo la actualizamos si no es la fecha "por defecto" (00:00:00)
+                if created_at_dt.hour != 0 or created_at_dt.minute != 0:
+                    order.created_at = created_at_dt
 
             # 2. Updates Financieros
             order.total_amount = data.get("total_amount", order.total_amount)
