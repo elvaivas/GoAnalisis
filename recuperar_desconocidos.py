@@ -1,7 +1,7 @@
 import os
 import sys
 
-# Asegura que Python reconozca los módulos 'app' y 'tasks' al correr desde la terminal
+# Asegura que Python reconozca los módulos 'app' y 'tasks'
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import logging
@@ -19,27 +19,29 @@ logger = logging.getLogger(__name__)
 
 
 def run_recovery_desconocidos():
-    logger.info("🚀 INICIANDO RECUPERACIÓN DE PEDIDOS DESCONOCIDOS (ÚLTIMOS 7 DÍAS)...")
+    logger.info(
+        "🚀 INICIANDO RECUPERACIÓN PROFUNDA (RED DE ARRASTRE - ÚLTIMOS 15 DÍAS)..."
+    )
 
     db = SessionLocal()
     drone = DroneScraper()
 
-    # Rango: Desde hace 15 días hasta ahora
-    start_date = datetime.now(timezone.utc) - timedelta(days=15)
+    # Rango: Desde hace 15 días hasta ahora (asegurando compatibilidad de timezone con la BD)
+    start_date = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=15)
 
-    # Buscamos pedidos de los últimos 7 días cuyo estado sea desconocido,
-    # nulo, vacío, o cualquier texto de error que esté arrojando el scraper anterior.
-    # Ajusta los strings del in_() si en tu BD dicen algo distinto a 'desconocido' o 'unknown'
+    # LA RED DE ARRASTRE: Atrapa todo pedido que tenga CUALQUIER indicio de haber fallado
+    # durante la migración del panel (falta de relaciones, estatus corruptos, montos vacíos, etc.)
     stuck_orders = (
         db.query(Order)
         .filter(
             Order.created_at >= start_date,
             or_(
-                Order.customer_id == None,
                 Order.store_id == None,
-                Order.current_status.in_(
-                    ["desconocido", "unknown", "", "Desconocido", "error"]
-                ),
+                Order.customer_id == None,
+                Order.order_type == "desconocido",
+                Order.order_type == None,
+                Order.total_amount == 0,
+                Order.current_status.in_(["desconocido", "unknown", "", "error"]),
                 Order.current_status == None,
             ),
         )
@@ -47,15 +49,19 @@ def run_recovery_desconocidos():
     )
 
     logger.info(
-        f"🚨 Encontrados {len(stuck_orders)} pedidos con estatus desconocido. Iniciando Dron..."
+        f"🚨 La red atrapó {len(stuck_orders)} pedidos corruptos o incompletos. Iniciando Dron..."
     )
 
     if not stuck_orders:
-        logger.info("✨ No se encontraron pedidos desconocidos en ese rango de fechas.")
+        logger.info(
+            "✨ No se encontraron pedidos dañados en ese rango de fechas. Todo limpio."
+        )
+        db.close()
         return
 
     if not drone.login():
-        logger.error("❌ Fallo login del dron de GoPharma")
+        logger.error("❌ Fallo crítico en el login del dron de GoPharma.")
+        db.close()
         return
 
     count = 0
@@ -64,19 +70,18 @@ def run_recovery_desconocidos():
     for order in stuck_orders:
         count += 1
         logger.info(
-            f"🔍 [{count}/{len(stuck_orders)}] Re-escaneando #{order.external_id}..."
+            f"🔍 [{count}/{len(stuck_orders)}] Re-escaneando y reparando #{order.external_id}..."
         )
         try:
-            # Forzamos el modo full para que pase por tus nuevos selectores
+            # Forzamos el modo full para que pase por los selectores reparados de React
             data = drone.scrape_detail(order.external_id, mode="full")
 
-            # Validamos que 'data' no venga vacío (None) antes de enviarlo a la BD
+            # Validamos que 'data' no venga vacío
             if data:
                 process_drone_data(db, data)
-                logger.info(f"✅ Pedido #{order.external_id} actualizado con éxito.")
             else:
                 logger.warning(
-                    f"⚠️ El dron no encontró la información del pedido #{order.external_id}."
+                    f"⚠️ El dron devolvió vacío para el pedido #{order.external_id}."
                 )
                 errors += 1
 
@@ -87,10 +92,12 @@ def run_recovery_desconocidos():
     drone.close_driver()
     db.close()
 
-    logger.info("🏁 RECUPERACIÓN FINALIZADA.")
-    logger.info(f"✅ Procesados exitosamente: {count - errors}")
+    logger.info("🏁 RECUPERACIÓN MASIVA FINALIZADA.")
+    logger.info(f"✅ Pedidos reparados y conectados con éxito: {count - errors}")
     if errors > 0:
-        logger.info(f"❌ Errores (revisar selectores): {errors}")
+        logger.info(
+            f"❌ Errores irrecuperables (posiblemente borrados del panel): {errors}"
+        )
 
 
 if __name__ == "__main__":
