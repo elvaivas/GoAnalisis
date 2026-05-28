@@ -36,7 +36,7 @@ ORDER_DETAIL_SELECTORS = {
     # --- INFO BÁSICA Y STATUS (Actualizado a Ant Design / React) ---
     "status_badge": (
         By.XPATH,
-        "//span[contains(text(), 'Status:')]/parent::div/following-sibling::div[1]//span[@class='ant-select-selection-item']",
+        "//span[contains(normalize-space(.), 'Status:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]",
     ),
     "order_placed_at": (
         By.XPATH,
@@ -55,7 +55,7 @@ ORDER_DETAIL_SELECTORS = {
     # Ajustado a la estructura Ant Design del nuevo detalle de pedido
     "store_name": (
         By.XPATH,
-        "//span[text()='Store: ']/parent::div/following-sibling::div[1]/span[contains(@class, 'ant-tag')]",
+        "//span[contains(normalize-space(.), 'Store:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]",
     ),
     "customer_name": (
         By.XPATH,
