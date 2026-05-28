@@ -459,16 +459,23 @@ class DroneScraper:
         try:
             self.driver.get(target_url)
 
-            # --- ESCUDO SRE: Espera táctica de renderizado ---
-            # Le damos 4 segundos al panel nuevo para que termine de cargar
-            # los datos de la API antes de intentar extraerlos.
+            # --- ESCUDO SRE: Espera Dinámica (Smart Wait) ---
+            # Esperamos activamente hasta 15 segundos a que React pinte el selector de la tienda.
+            # En el milisegundo que aparezca, el código avanzará.
+            try:
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located(ORDER_DETAIL_SELECTORS["store_name"])
+                )
+            except Exception as e:
+                logger.warning(
+                    f"⏳ Tiempo de espera agotado esperando a React en {external_id}: {e}"
+                )
+
+            # Damos 1 segundo extra de gracia para que se acomoden el resto de las tarjetas y SVGs
             import time
 
-            time.sleep(4)
+            time.sleep(1)
 
-            WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
             body_text = self.driver.find_element(By.TAG_NAME, "body").text
 
             result.update(self._extract_basic_info())
