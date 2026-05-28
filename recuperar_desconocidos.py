@@ -38,7 +38,6 @@ def run_recovery_desconocidos():
             or_(
                 Order.store_id == None,
                 Order.customer_id == None,
-                Order.order_type == "desconocido",
                 Order.order_type == None,
                 Order.total_amount == 0,
                 Order.current_status.in_(["desconocido", "unknown", "", "error"]),
