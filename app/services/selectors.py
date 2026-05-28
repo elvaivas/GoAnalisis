@@ -55,7 +55,7 @@ ORDER_DETAIL_SELECTORS = {
     # Ajustado a la estructura Ant Design del nuevo detalle de pedido
     "store_name": (
         By.XPATH,
-        "//span[@aria-label='shop']/ancestor::div[contains(@class, 'ant-card-body')]//h5",
+        "//span[text()='Store: ']/parent::div/following-sibling::div[1]/span[contains(@class, 'ant-tag')]",
     ),
     "customer_name": (
         By.XPATH,
