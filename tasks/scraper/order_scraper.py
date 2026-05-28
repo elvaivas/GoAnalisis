@@ -372,69 +372,60 @@ class OrderScraper:
 
         return orders_found
 
-    def get_historical_ids(self, max_pages: int = None) -> List[Dict[str, str]]:
-        """
-        Navega por la paginación hasta el final con los nuevos selectores.
-        """
-        if not self.driver:
-            self.setup_driver()
-            self.login()
-        all_data = []
+    def get_historical_ids(self, max_pages=1):
+        """Escanea la tabla de pedidos y extrae IDs y tiempos activos"""
+        logger.info(f"Escaneando historial de pedidos ({max_pages} pags)...")
+        items = []
 
-        try:
-            self.driver.get(self.orders_url)
-            WebDriverWait(self.driver, 15).until(
-                EC.presence_of_element_located((By.ID, "datatable"))
-            )
+        import time
 
-            current_page = 1
-            while True:
-                if max_pages and current_page > max_pages:
-                    logger.info(f"🛑 Límite de seguridad alcanzado ({max_pages} págs).")
-                    break
-
-                logger.info(f"📄 Escaneando pág {current_page}...")
-
-                rows = self.driver.find_elements(*ORDER_TABLE_SELECTORS["order_rows"])
-                page_data = []
-
-                for row in rows:
-                    try:
-                        link = row.find_element(*ORDER_TABLE_SELECTORS["order_id_link"])
-                        order_id = link.text.strip()
-                        duration = self._parse_duration(row)
-
-                        if order_id.isdigit():
-                            page_data.append({"id": order_id, "duration": duration})
-                    except:
-                        continue
-
-                all_data.extend(page_data)
-
+        for page in range(1, max_pages + 1):
+            if page > 1:
+                logger.info(f"Pasando a la página {page}...")
                 try:
+                    # En Ant Design, los botones de paginación suelen ser <li class="ant-pagination-next">
                     next_btn = self.driver.find_element(
-                        *ORDER_TABLE_SELECTORS["next_page_btn"]
+                        By.CSS_SELECTOR,
+                        "li.ant-pagination-next:not(.ant-pagination-disabled) a",
                     )
-
-                    parent = next_btn.find_element(By.XPATH, "./..")
-                    if "disabled" in parent.get_attribute("class"):
-                        logger.info("🚫 Fin de la paginación.")
-                        break
-
                     self.driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(2)
-                    current_page += 1
-                except NoSuchElementException:
-                    logger.info("🚫 No se encontró botón siguiente.")
-                    break
+                    time.sleep(3)  # Espera a que React cargue la nueva página
                 except Exception as e:
-                    logger.error(f"⚠️ Error al cambiar de página: {e}")
+                    logger.info("Fin de la paginación o botón no encontrado.")
                     break
 
-        except Exception as e:
-            logger.error(f"Error backfill: {e}")
-        finally:
-            self.close_driver()
+            # Extraemos las filas.
+            # El HTML muestra que las filas reales de pedidos tienen un atributo role="row"
+            # y clases como "status-handover", "status-delivered", pero vamos a ser más genéricos:
+            rows = self.driver.find_elements(By.CSS_SELECTOR, "tbody tr[role='row']")
 
-        unique = {d["id"]: d for d in all_data}
-        return list(unique.values())
+            for row in rows:
+                try:
+                    # El ID del pedido está en el primer enlace (columna 1)
+                    first_col = row.find_element(
+                        By.CSS_SELECTOR, "td.table-column-pl-0 a"
+                    )
+                    order_id = first_col.text.strip()
+
+                    duration_text = ""
+                    # Si el pedido está activo (no Delivered/Canceled), GoPharma suele poner
+                    # el contador en alguna de las columnas. Extraemos todo el texto de la fila por seguridad.
+                    row_text = row.text
+                    if "Tiempo Total" in row_text or "En fase:" in row_text:
+                        # Buscamos patrones como "10h 2m 36s" o "44m 17s"
+                        match_duration = re.search(
+                            r"(\d+h\s*)?(\d+m\s*)?(\d+s)?", row_text
+                        )
+                        if match_duration:
+                            duration_text = match_duration.group(0).strip()
+
+                    if order_id and order_id.isdigit():
+                        items.append({"id": order_id, "duration": duration_text})
+
+                except Exception as e:
+                    # Algunas filas podrían ser agrupadores vacíos que pasaron el filtro
+                    continue
+
+        # Eliminamos duplicados por si acaso
+        unique_items = {item["id"]: item for item in items}.values()
+        return list(unique_items)

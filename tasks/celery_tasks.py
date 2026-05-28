@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from contextlib import contextmanager
 from celery import shared_task
 import redis
+from datetime import timedelta
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -34,83 +35,100 @@ def redis_lock(lock_key: str, expire: int):
 # --- HELPERS ---
 def parse_spanish_date(date_str: str):
     """
-    Parsea fechas híbridas (Español/Inglés) con o sin puntos.
-    Ej: '03 ene. 2026', '10 Dec 2025'
+    Parsea fechas híbridas (Español/Inglés) con o sin puntos y el nuevo formato React.
+    Ej React: '23/5/2026, 9:43:48 a. m.'
+    Ej Legacy: '03 ene. 2026', '10 Dec 2025'
     """
     if not date_str:
         return datetime.utcnow()
 
-    # Mapa Bilingüe y a prueba de errores
-    month_map = {
-        "ene": "01",
-        "jan": "01",
-        "enero": "01",
-        "january": "01",
-        "feb": "02",
-        "febrero": "02",
-        "february": "02",
-        "mar": "03",
-        "marzo": "03",
-        "march": "03",
-        "abr": "04",
-        "apr": "04",
-        "abril": "04",
-        "april": "04",
-        "may": "05",
-        "mayo": "05",
-        "jun": "06",
-        "junio": "06",
-        "june": "06",
-        "jul": "07",
-        "julio": "07",
-        "july": "07",
-        "ago": "08",
-        "aug": "08",
-        "agosto": "08",
-        "august": "08",
-        "sep": "09",
-        "septiembre": "09",
-        "september": "09",
-        "oct": "10",
-        "octubre": "10",
-        "october": "10",
-        "nov": "11",
-        "noviembre": "11",
-        "november": "11",
-        "dic": "12",
-        "dec": "12",
-        "diciembre": "12",
-        "december": "12",
-    }
-
     original = date_str
     try:
-        # Limpieza: minúsculas y quitar puntos
-        clean_str = date_str.lower().replace(".", "").strip()
+        # 1. NUEVO FORMATO REACT: "23/5/2026, 9:43:48 a. m."
+        # Limpiamos para normalizar "a. m." a "am" y quitar comas
+        clean_react = date_str.lower().replace(".", "").replace(",", "").strip()
+        clean_react = clean_react.replace("a m", "am").replace("p m", "pm")
 
-        # Reemplazo inteligente de mes
+        # Buscar formato DD/MM/YYYY HH:MM:SS AM/PM
+        match_react = re.search(
+            r"(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})\s+(\d{1,2}:\d{2}:\d{2})\s*(am|pm)",
+            clean_react,
+        )
+        if match_react:
+            day, month, year, time_str, am_pm = match_react.groups()
+            local_dt = datetime.strptime(
+                f"{day} {month} {year} {time_str} {am_pm}", "%d %m %Y %I:%M:%S %p"
+            )
+            # El panel muestra hora de Venezuela (UTC-4).
+            # Convertimos a UTC sumando 4 horas para que los cálculos de BD sean exactos.
+            return local_dt + timedelta(hours=4)
+
+        # 2. FORMATO LEGACY (El código que ya tenías)
+        month_map = {
+            "ene": "01",
+            "jan": "01",
+            "enero": "01",
+            "january": "01",
+            "feb": "02",
+            "febrero": "02",
+            "february": "02",
+            "mar": "03",
+            "marzo": "03",
+            "march": "03",
+            "abr": "04",
+            "apr": "04",
+            "abril": "04",
+            "april": "04",
+            "may": "05",
+            "mayo": "05",
+            "jun": "06",
+            "junio": "06",
+            "june": "06",
+            "jul": "07",
+            "julio": "07",
+            "july": "07",
+            "ago": "08",
+            "aug": "08",
+            "agosto": "08",
+            "august": "08",
+            "sep": "09",
+            "septiembre": "09",
+            "september": "09",
+            "oct": "10",
+            "octubre": "10",
+            "october": "10",
+            "nov": "11",
+            "noviembre": "11",
+            "november": "11",
+            "dic": "12",
+            "dec": "12",
+            "diciembre": "12",
+            "december": "12",
+        }
+
+        clean_str = date_str.lower().replace(".", "").replace(",", "").strip()
         for m_name, m_num in month_map.items():
-            # Usamos espacios para evitar reemplazar partes de palabras
             if m_name in clean_str:
                 clean_str = clean_str.replace(m_name, m_num)
                 break
 
-        # Regex flexible: Busca (Dia) (MesNum) (Año 4 digitos) (Hora:Min)
         match = re.search(
             r"(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})\s+(\d{1,2}:\d{2})", clean_str
         )
-
         if match:
             day, month, year, time_str = match.groups()
-            return datetime.strptime(
+            local_dt = datetime.strptime(
                 f"{day} {month} {year} {time_str}", "%d %m %Y %H:%M"
             )
+            return local_dt + timedelta(
+                hours=4
+            )  # Mantenemos la corrección horaria aquí también
 
-        # Fallback: Si no encuentra hora, intenta solo fecha
         match_date = re.search(r"(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})", clean_str)
         if match_date:
             day, month, year = match_date.groups()
-            return datetime.strptime(f"{day} {month} {year}", "%d %m %Y")
+            local_dt = datetime.strptime(f"{day} {month} {year}", "%d %m %Y")
+            return local_dt + timedelta(hours=4)
 
         logger.warning(f"⚠️ No se pudo parsear fecha: '{original}'. Usando UTC Now.")
         return datetime.utcnow()
