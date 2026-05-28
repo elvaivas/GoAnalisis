@@ -36,34 +36,18 @@ def redis_lock(lock_key: str, expire: int):
 def parse_spanish_date(date_str: str):
     """
     Parsea fechas híbridas (Español/Inglés) con o sin puntos y el nuevo formato React.
-    Ej React: '23/5/2026, 9:43:48 a. m.'
-    Ej Legacy: '03 ene. 2026', '10 Dec 2025'
+    Ej: '23/5/2026, 9:43:48', '27/5/2026, 10:40:00 a. m.', '03 ene. 2026'
     """
     if not date_str:
         return datetime.utcnow()
 
     original = date_str
     try:
-        # 1. NUEVO FORMATO REACT: "23/5/2026, 9:43:48 a. m."
-        # Limpiamos para normalizar "a. m." a "am" y quitar comas
-        clean_react = date_str.lower().replace(".", "").replace(",", "").strip()
-        clean_react = clean_react.replace("a m", "am").replace("p m", "pm")
+        # 1. Normalización de formato
+        clean_str = date_str.lower().replace(".", "").replace(",", "").strip()
+        clean_str = clean_str.replace("a m", "am").replace("p m", "pm")
 
-        # Buscar formato DD/MM/YYYY HH:MM:SS AM/PM
-        match_react = re.search(
-            r"(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})\s+(\d{1,2}:\d{2}:\d{2})\s*(am|pm)",
-            clean_react,
-        )
-        if match_react:
-            day, month, year, time_str, am_pm = match_react.groups()
-            local_dt = datetime.strptime(
-                f"{day} {month} {year} {time_str} {am_pm}", "%d %m %Y %I:%M:%S %p"
-            )
-            # El panel muestra hora de Venezuela (UTC-4).
-            # Convertimos a UTC sumando 4 horas para que los cálculos de BD sean exactos.
-            return local_dt + timedelta(hours=4)
-
-        # 2. FORMATO LEGACY (El código que ya tenías)
+        # 2. Mapa bilingüe de meses
         month_map = {
             "ene": "01",
             "jan": "01",
@@ -106,31 +90,46 @@ def parse_spanish_date(date_str: str):
             "december": "12",
         }
 
-        clean_str = date_str.lower().replace(".", "").replace(",", "").strip()
         for m_name, m_num in month_map.items():
             if m_name in clean_str:
                 clean_str = clean_str.replace(m_name, m_num)
                 break
 
+        # 3. Expresión Regular Todoterreno:
+        # Atrapa "DD MM YYYY HH:MM:SS" o "DD MM YYYY HH:MM" con o sin "am/pm"
         match = re.search(
-            r"(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})\s+(\d{1,2}:\d{2})", clean_str
+            r"(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?)\s*(am|pm)?",
+            clean_str,
         )
-        if match:
-            day, month, year, time_str = match.groups()
-            local_dt = datetime.strptime(
-                f"{day} {month} {year} {time_str}", "%d %m %Y %H:%M"
-            )
-            return local_dt + timedelta(
-                hours=4
-            )  # Mantenemos la corrección horaria aquí también
 
+        if match:
+            day, month, year, time_str, am_pm = match.groups()
+
+            # Si la hora no trae segundos (solo tiene un ":"), le agregamos ":00" para procesar parejo
+            if time_str.count(":") == 1:
+                time_str += ":00"
+
+            if am_pm:
+                # Formato 12 horas
+                local_dt = datetime.strptime(
+                    f"{day} {month} {year} {time_str} {am_pm}", "%d %m %Y %I:%M:%S %p"
+                )
+            else:
+                # Formato 24 horas
+                local_dt = datetime.strptime(
+                    f"{day} {month} {year} {time_str}", "%d %m %Y %H:%M:%S"
+                )
+
+            # Sumamos las 4 horas (UTC-4 Venezuela -> UTC BD)
+            return local_dt + timedelta(hours=4)
+
+        # 4. Fallback extremo: Solo Fecha (Si de milagro no envían hora)
         match_date = re.search(r"(\d{1,2})[\s/-]+(\d{1,2})[\s/-]+(\d{4})", clean_str)
         if match_date:
             day, month, year = match_date.groups()
             local_dt = datetime.strptime(f"{day} {month} {year}", "%d %m %Y")
             return local_dt + timedelta(hours=4)
 
-        logger.warning(f"⚠️ No se pudo parsear fecha: '{original}'. Usando UTC Now.")
         return datetime.utcnow()
 
     except Exception as e:
