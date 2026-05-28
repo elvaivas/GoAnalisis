@@ -44,7 +44,7 @@ ORDER_DETAIL_SELECTORS = {
     ),
     "order_type_label": (
         By.XPATH,
-        "//span[contains(text(), 'Order type:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div//span",
+        "//span[contains(normalize-space(.), 'Order type:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]",
     ),
     # --- TELÉFONO CLIENTE ---
     "customer_phone_link": (

@@ -510,6 +510,10 @@ def process_drone_data(db, data: dict):
             if customer:
                 order.customer_id = customer.id
 
+            # --- CORRECCIÓN SRE: Enlazar la tienda en actualizaciones ---
+            if store:
+                order.store_id = store.id
+
         # 4. PRODUCTOS (Siempre actualizar detalle)
         if "items" in data and data["items"]:
             db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
