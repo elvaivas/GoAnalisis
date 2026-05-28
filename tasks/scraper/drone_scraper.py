@@ -337,38 +337,31 @@ class DroneScraper:
     def _extract_products(self) -> List[Dict]:
         items = []
         try:
-            # Apunta a la tabla principal
+            # Apunta a la tabla principal usando las clases de Ant Design
             rows = self.driver.find_elements(
-                *ORDER_DETAIL_SELECTORS["product_table_rows"]
+                By.CSS_SELECTOR, "tbody.ant-table-tbody tr.ant-table-row"
             )
+
             for row in rows:
                 try:
-                    cols = row.find_elements(*ORDER_DETAIL_SELECTORS["product_col_tag"])
+                    cols = row.find_elements(By.TAG_NAME, "td")
                     if len(cols) < 4:
                         continue
 
-                    # 1. Nombre
-                    name = (
-                        cols[1]
-                        .find_element(*ORDER_DETAIL_SELECTORS["product_name_tag"])
-                        .text.strip()
-                    )
+                    # 1 y 2. Nombre, Cantidad y Precio (Todo viene en cols[1])
+                    # Ejemplo de texto extraído: "Gasa estéril (3 x 3) 2 unidades grossmed\n3 x $0.18 (VED 98,07)"
+                    col_1_text = cols[1].text.strip()
+                    lines = col_1_text.split("\n")
 
-                    # 2. Cantidad y Precio (Nuevo formato Ant Design: 1 x $4.37)
+                    name = lines[0].strip() if lines else "Producto Desconocido"
+
                     qty = 1
                     price = 0.0
                     try:
-                        info_text = (
-                            cols[1]
-                            .find_element(
-                                *ORDER_DETAIL_SELECTORS["product_qty_price_tag"]
-                            )
-                            .text
-                        )
-                        # CORRECCIÓN: Soporte para símbolo $ o USD
+                        # Extraemos con Regex directamente del texto de la celda completa
                         match = re.search(
                             r"(\d+)\s*x\s*(?:\$|USD)\s*([\d\.,]+)",
-                            info_text,
+                            col_1_text,
                             re.IGNORECASE,
                         )
                         if match:
@@ -382,20 +375,19 @@ class DroneScraper:
                     except:
                         pass
 
-                    # 3. Código de barras (CORRECCIÓN: Extracción desde etiqueta SVG de Ant Design)
+                    # 3. Código de barras (Extracción desde etiqueta SVG <text> de Ant Design)
                     barcode = ""
                     try:
+                        # Los SVG requieren local-name() porque usan un namespace XML distinto
                         barcode = (
                             cols[2]
-                            .find_element(
-                                *ORDER_DETAIL_SELECTORS["product_barcode_tag"]
-                            )
+                            .find_element(By.XPATH, ".//*[local-name()='text']")
                             .text.strip()
                         )
                     except:
                         barcode = cols[2].text.strip()
 
-                    # 4. Total (Utiliza la función actualizada que detecta $)
+                    # 4. Total (Utiliza la función que detecta $)
                     total = self._parse_money(cols[3].text)
 
                     if name:
