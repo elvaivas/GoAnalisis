@@ -39,6 +39,12 @@ class DroneScraper:
         chrome_options.add_argument("--disable-software-rasterizer")
         # Esta es la joya: No cargar imágenes = -60% consumo de RAM
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+        
+        # Nuevos limitadores de caché y procesos extra
+        chrome_options.add_argument("--disable-site-isolation-trials")
+        chrome_options.add_argument("--js-flags=--max-old-space-size=256")
+        chrome_options.add_argument("--disable-cache")
+        chrome_options.add_argument("--disk-cache-size=1")
 
         # Configuración de descargas
         self.download_dir = "/tmp/downloads"
@@ -137,6 +143,13 @@ class DroneScraper:
             except:
                 pass
             self.driver = None
+            
+        # 🛡️ ESCUDO ANTI-ZOMBIES: Limpieza a nivel de SO
+        try:
+            os.system("pkill -f chrome")
+            os.system("pkill -f chromedriver")
+        except:
+            pass
 
     # --- EXTRACTORES ---
     def _parse_money(self, text: str) -> float:
@@ -440,7 +453,6 @@ class DroneScraper:
 
                 time.sleep(2)  # Gracia para que React termine de renderizar el DOM
 
-                body_text = self.driver.find_element(By.TAG_NAME, "body").text
                 basic_info = self._extract_basic_info()
 
                 # VALIDACIÓN DE INTEGRIDAD: ¿Chocamos con un 404 Flash?
