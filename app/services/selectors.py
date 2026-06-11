@@ -12,102 +12,90 @@ LOGIN_SELECTORS = {
 }
 
 ORDER_TABLE_SELECTORS = {
+    # --- TABLA PRINCIPAL ---
     "table_body": (By.ID, "set-rows"),
-    "order_id_link": (By.CSS_SELECTOR, "td.table-column-pl-0 a"),
-    # --- NUEVOS SELECTORES DE LISTADO Y EXPORTACIÓN ---
-    "search_input": (By.ID, "filter-search"),  # Actualizado al nuevo modal de filtros
-    "export_dropdown_btn": (
-        By.CSS_SELECTOR,
-        "a[data-hs-unfold-target='#usersExportDropdown']",
-    ),
-    "csv_export_btn": (
-        By.XPATH,
-        "//a[contains(@id, 'export-csv') or contains(text(), 'CSV')]",
-    ),
+    # Selecciona solo las filas de pedidos, ignorando las filas agrupadoras ("Cart XXXX")
     "order_rows": (
-        By.CSS_SELECTOR,
-        "table#datatable tbody tr[class*='status-']:not(.group)",
+        By.CSS_SELECTOR, 
+        "tbody#set-rows tr[class*='status-']"
     ),
+    "order_id_link": (By.CSS_SELECTOR, "td.table-column-pl-0 a"),
     "duration_cell": (By.CSS_SELECTOR, "td:nth-child(2)"),
+    
+    # --- BÚSQUEDA Y FILTROS ---
+    "search_input": (By.ID, "filter-search"),
+    
+    # --- EXPORTACIÓN ---
+    "export_dropdown_btn": (
+        By.CSS_SELECTOR, 
+        "a[data-hs-unfold-target='#usersExportDropdown']"
+    ),
+    # Optimizado: El botón tiene un ID directo en el HTML, es más seguro que el XPath anterior
+    "csv_export_btn": (By.ID, "export-csv"),
+    "excel_export_btn": (By.ID, "export-excel"), # Te lo añado por si acaso
+    
+    # --- PAGINACIÓN ---
     "next_page_btn": (By.CSS_SELECTOR, "a.page-link[rel='next']"),
 }
 
 ORDER_DETAIL_SELECTORS = {
-    # Buscamos el bloque completo de "Status" y obtenemos el valor del segundo elemento
+    # --- CABECERA Y ESTADO ---
     "status_badge": (
         By.XPATH,
-        "//div[contains(@class, 'ant-space-horizontal') and contains(., 'Status:')]/div[2]/span",
+        "//span[contains(text(), 'Status:')]/parent::div/following-sibling::div//span"
     ),
     "order_placed_at": (
         By.XPATH,
-        "//span[@aria-label='calendar']/ancestor::div[contains(@class, 'ant-space-item')]/following-sibling::div[1]/span",
+        "//span[contains(@aria-label, 'calendar')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]/span"
     ),
     "order_type_label": (
         By.XPATH,
-        "//div[contains(@class, 'ant-space-horizontal') and contains(., 'Order type:')]/div[2]/span",
+        "//span[contains(text(), 'Order type:')]/parent::div/following-sibling::div//span"
     ),
     "payment_method": (
         By.XPATH,
-        "//div[contains(@class, 'ant-space-horizontal') and contains(., 'Payment method:')]/div[2]/span",
+        "//span[contains(text(), 'Payment method:')]/parent::div/following-sibling::div//span"
     ),
-    # Para los otros, usa estos que son más estables:
-    "customer_name": (By.XPATH, "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')]//h5"),
-    "driver_name": (By.XPATH, "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Delivery man')]/ancestor::div[contains(@class, 'ant-card')]//h5"),
-    "store_name": (By.XPATH, "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Store info')]/ancestor::div[contains(@class, 'ant-card')]//h5"),
+
+    # --- TARJETAS DE INFORMACIÓN (Con [1] para asegurar que tome el bloque correcto) ---
     "customer_name": (
-        By.XPATH,
-        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')]//h5",
+        By.XPATH, 
+        "//div[@class='ant-card-head-title' and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')][1]//h5"
     ),
     "driver_name": (
-        By.XPATH,
-        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Delivery man')]/ancestor::div[contains(@class, 'ant-card')]//h5",
+        By.XPATH, 
+        "//div[@class='ant-card-head-title' and contains(text(), 'Delivery man')]/ancestor::div[contains(@class, 'ant-card')][1]//h5"
     ),
-    # --- MONTOS (Actualizado a Componente ant-descriptions) ---
+    "store_name": (
+        By.XPATH, 
+        "//div[@class='ant-card-head-title' and contains(text(), 'Store info')]/ancestor::div[contains(@class, 'ant-card')][1]//h5"
+    ),
+
+    # --- MONTOS (Tabla de Ant Descriptions) ---
     "delivery_fee": (
         By.XPATH,
-        "//th[contains(@class, 'ant-descriptions-item-label') and (contains(., 'Delivery charge') or contains(., 'Tarifa de entrega'))]/following-sibling::td[contains(@class, 'ant-descriptions-item-content')]/span",
+        "//th[contains(@class, 'ant-descriptions-item-label')]//span[contains(text(), 'Delivery charge') or contains(text(), 'Tarifa de entrega')]/ancestor::th[1]/following-sibling::td//span"
     ),
     "total_amount": (
         By.XPATH,
-        "//th[contains(@class, 'ant-descriptions-item-label') and contains(., 'Total')]/following-sibling::td[contains(@class, 'ant-descriptions-item-content')]/span",
+        "//th[contains(@class, 'ant-descriptions-item-label')]//span[text()='Total']/ancestor::th[1]/following-sibling::td//span"
     ),
-    # --- NUEVOS DATOS DE INTELIGENCIA ---
-    "payment_method": (
+    "commission_text": (
         By.XPATH,
-        "//span[contains(text(), 'Payment method:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]//span",
+        "//th[contains(@class, 'ant-descriptions-item-label')]//span[contains(text(), 'Commission') or contains(text(), 'Comisión')]/ancestor::th[1]/following-sibling::td//span"
     ),
-    # Cancelación: (Se mantienen a la espera de confirmación visual si existen en la nueva vista)
-    "cancellation_reason": (
-        By.XPATH,
-        "//span[contains(., 'Motivo de cancelación')]/following-sibling::span[contains(@class, 'info')]",
-    ),
-    "canceled_by": (
-        By.XPATH,
-        "//span[contains(., 'Cancelado por')]/following-sibling::span[contains(@class, 'info')]",
-    ),
-    # IDs para relaciones (Mantenemos por compatibilidad, aunque la vista nueva los ocultó)
-    "store_link": (By.XPATH, "//a[contains(@href, 'store/view')]"),
-    "customer_link": (By.XPATH, "//a[contains(@href, 'customer/view')]"),
-    "driver_link": (By.XPATH, "//a[contains(@href, 'delivery-man/preview')]"),
-    # --- CONFIGURACIÓN DE COMISIÓN (Business Plan) ---
-    "commission_input": (By.ID, "comission"),
-    "commission_text_pattern": r"(\d+(?:\.\d+)?)%\s*comisión",
-    # --- NUEVOS SELECTORES DE TABLA DE PRODUCTOS (Ant Design) ---
+
+    # --- TABLA DE PRODUCTOS ---
     "product_table_rows": (By.CSS_SELECTOR, "tbody.ant-table-tbody tr.ant-table-row"),
     "product_col_tag": (By.CSS_SELECTOR, "td.ant-table-cell"),
     "product_name_tag": (By.CSS_SELECTOR, "span.ant-typography strong"),
     "product_qty_price_tag": (
         By.XPATH,
-        ".//span[contains(@class, 'ant-typography')]/following-sibling::div",
+        ".//span[contains(@class, 'ant-typography')]/following-sibling::div"
     ),
     "product_barcode_tag": (By.CSS_SELECTOR, "svg text"),
-    # --- FINANCIEROS Y PAGOS FALTANTES ---
-    "financial_row_template": "//th[contains(@class, 'ant-descriptions-item-label') and contains(., '{label}')]/following-sibling::td//span",
-    "payment_method_universal": (
-        By.XPATH,
-        "//span[contains(text(), 'Payment method') or contains(text(), 'Método de pago')]/parent::div/following-sibling::div//span",
-    ),
-    # --- FALLBACK DE MAPAS (Para evitar KeyError en el worker) ---
+
+    # --- FALLBACK DE MAPAS ---
     "latitude_input": (By.XPATH, "//input[@id='latitude_inexistente']"),
     "longitude_input": (By.XPATH, "//input[@id='longitude_inexistente']"),
 }
