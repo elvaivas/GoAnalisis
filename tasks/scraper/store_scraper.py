@@ -6,8 +6,9 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import os
 from app.core.config import settings
-from app.services.selectors import LOGIN_SELECTORS, ORDER_DETAIL_SELECTORS
+from app.services.selectors import LOGIN_SELECTORS, ORDER_DETAIL_SELECTORS, STORE_LIST_SELECTORS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,6 +31,15 @@ class StoreScraper:
         chrome_options.add_argument(
             "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         )
+        
+        # --- BLINDAJE EXTREMO DE MEMORIA (Copiado del Dron) ---
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-software-rasterizer")
+        chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+        chrome_options.add_argument("--disable-site-isolation-trials")
+        chrome_options.add_argument("--js-flags=--max-old-space-size=256")
+        chrome_options.add_argument("--disable-cache")
+        chrome_options.add_argument("--disk-cache-size=1")
 
         # --- INICIO NATIVO SRE ---
         self.driver = webdriver.Chrome(options=chrome_options)
@@ -58,14 +68,12 @@ class StoreScraper:
                 url = f"{settings.LEGACY_BASE_URL}/admin/store/list?page={current_page}"
                 self.driver.get(url)
 
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "columnSearchDatatable"))
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located(STORE_LIST_SELECTORS["table_body"])
                 )
 
-                # Usamos el selector robusto para las filas
-                rows = self.driver.find_elements(
-                    By.CSS_SELECTOR, "table#columnSearchDatatable tbody tr"
-                )
+                # Usamos el selector centralizado e invencible para las filas
+                rows = self.driver.find_elements(*STORE_LIST_SELECTORS["table_rows"])
                 if not rows:
                     break
 
@@ -154,10 +162,7 @@ class StoreScraper:
 
                 # Paginación
                 try:
-                    next_btn = self.driver.find_element(
-                        By.XPATH,
-                        "//a[@aria-label='Next »' or contains(text(), 'Next')]",
-                    )
+                    next_btn = self.driver.find_element(*STORE_LIST_SELECTORS["next_page_btn"])
                     parent = next_btn.find_element(By.XPATH, "./..")
                     if "disabled" in parent.get_attribute("class"):
                         break
@@ -233,6 +238,13 @@ class StoreScraper:
             except:
                 pass
             self.driver = None
+            
+        # 🛡️ ESCUDO ANTI-ZOMBIES: Limpieza a nivel de SO
+        try:
+            os.system("pkill -f chrome")
+            os.system("pkill -f chromedriver")
+        except:
+            pass
 
     def scrape_commission(self, store_real_id: str) -> float:
         """

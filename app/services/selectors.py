@@ -112,17 +112,34 @@ CUSTOMER_LIST_SELECTORS = {
     "table_body": (By.ID, "set-rows"),
     "table_rows": (By.CSS_SELECTOR, "tbody#set-rows tr"),
     "next_page_btn": (By.CSS_SELECTOR, "a.page-link[rel='next']"),
-    # --- COLUMNAS (Relativas a la fila <tr>) ---
+    
+    # --- COLUMNAS (Relativas a la fila <tr>, inmunes a cambios de orden) ---
     "id_cell": (
-        By.XPATH,
-        ".//td[1]",
-    ),  # Mantenemos el índice 1 porque es el ID crudo sin clases
-    # Nombre: Buscamos el primer enlace que tenga la ruta /customer/view/ dentro de la columna 2
-    "name_link": (By.XPATH, ".//td[2]//a[contains(@href, 'customer/view')]"),
-    # Teléfono: Buscamos el enlace 'tel:' dentro de la fila
+        By.XPATH, 
+        ".//td[string-length(normalize-space(.)) > 0 and number(normalize-space(.)) = normalize-space(.)]"
+    ),
+    "name_link": (By.XPATH, ".//a[contains(@href, 'customer/view')]"),
     "phone_link": (By.XPATH, ".//a[starts-with(@href, 'tel:')]"),
-    # Fecha: Está en la penúltima columna visible, pero la penúltima es "Toggle status".
-    # Por el HTML, la fecha está en la columna justo antes del toggle.
-    # Usaremos el índice 7 por ahora, ya que no tiene clases distintivas (solo label badge).
-    "joined_date_cell": (By.XPATH, ".//td[7]"),
+    "email_link": (By.XPATH, ".//a[starts-with(@href, 'mailto:')]"),
+    # Busca la celda que contiene el formato de año (ej. 2024, 2025, 2026)
+    "joined_date_cell": (
+        By.XPATH, 
+        ".//td[contains(normalize-space(.), '202') or contains(normalize-space(.), ' 20')]"
+    ),
+}
+
+STORE_LIST_SELECTORS = {
+    # --- TABLA Y PAGINACIÓN ---
+    "table_body": (By.ID, "set-rows"),
+    "table_rows": (By.CSS_SELECTOR, "tbody#set-rows tr"),
+    "next_page_btn": (By.CSS_SELECTOR, "a.page-link[rel='next']"),
+    
+    # --- COLUMNAS (Relativas a la fila <tr>, inmunes a cambios de orden) ---
+    "id_cell": (
+        By.XPATH, 
+        ".//td[string-length(normalize-space(.)) > 0 and number(normalize-space(.)) = normalize-space(.)]"
+    ),
+    "store_link": (By.XPATH, ".//a[contains(@href, 'store/view')]"),
+    "phone_link": (By.XPATH, ".//a[starts-with(@href, 'tel:')]"),
+    "status_toggle": (By.XPATH, ".//input[@type='checkbox' and contains(@class, 'toggle-switch')]"),
 }
