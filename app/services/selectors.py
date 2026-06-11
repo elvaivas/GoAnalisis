@@ -33,29 +33,27 @@ ORDER_TABLE_SELECTORS = {
 }
 
 ORDER_DETAIL_SELECTORS = {
-    # --- INFO BÁSICA Y STATUS (Actualizado a Ant Design / React) ---
+    # Buscamos el bloque completo de "Status" y obtenemos el valor del segundo elemento
     "status_badge": (
         By.XPATH,
-        "//span[contains(text(), 'Status:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]//span[contains(@class, 'ant-tag')]",
+        "//div[contains(@class, 'ant-space-horizontal') and contains(., 'Status:')]/div[2]/span",
     ),
     "order_placed_at": (
         By.XPATH,
-        "//span[@aria-label='calendar']/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]/span",
+        "//span[@aria-label='calendar']/ancestor::div[contains(@class, 'ant-space-item')]/following-sibling::div[1]/span",
     ),
     "order_type_label": (
         By.XPATH,
-        "//span[contains(text(), 'Order type:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]//span",
+        "//div[contains(@class, 'ant-space-horizontal') and contains(., 'Order type:')]/div[2]/span",
     ),
-    # --- TELÉFONO CLIENTE ---
-    "customer_phone_link": (
+    "payment_method": (
         By.XPATH,
-        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')]//a[starts-with(@href, 'tel:')]",
+        "//div[contains(@class, 'ant-space-horizontal') and contains(., 'Payment method:')]/div[2]/span",
     ),
-    # --- NOMBRES PRINCIPALES (Extraídos de los Cards de Ant Design) ---
-    "store_name": (
-        By.XPATH,
-        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Store info')]/ancestor::div[contains(@class, 'ant-card')]//h5",
-    ),
+    # Para los otros, usa estos que son más estables:
+    "customer_name": (By.XPATH, "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')]//h5"),
+    "driver_name": (By.XPATH, "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Delivery man')]/ancestor::div[contains(@class, 'ant-card')]//h5"),
+    "store_name": (By.XPATH, "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Store info')]/ancestor::div[contains(@class, 'ant-card')]//h5"),
     "customer_name": (
         By.XPATH,
         "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')]//h5",
