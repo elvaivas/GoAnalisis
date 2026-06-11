@@ -15,7 +15,7 @@ ORDER_TABLE_SELECTORS = {
     "table_body": (By.ID, "set-rows"),
     "order_id_link": (By.CSS_SELECTOR, "td.table-column-pl-0 a"),
     # --- NUEVOS SELECTORES DE LISTADO Y EXPORTACIÓN ---
-    "search_input": (By.ID, "datatableSearch_"),
+    "search_input": (By.ID, "filter-search"),  # Actualizado al nuevo modal de filtros
     "export_dropdown_btn": (
         By.CSS_SELECTOR,
         "a[data-hs-unfold-target='#usersExportDropdown']",
@@ -36,15 +36,15 @@ ORDER_DETAIL_SELECTORS = {
     # --- INFO BÁSICA Y STATUS (Actualizado a Ant Design / React) ---
     "status_badge": (
         By.XPATH,
-        "//span[contains(normalize-space(.), 'Status:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]",
+        "//span[contains(text(), 'Status:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]//span[contains(@class, 'ant-tag')]",
     ),
     "order_placed_at": (
         By.XPATH,
-        "//span[@aria-label='calendar']/ancestor::div[contains(@class, 'ant-space-horizontal')]//div[contains(@class, 'ant-space-item')][2]/span",
+        "//span[@aria-label='calendar']/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]/span",
     ),
     "order_type_label": (
         By.XPATH,
-        "//span[contains(normalize-space(.), 'Order type:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]",
+        "//span[contains(text(), 'Order type:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]//span",
     ),
     # --- TELÉFONO CLIENTE ---
     "customer_phone_link": (
@@ -52,10 +52,9 @@ ORDER_DETAIL_SELECTORS = {
         "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')]//a[starts-with(@href, 'tel:')]",
     ),
     # --- NOMBRES PRINCIPALES (Extraídos de los Cards de Ant Design) ---
-    # Ajustado a la estructura Ant Design del nuevo detalle de pedido
     "store_name": (
         By.XPATH,
-        "//span[contains(normalize-space(.), 'Store:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]",
+        "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Store info')]/ancestor::div[contains(@class, 'ant-card')]//h5",
     ),
     "customer_name": (
         By.XPATH,
@@ -65,22 +64,21 @@ ORDER_DETAIL_SELECTORS = {
         By.XPATH,
         "//div[contains(@class, 'ant-card-head-title') and contains(text(), 'Delivery man')]/ancestor::div[contains(@class, 'ant-card')]//h5",
     ),
-    # Montos
+    # --- MONTOS (Actualizado a Componente ant-descriptions) ---
     "delivery_fee": (
         By.XPATH,
-        "//dt[contains(normalize-space(), 'Tarifa de entrega') or contains(normalize-space(), 'Delivery fee')]/following-sibling::dd",
+        "//th[contains(@class, 'ant-descriptions-item-label') and (contains(., 'Delivery charge') or contains(., 'Tarifa de entrega'))]/following-sibling::td[contains(@class, 'ant-descriptions-item-content')]/span",
     ),
     "total_amount": (
         By.XPATH,
-        "//dt[normalize-space()='Total:']/following-sibling::dd",
+        "//th[contains(@class, 'ant-descriptions-item-label') and contains(., 'Total')]/following-sibling::td[contains(@class, 'ant-descriptions-item-content')]/span",
     ),
     # --- NUEVOS DATOS DE INTELIGENCIA ---
-    # Método de pago: Buscamos el h6 que contiene el texto y tomamos el último span
     "payment_method": (
         By.XPATH,
-        "//h6[contains(., 'Método de pago') or contains(., 'Payment method')]/span[last()]",
+        "//span[contains(text(), 'Payment method:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]//span",
     ),
-    # Cancelación: Buscamos en la tarjeta lateral derecha (sidebar)
+    # Cancelación: (Se mantienen a la espera de confirmación visual si existen en la nueva vista)
     "cancellation_reason": (
         By.XPATH,
         "//span[contains(., 'Motivo de cancelación')]/following-sibling::span[contains(@class, 'info')]",
@@ -89,7 +87,7 @@ ORDER_DETAIL_SELECTORS = {
         By.XPATH,
         "//span[contains(., 'Cancelado por')]/following-sibling::span[contains(@class, 'info')]",
     ),
-    # IDs para relaciones
+    # IDs para relaciones (Mantenemos por compatibilidad, aunque la vista nueva los ocultó)
     "store_link": (By.XPATH, "//a[contains(@href, 'store/view')]"),
     "customer_link": (By.XPATH, "//a[contains(@href, 'customer/view')]"),
     "driver_link": (By.XPATH, "//a[contains(@href, 'delivery-man/preview')]"),

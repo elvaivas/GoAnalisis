@@ -307,49 +307,30 @@ class DroneScraper:
         return info
 
     def _extract_reason_smart(self) -> Optional[str]:
+        """Extracción directa de motivo de cancelación (Actualizado a Ant Design)"""
         try:
-            labels = self.driver.find_elements(
-                *ORDER_DETAIL_SELECTORS["cancellation_reason_labels"]
-            )
-            for label in labels:
-                try:
-                    parent = label.find_element(By.XPATH, "./..")
-                    raw_text = parent.text
-                    garbage = [
-                        label.text,
-                        "Motivo de cancelación",
-                        "del pedido",
-                        ":",
-                        "-",
-                    ]
-                    for g in garbage:
-                        raw_text = raw_text.replace(g, "")
-                    clean = raw_text.strip()
-                    if len(clean) > 2:
-                        return clean
-                except:
-                    continue
+            reason_el = self.driver.find_element(*ORDER_DETAIL_SELECTORS["cancellation_reason"])
+            clean = reason_el.text.strip()
+            if len(clean) > 2:
+                return clean
         except:
             pass
         return None
 
     # --- NUEVO: EXTRACTOR DE PRODUCTOS ---
     def _extract_products(self) -> List[Dict]:
+        """Extracción de tabla de productos 100% centralizada"""
         items = []
         try:
-            # Apunta a la tabla principal usando las clases de Ant Design
-            rows = self.driver.find_elements(
-                By.CSS_SELECTOR, "tbody.ant-table-tbody tr.ant-table-row"
-            )
+            rows = self.driver.find_elements(*ORDER_DETAIL_SELECTORS["product_table_rows"])
 
             for row in rows:
                 try:
-                    cols = row.find_elements(By.TAG_NAME, "td")
+                    cols = row.find_elements(*ORDER_DETAIL_SELECTORS["product_col_tag"])
                     if len(cols) < 4:
                         continue
 
                     # 1 y 2. Nombre, Cantidad y Precio (Todo viene en cols[1])
-                    # Ejemplo de texto extraído: "Gasa estéril (3 x 3) 2 unidades grossmed\n3 x $0.18 (VED 98,07)"
                     col_1_text = cols[1].text.strip()
                     lines = col_1_text.split("\n")
 
@@ -358,7 +339,6 @@ class DroneScraper:
                     qty = 1
                     price = 0.0
                     try:
-                        # Extraemos con Regex directamente del texto de la celda completa
                         match = re.search(
                             r"(\d+)\s*x\s*(?:\$|USD)\s*([\d\.,]+)",
                             col_1_text,
@@ -375,19 +355,18 @@ class DroneScraper:
                     except:
                         pass
 
-                    # 3. Código de barras (Extracción desde etiqueta SVG <text> de Ant Design)
+                    # 3. Código de barras
                     barcode = ""
                     try:
-                        # Los SVG requieren local-name() porque usan un namespace XML distinto
-                        barcode = (
-                            cols[2]
-                            .find_element(By.XPATH, ".//*[local-name()='text']")
-                            .text.strip()
-                        )
+                        barcode_elements = cols[2].find_elements(*ORDER_DETAIL_SELECTORS["product_barcode_tag"])
+                        if barcode_elements:
+                            barcode = barcode_elements[0].text.strip()
+                        else:
+                            barcode = cols[2].text.strip()
                     except:
                         barcode = cols[2].text.strip()
 
-                    # 4. Total (Utiliza la función que detecta $)
+                    # 4. Total
                     total = self._parse_money(cols[3].text)
 
                     if name:
@@ -409,35 +388,22 @@ class DroneScraper:
         return items
 
     def _extract_payment_info(self) -> str:
-        """Extrae el método de pago (Bilingüe SRE Todoterreno)"""
+        """Extrae el método de pago usando el nuevo bloque de cabecera de Ant Design"""
         try:
-            # Busca cualquier etiqueta (h6, div, p) que contenga la palabra clave
-            # y extrae el texto del elemento padre usando el selector centralizado
-            element = self.driver.find_element(
-                *ORDER_DETAIL_SELECTORS["payment_method_universal"]
-            )
+            element = self.driver.find_element(*ORDER_DETAIL_SELECTORS["payment_method"])
             raw_payment = element.text.strip().upper()
 
-            if (
-                "PUNTO DE VENTA" in raw_payment
-                or "VPOS" in raw_payment
-                or "BTCBOX" in raw_payment
-            ):
+            if "PUNTO DE VENTA" in raw_payment or "VPOS" in raw_payment or "BTCBOX" in raw_payment:
                 return "Punto de Venta"
             if "EFECTIVO" in raw_payment or "CASH" in raw_payment:
                 return "Efectivo"
-            if (
-                "PMOVIL" in raw_payment
-                or "PAGO MOVIL" in raw_payment
-                or "PAGO MÓVIL" in raw_payment
-            ):
+            if "PMOVIL" in raw_payment or "PAGO MOVIL" in raw_payment or "PAGO MÓVIL" in raw_payment:
                 return "Pago Movil"
             if "ZELLE" in raw_payment:
                 return "Zelle"
             if "DIGITAL" in raw_payment:
                 return "Pago Digital"
 
-            # Si encuentra el bloque pero es algo nuevo, lo limpiamos de etiquetas
             clean_val = (
                 raw_payment.replace("MÉTODO DE PAGO", "")
                 .replace("PAYMENT METHOD", "")

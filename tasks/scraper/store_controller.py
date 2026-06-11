@@ -166,7 +166,6 @@ class StoreControllerScraper:
             search_input.clear()
             search_input.send_keys(search_query)
             time.sleep(3)
-            # search_input.send_keys(Keys.ENTER)
             time.sleep(4)
 
             # 2. Si NO teníamos el ID desde el principio, lo extraemos de los resultados filtrados
@@ -176,14 +175,15 @@ class StoreControllerScraper:
 
                 for row in rows:
                     cols = row.find_elements(By.TAG_NAME, "td")
-                    if len(cols) > 1:
-                        cell_text = cols[1].text.strip()
+                    # CORRECCIÓN: La información ahora está en la columna 3 (índice 2)
+                    if len(cols) > 2:
+                        cell_text = cols[2].text.strip()
                         if not cell_text:
                             continue
 
                         # TRUCO NINJA: Extraer el nombre real oculto en el atributo 'title'
                         try:
-                            title_div = cols[1].find_element(
+                            title_div = cols[2].find_element(
                                 By.CSS_SELECTOR, ".text--title"
                             )
                             store_name_in_table = (
@@ -208,7 +208,8 @@ class StoreControllerScraper:
                             or store_name_in_table in clean_upper
                             or clean_upper in store_name_in_table
                         ):
-                            id_regex = re.search(r"ID\s*:\s*(\d+)", cell_text)
+                            # CORRECCIÓN: Tolerancia a variaciones como Id:43 o ID : 43
+                            id_regex = re.search(r"Id\s*:\s*(\d+)", cell_text, re.IGNORECASE)
                             if id_regex:
                                 real_legacy_id = id_regex.group(1)
                                 break
@@ -246,12 +247,13 @@ class StoreControllerScraper:
                 if not clicked:
                     label.click()
 
+                # CORRECCIÓN: Se actualizan los selectores para los nuevos modales de Bootstrap
                 try:
                     confirm = WebDriverWait(self.driver, 3).until(
                         EC.element_to_be_clickable(
                             (
                                 By.CSS_SELECTOR,
-                                ".swal2-confirm, .confirm, button.swal2-confirm",
+                                "#toggle-ok-button, #toggle-status-ok-button, .swal2-confirm",
                             )
                         )
                     )
@@ -261,7 +263,7 @@ class StoreControllerScraper:
                     pass
                 return True
 
-            logger.info(f"⏹️ {store_name} ya estaba APAGADA.")
+            logger.info(f"⏹️ {store_name} ya estaba APAGADA o en el estado deseado.")
             return False
 
         except Exception as e:

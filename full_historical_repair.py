@@ -16,52 +16,35 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def run_full_audit():
-    logger.info("🦖 INICIANDO AUDITORÍA PALEONTOLÓGICA (TODA LA HISTORIA)...")
+    logger.info("🦖 INICIANDO SANEAMIENTO HISTÓRICO (DESDE EL 1 DE MAYO)...")
     
     db = SessionLocal()
     
-    # FECHA CORTE: Ignoramos los pedidos de las últimas 24h (están vivos)
+    # FECHA DE INICIO ESTRICTA: 1 de Mayo del año en curso (2026)
+    start_date = datetime(2026, 5, 1)
+    
+    # FECHA CORTE: Ignoramos los pedidos de las últimas 24h (Dejamos que Celery los maneje en vivo)
     cutoff_time = datetime.utcnow() - timedelta(hours=24)
     
-    logger.info("🔍 Buscando incoherencias en la Base de Datos...")
+    logger.info(f"🔍 Buscando TODOS los pedidos entre {start_date.strftime('%Y-%m-%d')} y {cutoff_time.strftime('%Y-%m-%d')}...")
 
-    # --- GRUPO 1: ZOMBIES (No finalizados y viejos) ---
-    zombies = db.query(Order).filter(
-        Order.created_at < cutoff_time,
-        Order.current_status.in_(['pending', 'processing', 'confirmed', 'driver_assigned', 'on_the_way'])
-    ).all()
-    
-    # --- GRUPO 2: FALSOS DELIVERIES (Entregado + Delivery + Sin Chofer) ---
-    # Esto corregirá todos los Pickups mal clasificados históricamente
-    fake_deliveries = db.query(Order).filter(
-        Order.current_status == 'delivered',
-        Order.order_type == 'Delivery',
-        Order.driver_id == None
+    # --- EXTRACCIÓN TOTAL DESDE MAYO ---
+    # Al haber un descuadre reportado, forzamos la actualización de TODOS los pedidos 
+    # en este rango para asegurar que los nuevos selectores extraigan todo perfectamente.
+    orders_to_repair = db.query(Order).filter(
+        Order.created_at >= start_date,
+        Order.created_at < cutoff_time
     ).all()
 
-    # --- GRUPO 3: MONTOS CERO (Datos incompletos) ---
-    empty_amounts = db.query(Order).filter(
-        Order.total_amount == 0,
-        Order.current_status != 'canceled' # Ignoramos cancelados que pueden ser 0
-    ).all()
-
-    # Consolidar lista única de IDs para no repetir trabajo
-    targets = {}
-    
-    for o in zombies: targets[o.external_id] = "Zombie (No cerrado)"
-    for o in fake_deliveries: targets[o.external_id] = "Falso Delivery (Pickup real)"
-    for o in empty_amounts: targets[o.external_id] = "Monto Cero"
-
+    # Mapeamos los IDs. Al ser un full sweep, la razón es general.
+    targets = {o.external_id: "Revisión forzada (Descuadre reportado)" for o in orders_to_repair}
     total_targets = len(targets)
-    logger.info(f"📊 DIAGNÓSTICO INICIAL:")
-    logger.info(f"   - Zombies encontrados: {len(zombies)}")
-    logger.info(f"   - Falsos Deliveries (Pickups): {len(fake_deliveries)}")
-    logger.info(f"   - Montos vacíos: {len(empty_amounts)}")
-    logger.info(f"   ----------------------------------------")
-    logger.info(f"   🎯 TOTAL A REPARAR: {total_targets} pedidos únicos.")
+
+    logger.info(f"📊 DIAGNÓSTICO:")
+    logger.info(f"   🎯 TOTAL DE PEDIDOS A RASTREAR Y ACTUALIZAR: {total_targets}")
 
     if total_targets == 0:
-        logger.info("✨ ¡El sistema está inmaculado! Nada que reparar.")
+        logger.info("✨ No hay pedidos en ese rango de fecha. Finalizando.")
         return
 
     # --- EJECUCIÓN DEL DRON ---
@@ -70,7 +53,7 @@ def run_full_audit():
         logger.error("❌ Fallo crítico: No se pudo loguear el Dron.")
         return
 
-    logger.info("🚀 Iniciando reparaciones masivas...")
+    logger.info("🚀 Iniciando saneamiento masivo...")
     
     count = 0
     errors = 0
@@ -78,16 +61,24 @@ def run_full_audit():
     for eid, reason in targets.items():
         count += 1
         try:
-            logger.info(f"🔧 [{count}/{total_targets}] Reparando #{eid} -> Causa: {reason}")
+            # Reducimos el ruido en consola imprimiendo progreso detallado cada 20 pedidos
+            if count % 20 == 0 or count == 1 or count == total_targets:
+                logger.info(f"🔧 Progreso: [{count}/{total_targets}] -> Scrapeando #{eid}")
             
-            # 1. Scrape Full (Trae estatus, montos, chofer y mapa)
+            # 1. Scrape Full (Trae estatus, montos, chofer, productos, métodos de pago y mapa)
             data = drone.scrape_detail(eid, mode='full')
             
-            # 2. Guardado Inteligente (Aplica las reglas nuevas de Pickup)
-            process_drone_data(db, data)
+            # 2. Guardado Inteligente (Actualiza o inserta reemplazando la data vieja)
+            if data and data.get("status_text"):
+                process_drone_data(db, data)
+            else:
+                logger.warning(f"⚠️ El Dron no trajo data válida para #{eid} (Posible 404).")
+                errors += 1
             
-            # Pequeña pausa para no tumbar el servidor de GoPharma
-            # time.sleep(0.5) 
+            # --- PROTECCIÓN SRE ---
+            # Un barrido de miles de pedidos puede activar alarmas de DDoS o tumbar la sesión.
+            # 1.5 segundos de gracia entre peticiones mantiene un buen balance de velocidad/seguridad.
+            time.sleep(1.5) 
             
         except Exception as e:
             logger.error(f"⚠️ Error reparando {eid}: {e}")
@@ -96,9 +87,9 @@ def run_full_audit():
     drone.close_driver()
     db.close()
     
-    logger.info("🏁 AUDITORÍA HISTÓRICA FINALIZADA.")
-    logger.info(f"✅ Procesados: {count - errors}")
-    logger.info(f"❌ Errores: {errors}")
+    logger.info("🏁 SANEAMIENTO HISTÓRICO FINALIZADO.")
+    logger.info(f"✅ Procesados exitosamente: {count - errors}")
+    logger.info(f"❌ Errores/Vacíos: {errors}")
 
 if __name__ == "__main__":
     run_full_audit()

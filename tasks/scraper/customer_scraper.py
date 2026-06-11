@@ -197,53 +197,51 @@ class CustomerScraper:
                 url = f"{settings.LEGACY_BASE_URL}/admin/users/customer/list?order_wise=latest&page={current_page}"
                 self.driver.get(url)
 
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located(
-                        CUSTOMER_LIST_SELECTORS["table_body"]
+                try:
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located(
+                            CUSTOMER_LIST_SELECTORS["table_body"]
+                        )
                     )
-                )
+                except Exception as e:
+                    logger.warning(f"⚠️ Tabla no encontrada en la página {current_page}. Terminando...")
+                    break
 
                 logger.info(f"   📄 Procesando página {current_page}...")
 
-                # 👇 CAMBIO QUIRÚRGICO: Usando selector centralizado
+                # 1. Obtenemos todas las filas usando el selector centralizado
                 rows = self.driver.find_elements(*CUSTOMER_LIST_SELECTORS["table_rows"])
                 if not rows:
                     break
 
                 for row in rows:
                     try:
-                        # 1. ID del Cliente (Columna 1 estricta)
+                        # 2. ID del Cliente (Centralizado)
                         try:
-                            id_el = row.find_element(By.XPATH, ".//td[1]")
+                            id_el = row.find_element(*CUSTOMER_LIST_SELECTORS["id_cell"])
                             id_text = id_el.text.strip().replace("#", "")
                             gopharma_id = int(id_text)
                         except:
-                            continue
+                            continue  # Si no hay ID, la fila es inválida o es cabecera
 
-                        # 2. Nombre (Columna 2 estricta, tomando solo la primera línea antes de la cédula)
+                        # 3. Nombre (Centralizado - Busca el link interno en vez de toda la celda)
                         try:
-                            name_el = row.find_element(By.XPATH, ".//td[2]")
+                            name_el = row.find_element(*CUSTOMER_LIST_SELECTORS["name_link"])
                             name = name_el.text.split("\n")[0].strip()
                         except:
                             name = "Desconocido"
 
-                        # 3. Teléfono (Columna 4 estricta, buscando el link tel:)
+                        # 4. Teléfono (Centralizado - Busca directamente el href='tel:' en toda la fila)
                         phone = None
                         try:
-                            phone_el = row.find_element(
-                                By.XPATH, ".//td[4]//a[starts-with(@href, 'tel:')]"
-                            )
-                            phone = (
-                                phone_el.get_attribute("href")
-                                .replace("tel:", "")
-                                .strip()
-                            )
+                            phone_el = row.find_element(*CUSTOMER_LIST_SELECTORS["phone_link"])
+                            phone = phone_el.get_attribute("href").replace("tel:", "").strip()
                         except:
                             pass
 
-                        # 4. Fecha de Ingreso (Columna 7 estricta, capturando el texto directo)
+                        # 5. Fecha de Ingreso (Centralizado)
                         try:
-                            date_el = row.find_element(By.XPATH, ".//td[7]")
+                            date_el = row.find_element(*CUSTOMER_LIST_SELECTORS["joined_date_cell"])
                             raw_date = self._parse_spanish_date(date_el.text.strip())
 
                             # DESACTIVAMOS EL BUG DE AÑO NUEVO SI EL ID ES MAYOR A 24000
@@ -286,13 +284,18 @@ class CustomerScraper:
                 if stop_scraping:
                     break
 
-                # Intentamos avanzar a la siguiente página validando si el botón no está deshabilitado
+                # 6. Intentamos avanzar a la siguiente página (Lógica robusta)
                 try:
-                    next_btn_parent = self.driver.find_element(
-                        By.XPATH, "//a[@rel='next']/parent::li"
-                    )
-                    if "disabled" in next_btn_parent.get_attribute("class"):
+                    # Buscamos el botón "Siguiente" con el selector centralizado
+                    next_btn = self.driver.find_elements(*CUSTOMER_LIST_SELECTORS["next_page_btn"])
+                    if not next_btn:
+                        break # No hay más páginas
+                    
+                    # Verificamos si el padre (li) tiene la clase 'disabled' (Bootstrap clásico)
+                    parent_li = next_btn[0].find_element(By.XPATH, "./..")
+                    if "disabled" in parent_li.get_attribute("class"):
                         break
+                        
                     current_page += 1
                 except:
                     break
