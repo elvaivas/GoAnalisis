@@ -42,7 +42,7 @@ ORDER_DETAIL_SELECTORS = {
     # --- CABECERA Y ESTADO ---
     "status_badge": (
         By.XPATH,
-        "//span[contains(text(), 'Status:')]/parent::div/following-sibling::div//span"
+        "//span[contains(normalize-space(.), 'Status:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]//span"
     ),
     "order_placed_at": (
         By.XPATH,
@@ -50,39 +50,45 @@ ORDER_DETAIL_SELECTORS = {
     ),
     "order_type_label": (
         By.XPATH,
-        "//span[contains(text(), 'Order type:')]/parent::div/following-sibling::div//span"
+        "//span[contains(normalize-space(.), 'Order type:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]//span"
     ),
     "payment_method": (
         By.XPATH,
-        "//span[contains(text(), 'Payment method:')]/parent::div/following-sibling::div//span"
+        "//span[contains(normalize-space(.), 'Payment method:')]/ancestor::div[contains(@class, 'ant-space-item')][1]/following-sibling::div[1]//span"
     ),
 
-    # --- TARJETAS DE INFORMACIÓN (Con [1] para asegurar que tome el bloque correcto) ---
+    # --- TARJETAS DE INFORMACIÓN ---
     "customer_name": (
         By.XPATH, 
-        "//div[@class='ant-card-head-title' and contains(text(), 'Customer info')]/ancestor::div[contains(@class, 'ant-card')][1]//h5"
+        "//div[@class='ant-card-head-title' and text()='Customer info']/../../..//h5"
     ),
     "driver_name": (
         By.XPATH, 
-        "//div[@class='ant-card-head-title' and contains(text(), 'Delivery man')]/ancestor::div[contains(@class, 'ant-card')][1]//h5"
+        "//div[@class='ant-card-head-title' and text()='Delivery man']/../../..//h5"
     ),
     "store_name": (
         By.XPATH, 
-        "//div[@class='ant-card-head-title' and contains(text(), 'Store info')]/ancestor::div[contains(@class, 'ant-card')][1]//h5"
+        "//div[@class='ant-card-head-title' and text()='Store info']/../../..//h5"
+    ),
+    
+    # --- TELÉFONO DEL CLIENTE ---
+    "customer_phone_link": (
+        By.XPATH,
+        "//div[@class='ant-card-head-title' and text()='Customer info']/../../..//a[starts-with(@href, 'tel:')]"
     ),
 
-    # --- MONTOS (Tabla de Ant Descriptions) ---
+    # --- MONTOS ---
     "delivery_fee": (
         By.XPATH,
-        "//th[contains(@class, 'ant-descriptions-item-label')]//span[contains(text(), 'Delivery charge') or contains(text(), 'Tarifa de entrega')]/ancestor::th[1]/following-sibling::td//span"
+        "//th[contains(@class, 'ant-descriptions-item-label') and (contains(normalize-space(.), 'Delivery charge') or contains(normalize-space(.), 'Tarifa de entrega'))]/following-sibling::td//span"
     ),
     "total_amount": (
         By.XPATH,
-        "//th[contains(@class, 'ant-descriptions-item-label')]//span[text()='Total']/ancestor::th[1]/following-sibling::td//span"
+        "//th[contains(@class, 'ant-descriptions-item-label') and contains(normalize-space(.), 'Total')]/following-sibling::td//span"
     ),
     "commission_text": (
         By.XPATH,
-        "//th[contains(@class, 'ant-descriptions-item-label')]//span[contains(text(), 'Commission') or contains(text(), 'Comisión')]/ancestor::th[1]/following-sibling::td//span"
+        "//th[contains(@class, 'ant-descriptions-item-label') and (contains(normalize-space(.), 'Commission') or contains(normalize-space(.), 'Comisión'))]/following-sibling::td//span"
     ),
 
     # --- TABLA DE PRODUCTOS ---
@@ -98,6 +104,7 @@ ORDER_DETAIL_SELECTORS = {
     # --- FALLBACK DE MAPAS ---
     "latitude_input": (By.XPATH, "//input[@id='latitude_inexistente']"),
     "longitude_input": (By.XPATH, "//input[@id='longitude_inexistente']"),
+    
 }
 
 CUSTOMER_LIST_SELECTORS = {
