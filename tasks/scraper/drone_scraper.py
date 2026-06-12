@@ -213,37 +213,37 @@ class DroneScraper:
         return None
 
     def _extract_maps(self) -> Dict[str, float]:
-        """Extracción SRE actualizada: Coordenadas desde DOM inputs y regex de scripts"""
+        """Extracción SRE V5: Coordenadas Fantasma extraídas directamente del código fuente"""
         result = {}
-
-        # 1. COORDENADAS DEL CLIENTE (Extraídas de los inputs del modal de envío)
-        try:
-            lat_el = self.driver.find_element(*ORDER_DETAIL_SELECTORS["latitude_input"])
-            lng_el = self.driver.find_element(
-                *ORDER_DETAIL_SELECTORS["longitude_input"]
-            )
-
-            lat_val = lat_el.get_attribute("value")
-            lng_val = lng_el.get_attribute("value")
-
-            if lat_val and lng_val:
-                result["customer_lat"] = float(lat_val)
-                result["customer_lng"] = float(lng_val)
-        except Exception as e:
-            logger.debug(f"Mapas Cliente falló: {e}")
-
-        # 2. COORDENADAS DE LA TIENDA (Extraídas del script de inicialización del mapa)
         try:
             page_source = self.driver.page_source
-            # Expresión regular que busca la inicialización: new google.maps.LatLng(10.505..., -66.906...)
-            match = re.search(
-                r"new\s+google\.maps\.LatLng\(\s*([-.\d]+),\s*([-.\d]+)\)", page_source
-            )
-            if match:
-                result["store_lat"] = float(match.group(1))
-                result["store_lng"] = float(match.group(2))
+            
+            # Expresión regular SRE que caza los pares de coordenadas en cualquier parte del HTML
+            # Busca patrones como "10.5079,-66.8886" o "10.5079%2C-66.8886"
+            matches = re.findall(r"(-?\d{1,2}\.\d{4,})(?:%2C|,)\s*(-?\d{1,3}\.\d{4,})", page_source)
+
+            # Limpiamos los duplicados manteniendo estrictamente el orden en el que aparecen (De arriba hacia abajo)
+            unique_matches = []
+            for m in matches:
+                if m not in unique_matches:
+                    unique_matches.append(m)
+
+            # ORDEN DEL DOM: 1. Customer Info -> 2. Store Info
+            # Por lo tanto, el [0] es Cliente y el [1] es Tienda.
+            if len(unique_matches) >= 2:
+                result["customer_lat"] = float(unique_matches[0][0])
+                result["customer_lng"] = float(unique_matches[0][1])
+
+                result["store_lat"] = float(unique_matches[1][0])
+                result["store_lng"] = float(unique_matches[1][1])
+                
+            elif len(unique_matches) == 1:
+                # Si por alguna razón la tienda no tiene mapa, asumimos que la única coordenada es el cliente
+                result["customer_lat"] = float(unique_matches[0][0])
+                result["customer_lng"] = float(unique_matches[0][1])
+
         except Exception as e:
-            logger.debug(f"Mapas Tienda falló: {e}")
+            logger.error(f"Fallo en el escáner de Mapas Fantasma: {e}")
 
         return result
 
