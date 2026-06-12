@@ -659,38 +659,52 @@ def monitor_active_orders(self):
             while time.time() < end_time:
                 loop_start = time.time()
 
-                # 1. Refresca la tabla principal (Pestaña "All")
+                # 1. Refresca la tabla principal SOLO para cazar PEDIDOS NUEVOS
                 recent_items = ls.get_recent_order_ids(limit=15)
+                table_eids = {item["id"]: item for item in recent_items} if recent_items else {}
 
-                if recent_items:
-                    for item in recent_items:
-                        eid = item["id"]
+                # 2. LÓGICA SRE: Consultamos nuestra BD por TODOS los pedidos "Vivos"
+                active_db_orders = db.query(Order).filter(
+                    Order.current_status.notin_(["delivered", "canceled"])
+                ).all()
+
+                # 3. Unificamos: Los nuevos que vimos en la tabla + los que sabemos que siguen vivos
+                eids_to_scan = list(table_eids.keys())
+                for o in active_db_orders:
+                    if str(o.external_id) not in eids_to_scan:
+                        eids_to_scan.append(str(o.external_id))
+
+                if eids_to_scan:
+                    for eid in eids_to_scan:
+                        # Cortafuegos SRE: Si el tiempo del ciclo (40s) se va a acabar, abortamos el for
+                        # para evitar el choque de tareas en Celery. Lo retomará en el próximo ciclo.
+                        if time.time() > end_time - 3:
+                            break
+
                         order = db.query(Order).filter(Order.external_id == eid).first()
-
                         needs_extraction = False
 
                         # A. ES NUEVO: Extracción inmediata
                         if not order:
                             needs_extraction = True
-
-                        # B. ESTÁ PENDIENTE: Extracción agresiva (cada 8 seg) para no perder el salto
+                        # B. ESTÁ PENDIENTE: Extracción agresiva
                         elif order.current_status in ["created", "pending"]:
                             needs_extraction = True
-
-                        # C. ESTÁ EN PROCESO/CAMINO: Extracción pasiva (1 vez por minuto es suficiente)
+                        # C. ESTÁ ACTIVO: Extracción pasiva
                         elif order.current_status not in ["delivered", "canceled"]:
                             if eid not in processed_low_priority:
                                 needs_extraction = True
-                                processed_low_priority.add(
-                                    eid
-                                )  # Lo marcamos para ignorarlo el resto de los 45s
+                                processed_low_priority.add(eid)
 
-                        # 2. Mandamos al dron si es necesario
+                        # 4. Mandamos al dron si es necesario
                         if needs_extraction:
                             data = drone.scrape_detail(eid, mode="full")
-                            data["duration_text"] = item.get("duration", "")
-                            # --- NUEVO: Pasamos el estado de la lista principal ---
-                            data["list_status"] = item.get("list_status", "")
+                            
+                            # Si el pedido venía de la tabla principal, inyectamos su metadata
+                            table_info = table_eids.get(eid, {})
+                            data["duration_text"] = table_info.get("duration", "")
+                            data["list_status"] = table_info.get("list_status", "")
+                            
                             process_drone_data(db, data)
 
                 # 3. Descanso táctico antes de volver a refrescar la tabla
