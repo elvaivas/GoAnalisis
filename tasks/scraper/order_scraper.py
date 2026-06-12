@@ -46,8 +46,13 @@ class OrderScraper:
         # --- BLINDAJE EXTREMO DE MEMORIA ---
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-software-rasterizer")
-        # Esta es la joya: No cargar imágenes = -60% consumo de RAM
         chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+        
+        # --- NUEVOS LIMITADORES DE TIEMPO REAL ---
+        chrome_options.add_argument("--disable-site-isolation-trials")
+        chrome_options.add_argument("--js-flags=--max-old-space-size=256")
+        chrome_options.add_argument("--disable-cache")
+        chrome_options.add_argument("--disk-cache-size=1")
 
         # Configuración de descargas
         self.download_dir = "/tmp/downloads"
@@ -174,6 +179,13 @@ class OrderScraper:
             except:
                 pass
             self.driver = None
+            
+        # 🛡️ ESCUDO ANTI-ZOMBIES: Limpieza a nivel de SO
+        try:
+            os.system("pkill -f chrome")
+            os.system("pkill -f chromedriver")
+        except:
+            pass
 
     def get_official_data_json(self, order_id: str):
         if not self.login():
