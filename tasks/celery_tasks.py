@@ -629,23 +629,31 @@ def backfill_historical_data(self):
 def monitor_active_orders(self):
     key = "celery_lock_monitor_active_orders"
 
-    # Bloqueo de 55 segundos para asegurar que muere justo antes del siguiente ciclo de Celery
-    with redis_lock(key, 55) as acquired:
+    # El bloqueo bajó a 40 segundos. Así garantizamos que SIEMPRE muera el candado 
+    # antes de que Celery dispare la siguiente tarea, evitando solapamientos.
+    with redis_lock(key, 40) as acquired:
         if not acquired:
             return
 
-        logger.info("🚀 INICIANDO RADAR V5 (Alta Frecuencia - 45s)...")
+        logger.info("🚀 INICIANDO RADAR V5 (Alta Frecuencia - 40s)...")
         ls = OrderScraper()
         drone = DroneScraper()
         db = SessionLocal()
 
         try:
+            # Login unificado y mantenido durante toda la vida útil de esta tarea
             if not ls.login():
                 return
+            
+            # --- NUEVA LÓGICA DE DRON ESTÁTICO ---
+            # Arrancamos el dron ANTES del bucle y lo dejamos encendido
+            if not drone.driver:
+                drone.setup_driver()
             if not drone.login():
                 return
+            # --------------------------------------
 
-            end_time = time.time() + 45  # El bucle vivirá exactamente 45 segundos
+            end_time = time.time() + 40  # El bucle vivirá exactamente 40 segundos
             processed_low_priority = set()  # Memoria para no saturar pedidos lentos
 
             while time.time() < end_time:

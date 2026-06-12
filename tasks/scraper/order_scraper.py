@@ -180,7 +180,6 @@ class OrderScraper:
                 pass
             self.driver = None
             
-        # 🛡️ ESCUDO ANTI-ZOMBIES: Limpieza a nivel de SO
         try:
             os.system("pkill -f chrome")
             os.system("pkill -f chromedriver")
