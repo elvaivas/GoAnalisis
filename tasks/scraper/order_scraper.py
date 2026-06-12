@@ -347,6 +347,24 @@ class OrderScraper:
                 EC.presence_of_element_located((By.ID, "datatable"))
             )
 
+            # --- NUEVA LÓGICA SRE: ORDENAMIENTO FORZADO POR FECHA DESCENDENTE ---
+            try:
+                # Buscamos la cabecera de la columna de fecha
+                date_header = self.driver.find_element(By.XPATH, "//th[contains(normalize-space(.), 'Order date')]")
+                
+                # Hacemos clic hasta máximo 3 veces. Si detecta la clase "sorting_desc", se detiene.
+                for _ in range(3):
+                    class_attr = date_header.get_attribute("class") or ""
+                    if "sorting_desc" in class_attr:
+                        logger.info("✅ Tabla ordenada por fecha (Más recientes primero).")
+                        break
+                    
+                    self.driver.execute_script("arguments[0].click();", date_header)
+                    time.sleep(2) # Pausa vital para que DataTables reorganice las filas
+            except Exception as e:
+                logger.warning(f"⚠️ Fallo al intentar ordenar la tabla por fecha: {e}")
+            # --------------------------------------------------------------------
+
             rows = self.driver.find_elements(*ORDER_TABLE_SELECTORS["order_rows"])
 
             for row in rows:
