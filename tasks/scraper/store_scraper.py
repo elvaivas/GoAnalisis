@@ -238,13 +238,6 @@ class StoreScraper:
             except:
                 pass
             self.driver = None
-            
-        # 🛡️ ESCUDO ANTI-ZOMBIES: Limpieza a nivel de SO
-        try:
-            os.system("pkill -f chrome")
-            os.system("pkill -f chromedriver")
-        except:
-            pass
 
     def scrape_commission(self, store_real_id: str) -> float:
         """

@@ -396,8 +396,7 @@ class OrderScraper:
 
         except Exception as e:
             logger.error(f"Error get_recent: {e}")
-        finally:
-            self.close_driver()
+        # ¡Eliminamos el finally: self.close_driver() para que la sesión viva!
 
         return orders_found
 
